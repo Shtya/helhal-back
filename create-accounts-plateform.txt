@@ -1,0 +1,22 @@
+
+
+- https://console.cloud.google.com/welcome?project=robust-team-467913-s2
+- new project 
+	https://console.cloud.google.com/projectcreate?previousPage=%2Fwelcome%3Fproject%3Drobust-team-467913-s2&organizationId=0
+
+- api services 
+	https://console.cloud.google.com/apis/dashboard?project=white-site-469719-k0
+
+- OAuth consent screen 
+	
+
+- this to check the account ( https://console.cloud.google.com/auth/clients?project=white-site-469719-k0 )
+
+
+
+
+
+
+
+
+

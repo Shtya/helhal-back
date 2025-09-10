@@ -1,0 +1,264 @@
+{
+  "info": {
+    "name": "Chat & Conversations API",
+    "description": "API endpoints for messaging and conversations",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "authToken",
+      "value": "your-jwt-token-here",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "description": "Set authentication token for all requests",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "pm.request.headers.add({",
+              "    key: 'Authorization',",
+              "    value: `Bearer ${pm.collectionVariables.get('authToken')}`",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Conversations",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations?page=1",
+          "host": ["{{base_url}}"],
+          "path": ["conversations"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Single Conversation",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations/:id",
+          "host": ["{{base_url}}"],
+          "path": ["conversations", ":id"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Conversation Messages",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations/:id/messages?page=1",
+          "host": ["{{base_url}}"],
+          "path": ["conversations", ":id", "messages"],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Create Conversation",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"otherUserId\": \"user-uuid-here\",\n  \"serviceId\": \"service-uuid-here\",\n  \"orderId\": \"order-uuid-here\",\n  \"initialMessage\": \"Hello, I'd like to discuss this service\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations",
+          "host": ["{{base_url}}"],
+          "path": ["conversations"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Send Message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"Hello, how are you doing today?\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations/:id/message",
+          "host": ["{{base_url}}"],
+          "path": ["conversations", ":id", "message"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Mark as Read",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations/:id/read",
+          "host": ["{{base_url}}"],
+          "path": ["conversations", ":id", "read"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Unread Count",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations/unread/count",
+          "host": ["{{base_url}}"],
+          "path": ["conversations", "unread", "count"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Search Users",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations/search/users?query=john",
+          "host": ["{{base_url}}"],
+          "path": ["conversations", "search", "users"],
+          "query": [
+            {
+              "key": "query",
+              "value": "john"
+            }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Toggle Favorite",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations/:id/favorite",
+          "host": ["{{base_url}}"],
+          "path": ["conversations", ":id", "favorite"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Favorites",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{authToken}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/conversations/favorites/list",
+          "host": ["{{base_url}}"],
+          "path": ["conversations", "favorites", "list"]
+        }
+      },
+      "response": []
+    }
+  ]
+}

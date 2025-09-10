@@ -1,0 +1,139 @@
+{
+  "info": {
+    "name": "Cart API",
+    "description": "API endpoints for cart management",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Get User Cart",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/cart",
+          "host": ["{{base_url}}"],
+          "path": ["cart"]
+        },
+        "description": "Retrieve the current user's cart with all items"
+      },
+      "response": []
+    },
+    {
+      "name": "Add Item to Cart",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"serviceId\": \"uuid-of-service\",\n  \"packageType\": \"Basic\",\n  \"quantity\": 1,\n  \"extraServices\": []\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/cart/item",
+          "host": ["{{base_url}}"],
+          "path": ["cart", "item"]
+        },
+        "description": "Add a new item to the user's cart"
+      },
+      "response": []
+    },
+    {
+      "name": "Update Cart Item",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"quantity\": 2,\n  \"extraServices\": [\n    {\n      \"name\": \"Extra Fast Delivery\",\n      \"price\": 10.99\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/cart/item/:itemId",
+          "host": ["{{base_url}}"],
+          "path": ["cart", "item", ":itemId"]
+        },
+        "description": "Update an existing item in the cart"
+      },
+      "response": []
+    },
+    {
+      "name": "Remove Item from Cart",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/cart/item/:itemId",
+          "host": ["{{base_url}}"],
+          "path": ["cart", "item", ":itemId"]
+        },
+        "description": "Remove a specific item from the cart"
+      },
+      "response": []
+    },
+    {
+      "name": "Clear Cart",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/cart",
+          "host": ["{{base_url}}"],
+          "path": ["cart"]
+        },
+        "description": "Remove all items from the cart"
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8081/api/v1",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "your-jwt-token-here",
+      "type": "string"
+    }
+  ]
+}

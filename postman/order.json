@@ -1,0 +1,242 @@
+{
+  "info": {
+    "name": "Orders API",
+    "description": "API endpoints for managing orders",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Admin - Get All Orders",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/orders/admin?search=all&page=1&limit=20&sortBy=created_at&sortOrder=DESC",
+          "host": ["{{base_url}}"],
+          "path": ["orders", "admin"],
+          "query": [
+            {
+              "key": "search",
+              "value": "all"
+            },
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "20"
+            },
+            {
+              "key": "sortBy",
+              "value": "created_at"
+            },
+            {
+              "key": "sortOrder",
+              "value": "DESC"
+            }
+          ]
+        },
+        "description": "Get all orders (Admin only)"
+      }
+    },
+    {
+      "name": "Get User Orders",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/orders?search=pending&page=1",
+          "host": ["{{base_url}}"],
+          "path": ["orders"],
+          "query": [
+            {
+              "key": "search",
+              "value": "pending"
+            },
+            {
+              "key": "page",
+              "value": "1"
+            }
+          ]
+        },
+        "description": "Get orders for the authenticated user"
+      }
+    },
+    {
+      "name": "Get Order by ID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/orders/:id",
+          "host": ["{{base_url}}"],
+          "path": ["orders", ":id"]
+        },
+        "description": "Get a specific order by ID"
+      }
+    },
+    {
+      "name": "Create Order",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"serviceId\": \"uuid-of-service\",\n  \"packageType\": \"Basic\",\n  \"quantity\": 1,\n  \"requirementsAnswers\": [\n    {\n      \"questionId\": \"question-1\",\n      \"answer\": \"Your answer here\"\n    }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/orders",
+          "host": ["{{base_url}}"],
+          "path": ["orders"]
+        },
+        "description": "Create a new order"
+      }
+    },
+    {
+      "name": "Update Order Status",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"Accepted\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/orders/:id/status",
+          "host": ["{{base_url}}"],
+          "path": ["orders", ":id", "status"]
+        },
+        "description": "Update order status"
+      }
+    },
+    {
+      "name": "Deliver Order",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/orders/:id/deliver",
+          "host": ["{{base_url}}"],
+          "path": ["orders", ":id", "deliver"]
+        },
+        "description": "Mark order as delivered (Seller only)"
+      }
+    },
+    {
+      "name": "Complete Order",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/orders/:id/complete",
+          "host": ["{{base_url}}"],
+          "path": ["orders", ":id", "complete"]
+        },
+        "description": "Mark order as completed (Buyer only)"
+      }
+    },
+    {
+      "name": "Cancel Order",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt_token}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Change of plans\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/orders/:id/cancel",
+          "host": ["{{base_url}}"],
+          "path": ["orders", ":id", "cancel"]
+        },
+        "description": "Cancel an order"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8081/api/v2",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "your-jwt-token-here",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  }
+}
