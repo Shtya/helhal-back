@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn, BeforeInsert, BeforeUpdate, Index, BaseEntity, DeleteDateColumn, ManyToMany, JoinTable } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn, BeforeInsert, BeforeUpdate, Index, BaseEntity, DeleteDateColumn, ManyToMany, JoinTable, Unique } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { CoreEntity } from './core.entity';
@@ -30,6 +30,13 @@ interface Certification {
   name: string;
   issuingOrganization: string;
   year: number;
+}
+
+export enum SellerLevel {
+  LVL1 = 'lvl1',
+  LVL2 = 'lvl2',
+  NEW = 'new',
+  TOP = 'top',
 }
 
 export interface DeviceInfo {
@@ -83,6 +90,9 @@ export class User extends CoreEntity {
   @Column({ nullable: true, unique: true })
   googleId: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  ownerType: string; // e.g. 'admin' | 'platform' | 'user'
+
   @Column({ nullable: true, unique: true })
   appleId: string;
 
@@ -109,7 +119,6 @@ export class User extends CoreEntity {
   @Column({ default: 0 })
   referralRewardsCount: number;
 
-  // ---- shared / profile-style fields that used to live in UserProfile ----
   @Column({ type: 'text', nullable: true })
   description: string;
 
@@ -122,8 +131,14 @@ export class User extends CoreEntity {
   @Column({ type: 'jsonb', default: [] })
   skills: string[]; // unified to string[]
 
-  @Column({ name: 'seller_level', nullable: true, default: 'lvl1' })
-  sellerLevel: string;
+  @Column({
+    name: 'seller_level',
+    type: 'enum',
+    enum: SellerLevel,
+    nullable: true,
+    default: SellerLevel.LVL1,
+  })
+  sellerLevel: SellerLevel;
 
   @Column({ name: 'last_activity', type: 'timestamptz', nullable: true })
   lastActivity: Date;
@@ -135,10 +150,10 @@ export class User extends CoreEntity {
   certifications: Certification[];
 
   @Column({ name: 'intro_video_url', nullable: true })
-  introVideoUrl: string; // replaces UserProfile.intro_video
+  introVideoUrl: string; 
 
   @Column({ name: 'portfolio_file', nullable: true })
-  portfolioFile: string; // carried over from UserProfile
+  portfolioFile: string; 
 
   @Column({ type: 'jsonb', default: [] })
   portfolioItems: any[];
@@ -183,9 +198,6 @@ export class User extends CoreEntity {
   @OneToMany(() => Asset, upload => upload.user)
   uploads: Asset[];
 
-  // (REMOVED) profiles relation — merged into this entity
-  // @OneToMany(() => UserProfile, profile => profile.user) profiles: UserProfile[];
-
   @OneToMany(() => AccountDeactivation, deactivation => deactivation.user)
   deactivations: AccountDeactivation[];
 
@@ -194,9 +206,6 @@ export class User extends CoreEntity {
 
   @OneToMany(() => NotificationSetting, setting => setting.user)
   notificationSettings: NotificationSetting[];
-
-  // @OneToMany(() => Notification, notification => notification.user)
-  // notifications: Notification[];
 
   @OneToMany(() => Service, service => service.seller)
   services: Service[];
@@ -416,6 +425,9 @@ export class Setting extends CoreEntity {
   @Column({ name: 'site_name' })
   siteName: string;
 
+  @Column({ name: 'platform_account_user_id', nullable: true })
+  platformAccountUserId: string;
+
   @Column({ name: 'site_logo' })
   siteLogo: string;
 
@@ -438,7 +450,7 @@ export class Setting extends CoreEntity {
   defaultCurrency: number;
 
   @Column({ name: 'jobs_require_approval', default: true })
-  jobsRequireApproval: boolean;  
+  jobsRequireApproval: boolean;
 
   @Column({ name: 'popular_services', type: 'int', array: true, default: [] })
   popularServices: number[];
@@ -460,9 +472,31 @@ export class Setting extends CoreEntity {
 
   @Column({ name: 'buyer_stories', type: 'int', array: true, default: [] })
   buyerStories: number[];
+ 
+}
 
-  @Column({ name: 'affiliates_enabled', default: true })
-  affiliatesEnabled: boolean;
+@Entity('wallets')
+@Unique(['userId'])
+export class Wallet {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  // Reference to a user OR "platform" for global wallet
+  @Column({ type: 'uuid', nullable: true })
+  userId: string | null;
+
+  // Wallet balance in smallest currency unit (or just decimal if simpler)
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  balance: number;
+
+  @Column({ type: 'varchar', length: 3, default: 'USD' })
+  currency: string;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
 
 // -----------------------------------------------------
@@ -494,9 +528,6 @@ export class ServiceBoost extends CoreEntity {
   status: 'active' | 'expired';
 }
 
-// -----------------------------------------------------
-// User Profiles and Skills
-// -----------------------------------------------------
 
 @Entity('notification_settings')
 export class NotificationSetting extends CoreEntity {
@@ -675,6 +706,7 @@ export class Service extends CoreEntity {
   packages: Package[];
 
   @Column({ type: 'jsonb', default: [] })
+	// {type<image | video | document> , fileName ,url}
   gallery: any[];
 
   @OneToMany(() => ServiceRequirement, requirement => requirement.service)
@@ -745,7 +777,6 @@ export enum JobStatus {
   AWARDED = 'awarded',
   COMPLETED = 'completed',
 }
-
 
 @Entity('jobs')
 export class Job extends CoreEntity {
@@ -882,9 +913,9 @@ export enum OrderStatus {
 }
 
 export enum PackageType {
-  BASIC = 'Basic',
-  STANDARD = 'Standard',
-  PREMIUM = 'Premium',
+  BASIC = 'basic',
+  STANDARD = 'standard',
+  PREMIUM = 'premium',
 }
 
 @Entity('orders')
@@ -994,8 +1025,8 @@ export class Invoice extends CoreEntity {
   @Column({ name: 'total_amount', type: 'decimal' })
   totalAmount: number;
 
-  @Column({ name: 'currency_id' })
-  currencyId: string;
+  // @Column({ name: 'currency_id' })
+  // currencyId: string;
 
   @Column({ name: 'issued_at', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   issuedAt: Date;

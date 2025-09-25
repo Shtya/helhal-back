@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, In, Between, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
-import { Job, Proposal, User, Category, Order, Notification, JobStatus, ProposalStatus, UserRole, OrderStatus, Setting } from 'entities/global.entity';
+import { Repository, Like, In, Between, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
+import { Job, Proposal, User, Category, Order, Notification, JobStatus, ProposalStatus, UserRole, OrderStatus, Setting, PaymentStatus, PackageType, Invoice } from 'entities/global.entity';
 import { CreateJobDto } from 'dto/job.dto';
+import { PaymentsService } from 'src/payments/payments.service';
 
 @Injectable()
 export class JobsService {
@@ -21,6 +22,12 @@ export class JobsService {
     public notificationRepository: Repository<Notification>,
     @InjectRepository(Setting)
     public settingRepository: Repository<Setting>,
+    @InjectRepository(Invoice)
+    public invoiceRepo: Repository<Invoice>,
+    private readonly dataSource: DataSource,
+
+    @Inject(forwardRef(() => PaymentsService))
+    public readonly paymentsService: PaymentsService,
   ) {}
 
   async getJobs(query: any) {
@@ -303,48 +310,152 @@ export class JobsService {
     };
   }
 
-  async updateProposalStatus(userId: string, userRole: string, proposalId: string, status: string) {
-    const proposal = await this.proposalRepository.findOne({
-      where: { id: proposalId },
-      relations: ['job', 'seller'],
+  // async updateProposalStatus(userId: string, userRole: string, proposalId: string, status: string) {
+  //   const proposal = await this.proposalRepository.findOne({
+  //     where: { id: proposalId },
+  //     relations: ['job', 'seller'],
+  //   });
+
+  //   if (!proposal) {
+  //     throw new NotFoundException('Proposal not found');
+  //   }
+
+  //   if (userRole !== UserRole.ADMIN && proposal.job.buyerId !== userId) {
+  //     throw new ForbiddenException('Access denied');
+  //   }
+
+  //   proposal.status = status as ProposalStatus;
+  //   const savedProposal = await this.proposalRepository.save(proposal);
+
+  //   if (proposal.sellerId !== userId) {
+  //     const notification = this.notificationRepository.create({
+  //       userId: proposal.sellerId,
+  //       type: 'proposal_status_update',
+  //       title: 'Proposal Status Updated',
+  //       message: `Your proposal for job "${proposal.job.title}" has been ${status}`,
+  //       relatedEntityType: 'proposal',
+  //       relatedEntityId: proposalId,
+  //     } as any);
+
+  //     await this.notificationRepository.save(notification);
+  //   }
+
+  //   // If proposal is accepted, create an order
+  //   if (status === ProposalStatus.ACCEPTED) {
+  //     await this.createOrderFromProposal(proposal);
+  //   }
+
+  //   return savedProposal;
+  // }
+
+  async updateProposalStatusAtomic(userId: string, userRole: string, proposalId: string, status: any, opts?: any) {
+    return await this.dataSource.transaction(async manager => {
+      const proposalRepo = manager.getRepository(Proposal);
+      const jobRepo = manager.getRepository(Job);
+      const orderRepo = manager.getRepository(Order);
+      const invoiceRepo = manager.getRepository(Invoice);
+      const settingRepo = manager.getRepository(Setting);
+
+      const proposal = await proposalRepo.findOne({
+        where: { id: proposalId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!proposal) throw new NotFoundException('Proposal not found');
+
+      const job = await jobRepo.findOne({
+        where: { id: proposal.jobId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!job) throw new NotFoundException('Job not found');
+
+      if (userRole !== UserRole.ADMIN && job.buyerId !== userId) {
+        throw new ForbiddenException('Access denied');
+      }
+
+      // ===============================
+      // CASE 1: REJECT
+      // ===============================
+      if (status === ProposalStatus.REJECTED) {
+        proposal.status = ProposalStatus.REJECTED;
+        await proposalRepo.save(proposal);
+        return { proposalId, status: ProposalStatus.REJECTED };
+      }
+
+      // ===============================
+      // CASE 2: ACCEPT (with checkout)
+      // ===============================
+      if (status === ProposalStatus.ACCEPTED && opts?.checkout) {
+        let order: any = await orderRepo.findOne({
+          where: { jobId: job.id, proposalId: proposal.id },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+        if (!order) {
+          order = orderRepo.create({
+            buyerId: job.buyerId,
+            sellerId: proposal.sellerId,
+            jobId: job.id,
+            proposalId: proposal.id,
+            title: job.title,
+            quantity: 1,
+            totalAmount: Number(proposal.bidAmount),
+            packageType: PackageType.BASIC,
+            status: OrderStatus.PENDING,
+            orderDate: new Date(),
+          } as any);
+          await orderRepo.save(order);
+        }
+
+        // ensure invoice
+        let inv: any = await invoiceRepo.findOne({
+          where: { orderId: order.id },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!inv) {
+          const s = await settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
+          const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
+          const totalAmount = Number(order.totalAmount);
+          const serviceFee = +(totalAmount * (platformPercent / 100)).toFixed(2);
+          const subtotal = +(totalAmount - serviceFee).toFixed(2);
+
+          inv = invoiceRepo.create({
+            invoiceNumber: `INV-${Date.now()}-${order.id.slice(-6)}`,
+            orderId: order.id,
+            subtotal,
+            serviceFee,
+            platformPercent,
+            totalAmount,
+            currencyId: 'SAR',
+            paymentStatus: PaymentStatus.PENDING,
+            issuedAt: new Date(),
+          } as any);
+          await invoiceRepo.save(inv);
+        }
+
+        if (proposal.status !== ProposalStatus.ACCEPTED) {
+          proposal.status = ProposalStatus.ACCEPTED;
+          await proposalRepo.save(proposal);
+        }
+
+        // return fake checkout link for frontend
+        const checkoutPayload = {
+          orderId: order.id,
+          redirectUrl: `/payment?orderId=${order.id}`,
+          successUrl: opts.checkout.successUrl,
+          cancelUrl: opts.checkout.cancelUrl,
+        };
+
+        return { __checkout__: checkoutPayload };
+      }
+
+      throw new BadRequestException('Invalid status update');
     });
-
-    if (!proposal) {
-      throw new NotFoundException('Proposal not found');
-    }
-
-    if (userRole !== UserRole.ADMIN && proposal.job.buyerId !== userId) {
-      throw new ForbiddenException('Access denied');
-    }
-
-    proposal.status = status as ProposalStatus;
-    const savedProposal = await this.proposalRepository.save(proposal);
-
-    if (proposal.sellerId !== userId) {
-      const notification = this.notificationRepository.create({
-        userId: proposal.sellerId,
-        type: 'proposal_status_update',
-        title: 'Proposal Status Updated',
-        message: `Your proposal for job "${proposal.job.title}" has been ${status}`,
-        relatedEntityType: 'proposal',
-        relatedEntityId: proposalId,
-      } as any);
-
-      await this.notificationRepository.save(notification);
-    }
-
-    // If proposal is accepted, create an order
-    if (status === ProposalStatus.ACCEPTED) {
-      await this.createOrderFromProposal(proposal);
-    }
-
-    return savedProposal;
   }
 
   async getUserProposals(userId: string, status?: string, page: number = 1) {
     const limit = 20;
     const skip = (page - 1) * limit;
-		console.log("HERE");
+    console.log('HERE');
 
     const whereClause: any = { sellerId: userId };
     if (status) {

@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
-import { UserBalance, Transaction, PaymentMethod, User, Order, TransactionStatus, PaymentMethodType } from 'entities/global.entity';
+import { UserBalance, Transaction, PaymentMethod, User, Order, TransactionStatus, PaymentMethodType, PaymentStatus, Invoice, Setting, Wallet, Notification } from 'entities/global.entity';
 
 @Injectable()
 export class AccountingService {
@@ -16,7 +16,65 @@ export class AccountingService {
     private userRepository: Repository<User>,
     @InjectRepository(Order)
     private orderRepository: Repository<Order>,
+    @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
+    @InjectRepository(Setting) private settingRepo: Repository<Setting>,
+    @InjectRepository(Wallet) private walletRepo: Repository<Wallet>,
+    @InjectRepository(Notification) private notifRepo: Repository<Notification>,
   ) {}
+
+  // save the money in the platform wallet and notification to the admin
+  async holdEscrow(orderId: string) {
+    const inv = await this.invoiceRepo.findOne({ where: { orderId }, relations: ['order'] });
+    if (!inv || inv.paymentStatus !== PaymentStatus.PAID) {
+      throw new BadRequestException('Invoice not paid');
+    }
+
+     const settings = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
+    const platformUserId = settings?.[0]?.platformAccountUserId;
+    if (!platformUserId) throw new BadRequestException('Platform account is not configured');
+
+    const amount = Number(inv.totalAmount);
+
+    const platformBalance = await this.getUserBalance(platformUserId);
+    platformBalance.availableBalance = Number(platformBalance.availableBalance) + amount;
+    await this.userBalanceRepository.save(platformBalance);
+
+    // 2) معاملة سجلية للمنصّة
+    await this.transactionRepository.save(
+      this.transactionRepository.create({
+        userId: platformUserId,
+        type: 'escrow_deposit',
+        amount,
+        description: `Escrow deposit for order #${orderId}`,
+        status: TransactionStatus.COMPLETED,
+        orderId,
+        currencyId: 'SAR', // غيّرها لو عندك عملة مختلفة
+      }),
+    );
+
+    // 3) **محفظة Wallet** للمنصّة ← زوّد الرصيد
+    let platformWallet = await this.walletRepo.findOne({ where: { userId: platformUserId } });
+    if (!platformWallet) {
+      platformWallet = this.walletRepo.create({
+        userId: platformUserId,
+        balance: 0,
+        currency: 'SAR', // حط العملة المناسبة، إفتراضيًا كانت USD في الـ Entity
+      });
+    }
+    platformWallet.balance = Number(platformWallet.balance) + amount;
+    await this.walletRepo.save(platformWallet);
+
+    await this.notifRepo.save(
+      this.notifRepo.create({
+        userId: platformUserId,
+        type: 'escrow_deposit',
+        title: 'Funds received into the platform wallet',
+        message: `The platform has received ${amount} SAR for order "${inv.order?.title || orderId}".`,
+        relatedEntityType: 'order',
+        relatedEntityId: orderId,
+      }),
+    );
+  }
 
   async getUserBalance(userId: string) {
     let balance = await this.userBalanceRepository.findOne({ where: { userId } });
@@ -93,7 +151,6 @@ export class AccountingService {
       userId,
       type: 'withdrawal',
       amount: -amount, // Negative amount for withdrawal
-      currencyId: 'USD',
       description: `Withdrawal to ${paymentMethod.methodType}`,
       status: TransactionStatus.PENDING,
     });
@@ -122,7 +179,7 @@ export class AccountingService {
   }
 
   async addPaymentMethod(userId: string, paymentMethodData: any) {
-    const paymentMethod:any = this.paymentMethodRepository.create({
+    const paymentMethod: any = this.paymentMethodRepository.create({
       ...paymentMethodData,
       userId,
     });
@@ -221,7 +278,6 @@ export class AccountingService {
       userId: order.sellerId,
       type: 'earning',
       amount: order.totalAmount,
-      currencyId: 'USD',
       description: `Earnings from order #${orderId}`,
       status: TransactionStatus.COMPLETED,
       orderId,
@@ -259,7 +315,6 @@ export class AccountingService {
       userId: order.sellerId,
       type: 'refund',
       amount: -refundAmount,
-      currencyId: 'USD',
       description: `Refund for order #${orderId}`,
       status: TransactionStatus.COMPLETED,
       orderId,
@@ -269,7 +324,6 @@ export class AccountingService {
       userId: order.buyerId,
       type: 'refund',
       amount: refundAmount,
-      currencyId: 'USD',
       description: `Refund for order #${orderId}`,
       status: TransactionStatus.COMPLETED,
       orderId,
@@ -278,5 +332,88 @@ export class AccountingService {
     await this.transactionRepository.save([sellerRefundTransaction, buyerRefundTransaction]);
 
     return { success: true };
+  }
+
+  // Money leaves platform wallet to seller on completion (subtotal only); fee stays
+  async releaseEscrow(orderId: string) {
+    const inv = await this.invoiceRepo.findOne({ where: { orderId }, relations: ['order'] });
+    if (!inv) throw new NotFoundException('Invoice not found');
+
+    const settings = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
+    const platformUserId = settings?.[0]?.platformAccountUserId;
+    if (!platformUserId) throw new BadRequestException('Platform account is not configured');
+
+    const subtotal = Number(inv.subtotal);
+    const serviceFee = Number(inv.serviceFee);
+
+    const platformBalance = await this.getUserBalance(platformUserId);
+    if (platformBalance.availableBalance < subtotal) throw new BadRequestException('Escrow insufficient');
+
+    // debit platform escrow by subtotal
+    platformBalance.availableBalance -= subtotal;
+    await this.userBalanceRepository.save(platformBalance);
+
+    // credit seller
+    const order = inv.order;
+    const sellerBalance = await this.getUserBalance(order.sellerId);
+    sellerBalance.availableBalance += subtotal;
+    sellerBalance.earningsToDate += subtotal;
+    await this.userBalanceRepository.save(sellerBalance);
+
+    // transactions
+    await this.transactionRepository.save([
+      this.transactionRepository.create({
+        userId: platformUserId,
+        type: 'escrow_release',
+        amount: -subtotal,
+        description: `Escrow release to seller for order #${orderId}`,
+        status: TransactionStatus.COMPLETED,
+        orderId,
+      }),
+      this.transactionRepository.create({
+        userId: order.sellerId,
+        type: 'earning',
+        amount: subtotal,
+        description: `Payout for order #${orderId}`,
+        status: TransactionStatus.COMPLETED,
+        orderId,
+      }),
+    ]);
+  }
+
+  async processWithdrawalAdmin(id: string, action: 'approve' | 'reject') {
+    const tx = await this.transactionRepository.findOne({ where: { id, type: 'withdrawal' } });
+    if (!tx) throw new NotFoundException('Withdrawal not found');
+    if (tx.status !== 'PENDING') throw new BadRequestException('Only pending withdrawals can be processed');
+
+    if (action === 'approve') {
+      tx.status = 'COMPLETED';
+      // initiate actual payout here
+      return this.transactionRepository.save(tx);
+    } else {
+      tx.status = 'REJECTED';
+      // refund user balance since withdrawal is cancelled
+      const bal = await this.getUserBalance(tx.userId);
+      bal.availableBalance += Math.abs(tx.amount); // amount is negative in your model
+      await this.userBalanceRepository.save(bal);
+      return this.transactionRepository.save(tx);
+    }
+  }
+
+  async listWithdrawalsAdmin(page = 1, status?: string) {
+    const limit = 20;
+    const skip = (page - 1) * limit;
+    const where: any = { type: 'withdrawal' };
+    if (status) where.status = status; // PENDING | COMPLETED | REJECTED
+
+    const [transactions, total] = await this.transactionRepository.findAndCount({
+      where,
+      relations: ['order', 'user'], // if you have user relation; else store username on tx
+      order: { created_at: 'DESC' },
+      skip,
+      take: limit,
+    });
+
+    return { transactions, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 }

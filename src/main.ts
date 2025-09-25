@@ -18,7 +18,7 @@ async function bootstrap() {
   app.useStaticAssets(join(__dirname, '..', '..', '/uploads'), { prefix: '/uploads/' });
 
   app.enableCors({
-    origin: configService.get('ALLOWED_ORIGINS')?.split(',') || '*', // Allow specific origins or all
+    origin: configService.get('ALLOWED_ORIGINS')?.split(',') || '*', 
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
     allowedHeaders: 'Content-Type,Authorization,x-lang',

@@ -8,8 +8,7 @@ import { CRUD } from 'common/crud.service';
 export class NotificationController {
   constructor(private notificationService: NotificationService) {}
 
-  // return this.notificationService.getUserNotifications(req.user.id, page);
-  @Get()
+ @Get()
   async getNotifications(@Query() query: any, @Req() req: any) {
     return CRUD.findAll(
       this.notificationService.notificationRepository,
@@ -21,8 +20,19 @@ export class NotificationController {
       query.sortOrder,
       [], // relation
       [], // search
-      { userId: req.user.id }, // filter
+      { userId: req.user.id }, 
     );
+  }
+
+	@Get('admin')
+  async getAdminFeed(@Query() query: any, @Req() req: any) {
+    return this.notificationService.getAdminNotifications(req.user.id, query);
+  }
+
+  // --- NEW: Admin unread count ---
+  @Get('admin/unread-count')
+  async getAdminUnreadCount(@Req() req: any) {
+    return this.notificationService.getAdminUnreadCount(req.user.id);
   }
 
   @Get('unread-count')

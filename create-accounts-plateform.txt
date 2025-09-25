@@ -12,11 +12,4 @@
 
 - this to check the account ( https://console.cloud.google.com/auth/clients?project=white-site-469719-k0 )
 
-
-
-
-
-
-
-
-
+ 

@@ -12,7 +12,7 @@ export class SettingsService {
 
   async getSettings() {
     let settings = await this.settingsRepository.findOne({ where: {} });
-    
+
     if (!settings) {
       // Create default settings if none exist
       settings = this.settingsRepository.create({
@@ -24,7 +24,6 @@ export class SettingsService {
         supportPhone: '+1234567890',
         platformPercent: 10,
         defaultCurrency: 1,
-        affiliatesEnabled: true
       });
       await this.settingsRepository.save(settings);
     }
@@ -34,21 +33,11 @@ export class SettingsService {
 
   async updateSettings(updateData: Partial<Setting>) {
     let settings = await this.settingsRepository.findOne({ where: {} });
-    
+
     if (!settings) {
       settings = this.settingsRepository.create(updateData);
     } else {
       Object.assign(settings, updateData);
-    }
-
-    return this.settingsRepository.save(settings);
-  }
-
-  async updateAffiliateSettings(affiliateData: any) {
-    const settings = await this.getSettings();
-    
-    if (affiliateData.affiliatesEnabled !== undefined) {
-      settings.affiliatesEnabled = affiliateData.affiliatesEnabled;
     }
 
     return this.settingsRepository.save(settings);

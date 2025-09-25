@@ -1,5 +1,5 @@
 // --- File: auth/auth.controller.ts ---
-import { Controller, Post, Get, Body, Res, Req, UseGuards, Query, UnauthorizedException, BadRequestException, Put, Delete, Param } from '@nestjs/common';
+import { Controller, Post, Get, Body, Res, Req, UseGuards, Query, UnauthorizedException, BadRequestException, Put, Delete, Param, UseInterceptors, UploadedFile, NotFoundException, UploadedFiles } from '@nestjs/common';
 import { Request, Response } from 'express';
 import axios from 'axios';
 
@@ -9,15 +9,24 @@ import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPassword
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { RolesGuard } from './guard/roles.guard';
 import { Roles } from 'decorators/roles.decorator';
-import { UserRole } from 'entities/global.entity';
+import { User, UserRole } from 'entities/global.entity';
 import { GoogleOauthGuard } from './guard/googleGuard.guard';
 import { CRUD } from 'common/crud.service';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { fileUploadOptions, imageUploadOptions, videoUploadOptions } from './upload.config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+
+import { promises as fsp } from 'fs';
+import { join, normalize as pathNormalize } from 'path';
 
 @Controller('auth')
 export class AuthController {
   constructor(
     private authService: AuthService,
     private oauthService: OAuthService,
+    @InjectRepository(User)
+    private readonly users: Repository<User>,
   ) {}
 
   @UseGuards(JwtAuthGuard)
@@ -53,6 +62,11 @@ export class AuthController {
     return this.authService.getCurrentUser(req.user.id);
   }
 
+  @Get('user/:id')
+  async getUser(@Param('id') id: string) {
+    return this.authService.getUserInfo(id);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Post('account-deactivation')
   async deactivateAccount(@Req() req: any, @Body() body: { reason: string }) {
@@ -77,6 +91,200 @@ export class AuthController {
   @Get('profile')
   async getOwnProfile(@Req() req: any) {
     return this.authService.getUserProfile(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('images')
+  @UseInterceptors(FilesInterceptor('files', 6, imageUploadOptions))
+  async uploadImages(@UploadedFiles() files: any[], @Req() req: Request & { user: { id: string } }) {
+    if (!files?.length) {
+      throw new BadRequestException('No image files uploaded (field name: files)');
+    }
+
+    // convert to URLs
+    const urls = files.map(f => `uploads/images/${f.filename}`);
+
+    // update user portfolio
+    const user = await this.users.findOne({ where: { id: req.user.id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const current = Array.isArray(user.portfolioItems) ? user.portfolioItems : [];
+    // append new, cap at 6
+    const next = [...current, ...urls].slice(-6);
+    user.portfolioItems = next;
+    await this.users.save(user);
+
+    return {
+      message: 'Images uploaded',
+      urls,
+      total: user.portfolioItems.length,
+    };
+  }
+
+  private toRelPathFromUrl(raw: string, req: Request): string {
+    if (!raw) return '';
+    let u = raw.trim();
+    if (/^https?:\/\//i.test(u)) {
+      try {
+        u = new URL(u).pathname;
+      } catch {}
+    }
+    const base = process.env.BACKEND_URL?.replace(/\/+$/, '');
+    if (base && u.startsWith(base)) u = u.slice(base.length);
+    u = u.replace(/^\/+/, ''); // remove leading slash
+    const safe = pathNormalize(u).replace(/\\/g, '/');
+    if (!safe.startsWith('uploads/images/')) {
+      throw new BadRequestException('Invalid image path');
+    }
+    return safe;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('image')
+  async deleteImage(@Req() req: Request & { user: { id: string } }, @Body() body: { url: string }) {
+    const rawUrl = body?.url;
+    if (!rawUrl) throw new BadRequestException('url is required');
+
+    const rel = this.toRelPathFromUrl(rawUrl, req);
+
+    const user = await this.users.findOne({ where: { id: req.user.id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const before = Array.isArray(user.portfolioItems) ? user.portfolioItems : [];
+
+    // Normalize both sides for comparison (handles abs vs rel stored values)
+    const norm = (s: string) => this.toRelPathFromUrl(s, req);
+    const after = before.filter(u => norm(u) !== rel);
+
+    if (after.length === before.length) {
+      throw new NotFoundException('Image not found in your portfolio');
+    }
+
+    user.portfolioItems = after;
+    await this.users.save(user);
+
+    // Delete file from disk (ignore if already gone)
+    const abs = join(process.cwd(), rel);
+    try {
+      await fsp.unlink(abs);
+    } catch (e: any) {
+      if (e?.code !== 'ENOENT') console.warn('unlink failed:', e);
+    }
+
+    return { message: 'Image removed', removed: rawUrl, remaining: user.portfolioItems };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('video')
+  @UseInterceptors(FileInterceptor('file', videoUploadOptions))
+  async uploadVideo(@UploadedFile() file: any, @Req() req: any) {
+    if (!file) throw new BadRequestException('No video file uploaded (field name: file)');
+
+    const rel = `uploads/videos/${file.filename}`;
+    const user = await this.users.findOne({ where: { id: req.user.id } });
+    if (!user) throw new NotFoundException('User not found');
+    user.introVideoUrl = rel; // <-- ensure this column exists on User
+    await this.users.save(user);
+    return {
+      message: 'Video uploaded',
+      url: rel,
+      filename: file.filename,
+      size: file.size,
+      mimetype: file.mimetype,
+      path: rel,
+    };
+  }
+
+  private toRelPathFromUrl2(raw: string, allowedPrefix: string) {
+    if (!raw) return '';
+    let u = raw.trim();
+
+    // If absolute URL, extract path
+    if (/^https?:\/\//i.test(u)) {
+      try {
+        u = new URL(u).pathname;
+      } catch {}
+    }
+    // If someone passed full BACKEND_URL + path
+    const base = process.env.BACKEND_URL?.replace(/\/+$/, '');
+    if (base && u.startsWith(base)) u = u.slice(base.length);
+
+    // Normalize & clean
+    u = u.replace(/^\/+/, '');
+    const safe = pathNormalize(u).replace(/\\/g, '/');
+
+    if (!safe.startsWith(allowedPrefix)) {
+      throw new BadRequestException('Invalid path');
+    }
+    return safe;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('portfolio-file')
+  @UseInterceptors(FileInterceptor('file', fileUploadOptions))
+  async uploadPortfolioFile(@UploadedFile() file: any, @Req() req: any) {
+    if (!file) throw new BadRequestException('No document uploaded (field: file)');
+
+    const rel = `uploads/files/${file.originalname}`;
+
+    const user = await this.users.findOne({ where: { id: req.user.id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    // Delete old file if exists
+    if (user.portfolioFile) {
+      try {
+        const oldRel = this.toRelPathFromUrl2(user.portfolioFile, 'uploads/files/');
+        await fsp.unlink(join(process.cwd(), oldRel));
+      } catch (e: any) {
+        if (e?.code !== 'ENOENT') console.warn('unlink old portfolioFile failed:', e);
+      }
+    }
+
+    user.portfolioFile = rel; // store absolute URL (or store rel if you prefer)
+    await this.users.save(user);
+
+    return {
+      message: 'Portfolio file uploaded',
+      url: rel,
+      filename: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype,
+      path: rel,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('portfolio-file')
+  async deletePortfolioFile(@Req() req: Request & { user: { id: string } }, @Body() body: { url?: string }) {
+    const user = await this.users.findOne({ where: { id: req.user.id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (!user.portfolioFile) {
+      throw new NotFoundException('No portfolio file to delete');
+    }
+
+    // If a URL is provided, make sure it matches the stored one
+    if (body?.url) {
+      const storedRel = this.toRelPathFromUrl2(user.portfolioFile, 'uploads/files/');
+      const givenRel = this.toRelPathFromUrl2(body.url, 'uploads/files/');
+      if (storedRel !== givenRel) {
+        throw new BadRequestException('Provided file does not match current portfolio file');
+      }
+    }
+
+    // Delete the file from disk
+    try {
+      const rel = this.toRelPathFromUrl2(user.portfolioFile, 'uploads/files/');
+      await fsp.unlink(join(process.cwd(), rel));
+    } catch (e: any) {
+      if (e?.code !== 'ENOENT') console.warn('unlink portfolioFile failed:', e);
+    }
+
+    // Clear DB
+    user.portfolioFile = null as any;
+    await this.users.save(user);
+
+    return { message: 'Portfolio file deleted' };
   }
 
   @Get('profile/:id')

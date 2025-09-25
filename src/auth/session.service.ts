@@ -32,10 +32,7 @@ export class SessionService {
       os: deviceInfo.os || 'Unknown',
       ip_address: deviceInfo.ip_address || 'unknown',
     };
-
-    // 👉 key change: include browser + os in the identity
-    // (IP is *not* included so the same device seen from different networks
-    // won't create duplicates; add ip if you want network-sensitive uniqueness)
+ 
     const idx = user.devices.findIndex((d: any) => norm(d.device_type) === incoming.device_type && (d.browser || 'Unknown') === incoming.browser && (d.os || 'Unknown') === incoming.os);
 
     const now = new Date();

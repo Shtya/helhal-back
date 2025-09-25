@@ -10,13 +10,11 @@ import { CRUD } from 'common/crud.service';
 export class ServicesController {
   constructor(private servicesService: ServicesService) {}
 
-
-
   @Get('/admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async getServicesAdmin(@Query('') query: any) {
-    return CRUD.findAll(this.servicesService.serviceRepository, 'service', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['seller', 'category'], ['title', 'status'], { status: query.status == 'all' ? '' : query.status });
+    return CRUD.findAll(this.servicesService.serviceRepository, 'service', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['seller', 'category'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
 
   @Get()
@@ -35,6 +33,12 @@ export class ServicesController {
     return this.servicesService.getTopServices(query);
   }
 
+  // services.controller.ts
+  @Get('all')
+  async getAllServices(@Query() query: any) {
+    return this.servicesService.getAllServices(query);
+  }
+
   @Get('category/:category')
   async getCategoryServices(@Param('category') category: string, @Query() query: any) {
     return this.servicesService.getCategoryServices(category, query);
@@ -43,6 +47,11 @@ export class ServicesController {
   @Get('category/:categorySlug/filter-options')
   async getFilterOptions(@Param('categorySlug') categorySlug: string, @Query() query: any) {
     return this.servicesService.getCategoryFilterOptions(categorySlug, query);
+  }
+
+  @Get('filter-options')
+  async getGlobalFilterOptions(@Query() query: any) {
+    return this.servicesService.getAllFilterOptions(query);
   }
 
   @Get(':slug')

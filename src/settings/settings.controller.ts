@@ -20,9 +20,5 @@ export class SettingsController {
   async updateSettings(@Body() updateSettingsDto: any) {
     return this.settingsService.updateSettings(updateSettingsDto);
   }
-
-  @Put('affiliate')
-  async updateAffiliateSettings(@Body() affiliateSettings: any) {
-    return this.settingsService.updateAffiliateSettings(affiliateSettings);
-  }
+ 
 }

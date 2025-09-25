@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Req, Query, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, Query, Param, Delete, Put } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { AccountingService } from './accounting.service';
 
@@ -20,6 +20,17 @@ export class AccountingController {
   @Post('withdraw')
   async withdrawFunds(@Req() req, @Body() body: { amount: number; paymentMethodId: string }) {
     return this.accountingService.withdrawFunds(req.user.id, body.amount, body.paymentMethodId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('withdrawals')
+  async listWithdrawalsAdmin(@Query('page') page = 1, @Query('status') status?: string) {
+    return this.accountingService.listWithdrawalsAdmin(Number(page), status);
+  }
+
+  @Put('withdrawals/:id')
+  async processWithdrawalAdmin(@Param('id') id: string, @Body() body: { action: 'approve' | 'reject' }) {
+    return this.accountingService.processWithdrawalAdmin(id, body.action);
   }
 
   @Get('payment-methods')

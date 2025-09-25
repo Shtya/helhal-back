@@ -1,14 +1,13 @@
 {
-  "name": "helhal",
+  "name": "project-name",
   "version": "0.0.1",
   "description": "",
   "author": "",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "vercel-build": "npm run build",
     "seed": "ts-node -r tsconfig-paths/register src/seeder.run.ts",
-    "build": "nest build ",
+    "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "nodemon": "nodemon --ext json,yaml --exec npm run start",
@@ -34,7 +33,7 @@
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/mapped-types": "*",
     "@nestjs/passport": "^10.0.3",
-    "@nestjs/platform-express": "^10.0.0",
+    "@nestjs/platform-express": "^10.4.20",
     "@nestjs/platform-socket.io": "^10.4.18",
     "@nestjs/typeorm": "^11.0.0",
     "@nestjs/websockets": "^10.4.18",
@@ -44,6 +43,7 @@
     "@types/passport-jwt": "^4.0.1",
     "argon2": "^0.41.1",
     "axios": "^1.11.0",
+    "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
@@ -64,7 +64,7 @@
     "typeorm": "^0.3.20",
     "uuid": "^11.0.5"
   },
-  "devDependencies": {
+  "devDependencies": { 
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",

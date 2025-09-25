@@ -6,7 +6,7 @@ import { Response } from 'express';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
-import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo } from 'entities/global.entity';
+import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel } from 'entities/global.entity';
 import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto } from 'dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from 'common/nodemailer';
@@ -331,6 +331,16 @@ export class AuthService {
     }
     return this.serializeUser(user);
   }
+  async getUserInfo(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['services'],
+    });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    return this.serializeUser(user);
+  }
 
   async refreshTokens(refreshToken: string) {
     let decoded: { id: string; sid: string };
@@ -458,7 +468,7 @@ export class AuthService {
 
   serializeUser(user: any) {
     return {
-      ...user, // includes devices[] and currentDeviceId if provided
+      ...user,  
       referredBy: user.referredBy ? { id: user.referredBy.id, username: user.referredBy.username } : null,
     };
   }
@@ -529,15 +539,15 @@ export class AuthService {
 
   async updateSellerLevel(userId: string) {
     const stats = await this.getProfileStats(userId);
-    let sellerLevel = '1';
+    let sellerLevel = SellerLevel.LVL1;
     if (stats.ordersCompleted >= 50 && stats.averageRating >= 4.8)
-      sellerLevel = '3'; // Top
-    else if (stats.ordersCompleted >= 20 && stats.averageRating >= 4.5) sellerLevel = '2';
+      sellerLevel = SellerLevel.TOP; // Top
+    else if (stats.ordersCompleted >= 20 && stats.averageRating >= 4.5) SellerLevel.LVL2;
 
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     user.sellerLevel = sellerLevel;
-    user.topRated = sellerLevel === '3';
+    user.topRated = sellerLevel === SellerLevel.TOP;
     return this.userRepository.save(user);
   }
 

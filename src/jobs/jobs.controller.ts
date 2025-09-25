@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query, UsePipes, ValidationPipe, forwardRef, Inject } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { RolesGuard } from '../auth/guard/roles.guard';
 import { Roles } from 'decorators/roles.decorator';
@@ -7,12 +7,17 @@ import { JobsService } from './jobs.service';
 import { CreateJobDto, UpdateJobDto } from 'dto/job.dto';
 import { CRUD } from 'common/crud.service';
 import { AuthGuard } from '@nestjs/passport';
+import { PaymentsService } from 'src/payments/payments.service';
 
 @Controller('jobs')
 @UseGuards(JwtAuthGuard)
 // @UsePipes(new ValidationPipe({ transform: true }))
 export class JobsController {
-  constructor(private jobsService: JobsService) {}
+  constructor(
+    private jobsService: JobsService,
+    @Inject(forwardRef(() => PaymentsService))
+    private paymentsService: PaymentsService,
+  ) {}
 
   @Get()
   async getJobs(@Query() query: any, @Req() req: any) {
@@ -49,6 +54,14 @@ export class JobsController {
   @UseGuards(JwtAuthGuard)
   async getMyProposals(@Req() req, @Query('status') status?: string, @Query('page') page: number = 1) {
     return this.jobsService.getUserProposals(req.user.id, status, page);
+  }
+
+  // jobs/jobs.controller.ts
+  @Put('proposals/:proposalId/status')
+  @UseGuards(JwtAuthGuard)
+  async updateProposalStatus(@Param('proposalId') proposalId: string, @Body() body: any, @Req() req: any) {
+    return this.jobsService.updateProposalStatusAtomic(req.user.id, req.user.role, proposalId, body.status, { checkout: body.checkout });
+ 
   }
 
   @Get(':id')
@@ -89,11 +102,11 @@ export class JobsController {
     return this.jobsService.getJobProposals(req.user.id, req.user.role, id, page);
   }
 
-  @Put('proposals/:proposalId/status')
-  @UseGuards(JwtAuthGuard)
-  async updateProposalStatus(@Req() req, @Param('proposalId') proposalId: string, @Body() body: { status: string }) {
-    return this.jobsService.updateProposalStatus(req.user.id, req.user.role, proposalId, body.status);
-  }
+  // @Put('proposals/:proposalId/status')
+  // @UseGuards(JwtAuthGuard)
+  // async updateProposalStatus(@Req() req, @Param('proposalId') proposalId: string, @Body() body: { status: string }) {
+  //   return this.jobsService.updateProposalStatus(req.user.id, req.user.role, proposalId, body.status);
+  // }
 
   @Get('stats/overview')
   @UseGuards(JwtAuthGuard)
