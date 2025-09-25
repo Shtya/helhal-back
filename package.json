@@ -8,8 +8,9 @@
   "scripts": {
     "seed": "ts-node -r tsconfig-paths/register src/seeder.run.ts",
     "build": "nest build",
+    "start": "node dist/src/main.js",
+		"postinstall": "npm run build" ,
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
-    "start": "nest start",
     "nodemon": "nodemon --ext json,yaml --exec npm run start",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
