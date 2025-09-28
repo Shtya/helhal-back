@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
-import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet } from 'entities/global.entity';
+import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet, Dispute, DisputeStatus } from 'entities/global.entity';
 import { AccountingService } from 'src/accounting/accounting.service';
 import { randomBytes } from 'crypto';
 
@@ -17,7 +17,7 @@ export class OrdersService {
     @InjectRepository(Invoice)
     public invoiceRepository: Repository<Invoice>,
     @InjectRepository(Payment)
-    public paymentRepository: Repository<Payment>, 
+    public paymentRepository: Repository<Payment>,
 
     private readonly dataSource: DataSource,
     private readonly accountingService: AccountingService,
@@ -25,6 +25,7 @@ export class OrdersService {
     @InjectRepository(Proposal) private proposalRepo: Repository<Proposal>,
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
     @InjectRepository(Setting) private settingRepo: Repository<Setting>,
+    @InjectRepository(Dispute) private disputeRepo: Repository<Dispute>,
   ) {}
 
   async markOrderPaid(orderId: string, userId: string) {
@@ -79,7 +80,6 @@ export class OrdersService {
 
       await notifRepo.save([buyerNotif, sellerNotif]);
 
-      // Return what we need for post-commit side-effects
       return {
         orderId: order.id,
         status: order.status,
@@ -322,10 +322,39 @@ export class OrdersService {
       throw new BadRequestException('Order must be accepted before delivery');
     }
 
+    // Block if dispute exists
+    const hasDispute = await this.disputeRepo.exist({
+      where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
+    });
+    if (hasDispute) throw new BadRequestException('Order is in dispute');
+
+    // timeline
+    order.timeline = [
+      ...(order.timeline || []),
+      {
+        type: 'delivered',
+        at: new Date().toISOString(),
+        by: 'seller',
+      },
+    ];
+
     order.status = OrderStatus.DELIVERED;
     order.deliveredAt = new Date();
+    const saved = await this.orderRepository.save(order);
 
-    return this.orderRepository.save(order);
+    // 🔔 notify buyer
+    await this.notifRepo.save(
+      this.notifRepo.create({
+        userId: order.buyerId,
+        type: 'order_delivered',
+        title: 'Order delivered',
+        message: `The seller delivered "${order.title}". Please review and confirm receipt.`,
+        relatedEntityType: 'order',
+        relatedEntityId: order.id,
+      }) as any,
+    );
+
+    return saved;
   }
 
   async cancelOrder(userId: string, userRole: string, orderId: string, reason?: string) {
@@ -431,16 +460,46 @@ export class OrdersService {
     });
   }
 
-  // when buyer completes, release escrow to seller
   async completeOrder(userId: string, orderId: string) {
     const order = await this.getOrder(userId, UserRole.BUYER, orderId);
-    if (order.status !== OrderStatus.DELIVERED) throw new BadRequestException('Order must be delivered before completion');
+    if (order.status !== OrderStatus.DELIVERED) {
+      throw new BadRequestException('Order must be delivered before completion');
+    }
+
+    // Block if dispute exists
+    const hasDispute = await this.disputeRepo.exist({
+      where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
+    });
+    if (hasDispute) throw new BadRequestException('Order is in dispute; completion is blocked');
+
+    // timeline
+    order.timeline = [
+      ...(order.timeline || []),
+      {
+        type: 'completed',
+        at: new Date().toISOString(),
+        by: 'buyer',
+      },
+    ];
 
     order.status = OrderStatus.COMPLETED;
     order.completedAt = new Date();
     const saved = await this.orderRepository.save(order);
 
-    await this.accountingService.releaseEscrow(orderId); // <- new
+    await this.accountingService.releaseEscrow(orderId); // subtotal → seller
+
+    // 🔔 notify seller
+    await this.notifRepo.save(
+      this.notifRepo.create({
+        userId: order.sellerId,
+        type: 'order_completed',
+        title: 'Order completed',
+        message: `The buyer confirmed completion for "${order.title}". Payout is now available.`,
+        relatedEntityType: 'order',
+        relatedEntityId: order.id,
+      }) as any,
+    );
+
     return saved;
   }
 }

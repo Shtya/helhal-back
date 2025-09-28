@@ -150,10 +150,10 @@ export class User extends CoreEntity {
   certifications: Certification[];
 
   @Column({ name: 'intro_video_url', nullable: true })
-  introVideoUrl: string; 
+  introVideoUrl: string;
 
   @Column({ name: 'portfolio_file', nullable: true })
-  portfolioFile: string; 
+  portfolioFile: string;
 
   @Column({ type: 'jsonb', default: [] })
   portfolioItems: any[];
@@ -472,7 +472,6 @@ export class Setting extends CoreEntity {
 
   @Column({ name: 'buyer_stories', type: 'int', array: true, default: [] })
   buyerStories: number[];
- 
 }
 
 @Entity('wallets')
@@ -527,7 +526,6 @@ export class ServiceBoost extends CoreEntity {
   @Column({ type: 'enum', enum: ['active', 'expired'], default: 'active' })
   status: 'active' | 'expired';
 }
-
 
 @Entity('notification_settings')
 export class NotificationSetting extends CoreEntity {
@@ -706,7 +704,7 @@ export class Service extends CoreEntity {
   packages: Package[];
 
   @Column({ type: 'jsonb', default: [] })
-	// {type<image | video | document> , fileName ,url}
+  // {type<image | video | document> , fileName ,url}
   gallery: any[];
 
   @OneToMany(() => ServiceRequirement, requirement => requirement.service)
@@ -910,6 +908,7 @@ export enum OrderStatus {
   COMPLETED = 'Completed',
   CANCELLED = 'Cancelled',
   MISSING_DETAILS = 'Missing Details',
+  DISPUTED = 'Disputed',
 }
 
 export enum PackageType {
@@ -1395,6 +1394,38 @@ export class Dispute extends CoreEntity {
 
   @Column({ type: 'text', nullable: true })
   resolution: string;
+
+  @Column({ type: 'boolean', default: false })
+  resolutionApplied: boolean;
+
+  @Column({ type: 'varchar', nullable: true })
+  sellerPayoutTxId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  buyerRefundTxId: string | null;
+}
+
+@Entity('dispute_messages')
+export class DisputeMessage extends CoreEntity {
+  @ManyToOne(() => Dispute)
+  @JoinColumn({ name: 'dispute_id' })
+  dispute: Dispute;
+
+  @Column({ name: 'dispute_id' })
+  disputeId: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'sender_id' })
+  sender: User;
+
+  @Column({ name: 'sender_id' })
+  senderId: string;
+
+  @Column({ type: 'text' })
+  message: string;
+
+  @Column({ type: 'jsonb', default: [] })
+  attachments: any[];
 }
 
 // -----------------------------------------------------
@@ -1526,6 +1557,73 @@ export class PaymentMethod extends CoreEntity {
 
   @Column({ name: 'is_default', default: false })
   isDefault: boolean;
+}
+
+// Add to global.entity.ts
+
+@Entity('user_billing_info')
+export class UserBillingInfo extends CoreEntity {
+  @Column({ name: 'user_id', unique: true })
+  userId: string;
+
+  @Column({ name: 'full_name' })
+  fullName: string;
+
+  @Column({ name: 'country' })
+  country: string;
+
+  @Column({ name: 'state' })
+  state: string;
+
+  @Column({ name: 'is_saudi_resident', nullable: true })
+  isSaudiResident: boolean;
+
+  @Column({ name: 'agree_to_invoice_emails', default: false })
+  agreeToInvoiceEmails: boolean;
+
+  @ManyToOne(() => User, user => user.balances)
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+}
+
+@Entity('user_bank_accounts')
+export class UserBankAccount extends CoreEntity {
+  @Column({ name: 'user_id' })
+  userId: string;
+
+  @Column({ name: 'full_name' })
+  fullName: string;
+
+  @Column({ name: 'iban' })
+  iban: string;
+
+  @Column({ name: 'client_id', nullable: true })
+  clientId: string;
+
+  @Column({ name: 'client_secret', nullable: true, select: false })
+  clientSecret: string;
+
+  @Column({ name: 'country' })
+  country: string;
+
+  @Column({ name: 'state' })
+  state: string;
+
+  @Column({ name: 'mobile_number' })
+  mobileNumber: string;
+
+  @Column({ name: 'is_default', default: false })
+  isDefault: boolean;
+
+  @Column({ name: 'bank_name', nullable: true })
+  bankName: string;
+
+  @Column({ name: 'account_number', nullable: true })
+  accountNumber: string;
+
+  @ManyToOne(() => User, user => user.paymentMethods)
+  @JoinColumn({ name: 'user_id' })
+  user: User;
 }
 
 // -----------------------------------------------------

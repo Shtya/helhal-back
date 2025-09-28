@@ -7,6 +7,59 @@ import { AccountingService } from './accounting.service';
 export class AccountingController {
   constructor(private accountingService: AccountingService) {}
 
+  @Get('billing-information')
+  async getBillingInformation(@Req() req) {
+    return this.accountingService.getBillingInformation(req.user.id);
+  }
+
+  @Put('billing-information')
+  async updateBillingInformation(@Req() req, @Body() billingInfo: any) {
+    return this.accountingService.updateBillingInformation(req.user.id, billingInfo);
+  }
+
+  // Bank Account Endpoints
+  @Get('bank-accounts')
+  async getBankAccounts(@Req() req) {
+    return this.accountingService.getBankAccounts(req.user.id);
+  }
+
+  @Post('bank-accounts')
+  async createBankAccount(@Req() req, @Body() bankAccountData: any) {
+    return this.accountingService.createBankAccount(req.user.id, bankAccountData);
+  }
+
+
+
+
+
+
+  @Put('bank-accounts/:id')
+  async updateBankAccount(@Req() req, @Param('id') id: string, @Body() bankAccountData: any) {
+    return this.accountingService.updateBankAccount(req.user.id, id, bankAccountData);
+  }
+
+  @Delete('bank-accounts/:id')
+  async deleteBankAccount(@Req() req, @Param('id') id: string) {
+    return this.accountingService.deleteBankAccount(req.user.id, id);
+  }
+
+  @Put('bank-accounts/:id/set-default')
+  async setDefaultBankAccount(@Req() req, @Param('id') id: string) {
+    return this.accountingService.setDefaultBankAccount(req.user.id, id);
+  }
+
+  // Add these to your existing AccountingController
+
+  @Get('billing-history')
+  async getBillingHistory(@Req() req, @Query('page') page: number = 1, @Query('search') search?: string, @Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+    return this.accountingService.getBillingHistory(req.user.id, page, search, startDate, endDate);
+  }
+
+  @Get('available-balances')
+  async getAvailableBalances(@Req() req) {
+    return this.accountingService.getAvailableBalances(req.user.id);
+  }
+
   @Get('balance')
   async getBalance(@Req() req) {
     return this.accountingService.getUserBalance(req.user.id);

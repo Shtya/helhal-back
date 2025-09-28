@@ -31,7 +31,7 @@ export class OrdersController {
       whereClause.sellerId = userId;
     }
 
-    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['service', 'invoices'], ['title', 'status'], { status: query.status == 'all' ? '' : query.status, ...whereClause });
+    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['service', 'buyer' , 'seller' ], ['title', 'status'], { status: query.status == 'all' ? '' : query.status, ...whereClause });
 
     // this.ordersService.getUserOrders(req.user.id, req.user.role, status, page);
   }
