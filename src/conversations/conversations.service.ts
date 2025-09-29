@@ -138,13 +138,30 @@ export class ConversationsService {
       throw new ForbiddenException('Access denied');
     }
 
-    const otherUserId = conversation.buyerId === userId ? conversation.sellerId : conversation.buyerId;
+    // FIX 1: Mark ALL unread messages in this conversation as read
+    // (not just from the other user)
+    const result = await this.messageRepository
+      .createQueryBuilder()
+      .update(Message)
+      .set({
+        readAt: new Date(),
+        // If your column name is different, use the correct one:
+        // read_at: new Date() // if that's the actual column name
+      })
+      .where('conversationId = :conversationId', { conversationId })
+      .andWhere('senderId != :userId', { userId }) // Messages NOT from current user
+      .andWhere('readAt IS NULL') // Only unread messages
+      .execute();
 
-    await this.messageRepository.createQueryBuilder().update(Message).set({ readAt: new Date() }).where('conversationId = :conversationId', { conversationId }).andWhere('senderId = :senderId', { senderId: otherUserId }).andWhere('readAt IS NULL').execute();
+    console.log(`Marked ${result.affected} messages as read for conversation ${conversationId}`);
 
-    return { message: 'Messages marked as read' };
+    return {
+      message: 'Messages marked as read',
+      affected: result.affected,
+    };
   }
 
+  // In conversations.service.ts - Add this method
   async getUnreadCount(userId: string) {
     const conversations = await this.conversationRepository.find({
       where: [{ buyerId: userId }, { sellerId: userId }],
