@@ -10,7 +10,6 @@ import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { RolesGuard } from './guard/roles.guard';
 import { Roles } from 'decorators/roles.decorator';
 import { User, UserRole } from 'entities/global.entity';
-import { GoogleOauthGuard } from './guard/googleGuard.guard';
 import { CRUD } from 'common/crud.service';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { fileUploadOptions, imageUploadOptions, videoUploadOptions } from './upload.config';
@@ -345,9 +344,9 @@ export class AuthController {
   }
 
   @Get('google')
-  googleAuth(@Query('redirect') redirect?: string, @Query('ref') ref?: string) {
+  googleAuth(@Query('redirect') redirect?: string, @Query('ref') ref?: string, @Query('type') type?: string) {
     const backendRedirectUri = `${process.env.BACKEND_URL}/api/v1/auth/google/callback`;
-    const state = this.oauthService.createOAuthState(redirect || 'http://localhost:3000', ref);
+    const state = this.oauthService.createOAuthState(redirect || 'http://localhost:3000', type);
     const url = `https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=${encodeURIComponent(backendRedirectUri)}&response_type=code&client_id=${process.env.GOOGLE_CLIENT_ID}&scope=email%20profile&state=${encodeURIComponent(state)}&access_type=offline`;
     return { redirectUrl: url.replace(/\s+/g, '') };
   }
@@ -368,6 +367,7 @@ export class AuthController {
       });
 
       const result: any = await this.oauthService.handleGoogleCallback(userInfoResponse.data, state, res);
+
       return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}`);
     } catch (e) {
       return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed`);
@@ -375,17 +375,21 @@ export class AuthController {
   }
 
   @Get('apple')
-  appleAuth(@Query('redirect') redirect?: string, @Query('ref') ref?: string) {
+  appleAuth(@Query('redirect') redirect?: string, @Query('ref') ref?: string, @Query('type') type?: string) {
     const redirectUrl = redirect || 'http://localhost:3000';
-    const url = `https://appleid.apple.com/auth/authorize?redirect_uri=${redirectUrl}&response_type=code&client_id=${process.env.APPLE_CLIENT_ID}&scope=email&state=${this.oauthService.createOAuthState(redirectUrl, ref)}`;
+    const url = `https://appleid.apple.com/auth/authorize?redirect_uri=${redirectUrl}&response_type=code&client_id=${process.env.APPLE_CLIENT_ID}&scope=email&state=${this.oauthService.createOAuthState(redirectUrl, ref, type)}`;
     return { redirectUrl: url };
   }
 
   @Post('apple/callback')
   async appleCallback(@Req() req: any, @Res() res: any) {
-    const { state } = req.body;
-    await this.oauthService.handleAppleCallback(req.user, state, res);
-    return res.redirect(`${process.env.FRONTEND_URL}`);
+    try {
+      const { state } = req.body;
+      const result: any = await this.oauthService.handleAppleCallback(req.user, state, res);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}`);
+    } catch (e) {
+      return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed`);
+    }
   }
 
   @Get('verify-oauth-token')

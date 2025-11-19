@@ -1,10 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { User } from 'entities/global.entity';
+import { User, UserRole } from 'entities/global.entity';
 import { AuthService } from './auth.service';
 
 @Injectable()
@@ -15,7 +15,7 @@ export class OAuthService {
     private authService: AuthService,
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) {}
+  ) { }
 
   async processReferral(newUser: User, referralCodeUsed?: string): Promise<void> {
     if (!referralCodeUsed) return;
@@ -30,11 +30,11 @@ export class OAuthService {
     }
   }
 
-  createOAuthState(redirectPath: string, referralCode?: string): string {
-    return JSON.stringify({ redirectPath, referralCode });
+  createOAuthState(redirectPath: string, referralCode?: string, type?: string): string {
+    return JSON.stringify({ redirectPath, referralCode, type });
   }
 
-  parseOAuthState(state: string): { redirectPath: string; referralCode?: string } {
+  parseOAuthState(state: string): { redirectPath: string; referralCode?: string, type?: string } {
     try {
       return JSON.parse(state);
     } catch (error) {
@@ -54,7 +54,7 @@ export class OAuthService {
         role: 'buyer',
       });
       await this.userRepository.save(user);
-    } 
+    }
     else if (!user.googleId) {
       user.googleId = profile.id;
       await this.userRepository.save(user);
@@ -69,11 +69,11 @@ export class OAuthService {
 
     let user = await this.userRepository.findOne({ where: { email } });
     if (!user) {
-      user = this.userRepository.create({ 
-        username: profile.name || email.split('@')[0], 
-        email, 
-        appleId: profile.id, 
-        role: 'buyer' 
+      user = this.userRepository.create({
+        username: profile.name || email.split('@')[0],
+        email,
+        appleId: profile.id,
+        role: 'buyer'
       });
       await this.userRepository.save(user);
     } else if (!user.appleId) {
@@ -87,15 +87,26 @@ export class OAuthService {
   async finalizeOAuthAuthentication(user: User, state?: string, res?: Response) {
     let redirectPath = '/';
     let referralCodeUsed: string | undefined;
+    let userType;
 
     if (state) {
       try {
         const parsedState = this.parseOAuthState(state);
         redirectPath = parsedState.redirectPath;
         referralCodeUsed = parsedState.referralCode;
+        userType = parsedState.type;
       } catch (error) {
         console.warn('Failed to parse OAuth state:', error);
       }
+    }
+
+    if (userType === UserRole.ADMIN) {
+      throw new ForbiddenException('You cannot assign yourself as admin');
+    }
+    // ✔ Set role only if valid
+    if (userType === UserRole.BUYER || userType === UserRole.SELLER) {
+      user.role = userType;
+      await this.userRepository.save(user);
     }
 
     if (referralCodeUsed && !user.referredBy) {
