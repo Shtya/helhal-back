@@ -100,6 +100,9 @@ export class User extends CoreEntity {
   resetPasswordToken: string;
 
   @Column({ nullable: true })
+  lastResetPasswordSentAt: Date;
+
+  @Column({ nullable: true })
   resetPasswordExpires: Date;
 
   // referrals

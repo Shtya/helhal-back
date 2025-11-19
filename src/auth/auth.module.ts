@@ -17,7 +17,9 @@ import {
   AccountDeactivation,
   Order,
   ServiceReview,
-	UserSession,
+  UserSession,
+  Notification,
+  Setting,
 } from 'entities/global.entity';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { RolesGuard } from './guard/roles.guard';
@@ -34,7 +36,9 @@ import { SessionService } from './session.service';
       AccountDeactivation,
       Order,
       ServiceReview,
-			UserSession
+      UserSession,
+      Notification,
+      Setting
     ]),
     forwardRef(() => ReferralModule),
     PassportModule,
@@ -61,4 +65,4 @@ import { SessionService } from './session.service';
   controllers: [AuthController],
   exports: [AuthService, JwtAuthGuard, RolesGuard],
 })
-export class AuthModule {}
+export class AuthModule { }

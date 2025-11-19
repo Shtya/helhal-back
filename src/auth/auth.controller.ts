@@ -27,7 +27,7 @@ export class AuthController {
     private oauthService: OAuthService,
     @InjectRepository(User)
     private readonly users: Repository<User>,
-  ) {}
+  ) { }
 
   @UseGuards(JwtAuthGuard)
   @Get('protected')
@@ -127,7 +127,7 @@ export class AuthController {
     if (/^https?:\/\//i.test(u)) {
       try {
         u = new URL(u).pathname;
-      } catch {}
+      } catch { }
     }
     const base = process.env.BACKEND_URL?.replace(/\/+$/, '');
     if (base && u.startsWith(base)) u = u.slice(base.length);
@@ -203,7 +203,7 @@ export class AuthController {
     if (/^https?:\/\//i.test(u)) {
       try {
         u = new URL(u).pathname;
-      } catch {}
+      } catch { }
     }
     // If someone passed full BACKEND_URL + path
     const base = process.env.BACKEND_URL?.replace(/\/+$/, '');
@@ -368,9 +368,9 @@ export class AuthController {
       });
 
       const result: any = await this.oauthService.handleGoogleCallback(userInfoResponse.data, state, res);
-      return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}`);
-    } catch {
-      return res.redirect(`${process.env.FRONTEND_URL}/login?error=oauth_failed`);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}`);
+    } catch (e) {
+      return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed`);
     }
   }
 

@@ -6,7 +6,7 @@ import { Response } from 'express';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
-import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel } from 'entities/global.entity';
+import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting } from 'entities/global.entity';
 import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto } from 'dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from 'common/nodemailer';
@@ -24,16 +24,18 @@ export class AuthService {
     @InjectRepository(Order) private orderRepository: Repository<Order>,
     @InjectRepository(ServiceReview) private reviewRepository: Repository<ServiceReview>,
     @InjectRepository(UserSession) private sessionsRepo: Repository<UserSession>,
+    @InjectRepository(Notification) private notifRepo: Repository<Notification>,
+    @InjectRepository(Setting) private settingsRepo: Repository<Setting>,
 
     public jwtService: JwtService,
     public configService: ConfigService,
     public emailService: MailService,
     public sessionService: SessionService,
-  ) {}
+  ) { }
 
   DOCUMENT_EXPIRY_HOURS = 24;
   CODE_EXPIRY_MINUTES = 15;
-  RESEND_COOLDOWN_SECONDS = 60;
+  RESEND_COOLDOWN_SECONDS = 30;
   PASSWORD_RESET_TOKEN_EXPIRY_MINUTES = 10;
   REFRESH_TOKEN_EXPIRY_DAYS = 7;
   MAX_REFRESH_TOKENS = 5;
@@ -108,10 +110,21 @@ export class AuthService {
   async register(registerDto: RegisterDto) {
     const { username, email, password, role, type, ref: referralCode } = registerDto;
 
-    const existingUser = await this.userRepository.findOne({ where: { email } });
+    const existingUser = await this.userRepository.findOne({
+      where: [
+        { email },
+        { username },
+      ],
+    });
+
     if (existingUser) {
-      throw new ConflictException('Email already exists');
+      if (existingUser.email === email) {
+        throw new ConflictException('Email already exists');
+      } else if (existingUser.username === username) {
+        throw new ConflictException('Username already exists');
+      }
     }
+
 
     const pendingUser = await this.pendingUserRepository.findOne({ where: { email } });
     const currentTimestamp = Date.now();
@@ -164,6 +177,8 @@ export class AuthService {
 
       await this.pendingUserRepository.save(newPendingUser);
     }
+
+
 
     await this.emailService.sendVerificationEmail(email, verificationCode, username);
 
@@ -222,13 +237,26 @@ export class AuthService {
     if (!referralCodeUsed) return;
 
     const referrerUser = await this.userRepository.findOne({ where: { referralCode: referralCodeUsed } });
-    if (referrerUser) {
-      newUser.referredBy = referrerUser;
-      newUser.referredById = referrerUser.id;
-      referrerUser.referralCount = (referrerUser.referralCount || 0) + 1;
-      referrerUser.referralRewardsCount = (referrerUser.referralRewardsCount || 0) + 1;
-      await this.userRepository.save([newUser, referrerUser]);
-    }
+    if (!referrerUser) return;
+
+    newUser.referredBy = referrerUser;
+    newUser.referredById = referrerUser.id;
+    referrerUser.referralCount = (referrerUser.referralCount || 0) + 1;
+    referrerUser.referralRewardsCount = (referrerUser.referralRewardsCount || 0) + 1;
+    await this.userRepository.save([newUser, referrerUser]);
+
+    // 🔔 Notify referral owner
+    await this.notifRepo.save(
+      this.notifRepo.create({
+        userId: referrerUser.id,
+        type: 'referral_signup',
+        title: 'New referral signup',
+        message: `User "${newUser.username}" signed up using your referral code!`,
+        relatedEntityType: 'user', // or 'referral'
+        relatedEntityId: referrerUser.id,
+        isRead: false,
+      }),
+    );
   }
 
   async resendVerificationEmail(email: string) {
@@ -248,8 +276,7 @@ export class AuthService {
 
     if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
       const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-      const remainingMinutes = Math.ceil(remainingSeconds / 60);
-      throw new ForbiddenException(`Please wait ${remainingMinutes} minutes before resending email`);
+      throw new ForbiddenException(`Please wait ${remainingSeconds} minutes before resending email`);
     }
 
     const newVerificationCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -271,9 +298,9 @@ export class AuthService {
     const { email, password } = loginDto;
 
     const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').where('user.email = :email', { email }).andWhere('user.status != :deleted', { deleted: UserStatus.DELETED }).getOne();
-		if (!user || !(await user.comparePassword(password))) {
-			throw new UnauthorizedException('Incorrect email or password');
-		}
+    if (!user || !(await user.comparePassword(password))) {
+      throw new UnauthorizedException('Incorrect email or password');
+    }
 
     if (user.status === UserStatus.INACTIVE) {
       throw new UnauthorizedException('Your account is inactive. Please contact support or reactivate your account to continue.');
@@ -392,8 +419,21 @@ export class AuthService {
       return { message: 'OTP sent if account exists' };
     }
 
+    if (user.resetPasswordExpires) {
+      const currentTimestamp = Date.now();
+      const lastSentTime = user.lastResetPasswordSentAt.getTime();
+      const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
+
+      if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
+        const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+        throw new ForbiddenException(`Please wait ${remainingSeconds} minutes before resending email`);
+      }
+
+    }
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
+    user.lastResetPasswordSentAt = new Date();
     user.resetPasswordToken = otp;
     user.resetPasswordExpires = new Date(Date.now() + this.PASSWORD_RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
 
@@ -413,11 +453,19 @@ export class AuthService {
       throw new BadRequestException('Invalid email or OTP, or OTP has expired');
     }
 
+
     user.password = newPassword;
     user.resetPasswordToken = null;
     user.resetPasswordExpires = null;
 
     await this.userRepository.save(user);
+
+    // Get admin/contact email from settings
+    const settings = await this.settingsRepo.findOne({ where: {} });
+    const adminEmail = settings?.contactEmail || process.env.ADMIN_EMAIL;
+
+    // Send password change notification to the user
+    await this.emailService.sendPasswordChangeNotification(user.email, user.username, adminEmail);
 
     return { message: 'Password successfully reset' };
   }
@@ -468,7 +516,7 @@ export class AuthService {
 
   serializeUser(user: any) {
     return {
-      ...user,  
+      ...user,
       referredBy: user.referredBy ? { id: user.referredBy.id, username: user.referredBy.username } : null,
     };
   }
@@ -492,7 +540,7 @@ export class AuthService {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const allowedFields: (keyof User)[] = ['username', 'email', 'phone', 'profileImage', 'description', 'languages', 'skills', 'education', 'certifications', 'introVideoUrl', 'portfolioItems', 'portfolioFile', 'responseTime', 'deliveryTime', 'ageGroup', 'revisions', 'sellerLevel', 'preferences'];
+    const allowedFields: (keyof User)[] = ['username', 'email', 'phone', 'profileImage', 'description', 'languages', 'skills', 'education', 'certifications', 'introVideoUrl', 'portfolioItems', 'portfolioFile', 'responseTime', 'deliveryTime', 'ageGroup', 'revisions', 'sellerLevel', 'preferences', 'type'];
 
     if (typeof updateData.email !== 'undefined' && updateData.email !== user.email) {
       const exists = await this.userRepository.findOne({ where: { email: updateData.email } });

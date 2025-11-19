@@ -363,4 +363,98 @@ export class MailService {
       html,
     });
   }
+
+  async sendPasswordChangeNotification(userEmail: string, username: string, adminEmail: string) {
+    const subject = 'Password Changed Successfully';
+
+    const html = `
+  <html>
+      <head>
+          <style>
+              body {
+                  font-family: 'Arial', sans-serif;
+                  color: #333;
+                  background-color: #f5f5f5;
+                  margin: 0;
+                  padding: 0;
+                  -webkit-font-smoothing: antialiased;
+                  -moz-osx-font-smoothing: grayscale;
+              }
+              .container {
+                  width: 100%;
+                  padding: 40px 20px;
+                  text-align: center;
+              }
+              .email-content {
+                  background-color: #ffffff;
+                  padding: 30px;
+                  border-radius: 8px;
+                  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+                  max-width: 600px;
+                  margin: auto;
+              }
+              .email-header {
+                  font-size: 28px;
+                  color: #4CAF50;
+                  margin-bottom: 20px;
+                  font-weight: bold;
+              }
+              .email-body {
+                  font-size: 16px;
+                  line-height: 1.5;
+                  color: #555;
+                  margin-bottom: 20px;
+              }
+              .footer {
+                  font-size: 12px;
+                  color: #777;
+                  margin-top: 30px;
+                  text-align: center;
+              }
+              .footer a {
+                  color: #4CAF50;
+                  text-decoration: none;
+              }
+              @media (max-width: 600px) {
+                  .email-content {
+                      padding: 20px;
+                  }
+                  .email-header {
+                      font-size: 24px;
+                  }
+                  .email-body {
+                      font-size: 14px;
+                  }
+              }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <div class="email-content">
+                  <div class="email-header">
+                      Hello ${username},
+                  </div>
+                  <div class="email-body">
+                      <p>Your account password has been successfully changed.</p>
+                      <p>If you did not perform this change, please contact our support team immediately.</p>
+                  </div>
+                  <div class="footer">
+                      <p>Contact Admin: <a href="mailto:${adminEmail}">${adminEmail}</a></p>
+                  </div>
+              </div>
+          </div>
+      </body>
+  </html>
+  `;
+
+    await this.transporter.sendMail({
+      from: process.env.EMAIL_FROM,
+      to: userEmail,
+      subject,
+      html,
+    });
+  }
+
 }
+
+
