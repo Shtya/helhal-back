@@ -48,6 +48,36 @@ export interface DeviceInfo {
   last_activity: Date;
 }
 
+export class PortfolioFile {
+  url: string;
+  filename: string;
+}
+
+
+@Entity('countries')
+export class Country extends CoreEntity {
+  @Column({ unique: true })
+  name: string;
+
+  @Column({ name: 'iso_alpha2' })
+  isoAlpha2: string;
+
+  @Column({ name: 'iso_alpha3' })
+  isoAlpha3: string;
+
+  @Column({ name: 'iso_numeric' })
+  isoNumeric: number;
+
+  @Column({ name: 'currency_code' })
+  currencyCode: string;
+
+  @Column({ name: 'currency_name' })
+  currencyName: string;
+
+  @Column({ name: 'currency_symbol', nullable: true })
+  currencySymbol: string;
+}
+
 @Entity('users')
 export class User extends CoreEntity {
   // ---- core account ----
@@ -128,8 +158,13 @@ export class User extends CoreEntity {
   @Column({ type: 'jsonb', default: [] })
   languages: string[];
 
-  @Column({ nullable: true })
-  country: string;
+  @ManyToOne(() => Country, { nullable: true })
+  @JoinColumn({ name: 'country_id' })
+  country: Country;
+
+  @Column({ name: 'country_id', nullable: true })
+  countryId: string;
+
 
   @Column({ type: 'jsonb', default: [] })
   skills: string[]; // unified to string[]
@@ -155,8 +190,8 @@ export class User extends CoreEntity {
   @Column({ name: 'intro_video_url', nullable: true })
   introVideoUrl: string;
 
-  @Column({ name: 'portfolio_file', nullable: true })
-  portfolioFile: string;
+  @Column({ type: 'json', nullable: true })
+  portfolioFile: PortfolioFile;
 
   @Column({ type: 'jsonb', default: [] })
   portfolioItems: any[];
@@ -310,6 +345,7 @@ export class User extends CoreEntity {
     }
   }
 }
+
 
 @Entity('account_deactivations')
 export class AccountDeactivation extends CoreEntity {

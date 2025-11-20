@@ -192,7 +192,7 @@ export class ServicesService {
             FROM level_counts
           ),
           lang_counts AS (
-            SELECT lang.value::text AS language, COUNT(*) AS count_lang
+            SELECT lang.value #>> '{}' AS language, COUNT(*) AS count_lang
             FROM services s
             INNER JOIN users u ON u.id = s.seller_id AND u.deleted_at IS NULL
             LEFT JOIN LATERAL jsonb_array_elements(u.languages) AS lang(value) ON TRUE
@@ -217,13 +217,14 @@ export class ServicesService {
               ${categoryId ? 'AND s.category_id = :categoryId' : ''}
           ),
           country_counts AS (
-            SELECT u.country AS key, COUNT(*) AS count
+             SELECT c.name AS key, COUNT(*) AS count
             FROM services s
             INNER JOIN users u ON u.id = s.seller_id AND u.deleted_at IS NULL
+             INNER JOIN countries c ON c.id = u.country_id 
             WHERE s.status = 'Active'
               AND s.deleted_at IS NULL
               ${categoryId ? 'AND s.category_id = :categoryId' : ''}
-            GROUP BY u.country
+            GROUP BY c.name
           ),
           seller_countries AS (
             SELECT jsonb_object_agg(key, count) AS countries
@@ -292,7 +293,6 @@ export class ServicesService {
     };
   }
 
-
   private async calculateRatingCounts(serviceIds: string[]) {
     const ratingCounts = {
       'rating-4': 0,
@@ -353,7 +353,12 @@ export class ServicesService {
         'seller.sellerLevel',
         'seller.lastActivity',
         'seller.languages',
-        'seller.country',
+        'seller.country_id',
+      ])
+      .leftJoin('seller.country', 'country')
+      .addSelect([
+        'country.id',
+        'country.name'
       ])
       .leftJoin('service.category', 'category')
       .addSelect([
@@ -490,10 +495,12 @@ export class ServicesService {
       queryBuilder.andWhere('seller.languages::jsonb ?| array[:...languages]', { languages });
     }
 
-    // Seller countries filter
+    // Seller countries filter (case-insensitive)
     if (sellerCountries) {
       const countries = Array.isArray(sellerCountries) ? sellerCountries : sellerCountries.split(',');
-      queryBuilder.andWhere('seller.country IN (:...countries)', { countries });
+      queryBuilder.andWhere('LOWER(country.name) IN (:...countries)', {
+        countries: countries.map(c => c.toLowerCase()),
+      });
     }
 
     // Get total count before applying pagination

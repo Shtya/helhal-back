@@ -32,6 +32,7 @@ import { ReportsModule } from './reports/reports.module';
 import { JobsModule } from './jobs/jobs.module';
 import { BlogsModule } from './blogs/blogs.module';
 import { BlogCategoriesModule } from './blog-categories/blog-categories.module';
+import { CountriesModule } from './counties/countries.module';
 
 @Module({
   imports: [
@@ -90,9 +91,10 @@ import { BlogCategoriesModule } from './blog-categories/blog-categories.module';
     ReportsModule,
     BlogsModule,
     BlogCategoriesModule,
+    CountriesModule
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],
   exports: [LoggingValidationPipe],
 })
-export class AppModule {}
+export class AppModule { }

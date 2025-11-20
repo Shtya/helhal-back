@@ -12,7 +12,7 @@ import { Roles } from 'decorators/roles.decorator';
 import { User, UserRole } from 'entities/global.entity';
 import { CRUD } from 'common/crud.service';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { fileUploadOptions, imageUploadOptions, videoUploadOptions } from './upload.config';
+import { CalculateRemainingImagesInterceptor, fileUploadOptions, imageUploadOptions, videoUploadOptions } from './upload.config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
@@ -94,10 +94,10 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('images')
-  @UseInterceptors(FilesInterceptor('files', 6, imageUploadOptions))
+  @UseInterceptors(CalculateRemainingImagesInterceptor, FilesInterceptor('files', 6, imageUploadOptions))
   async uploadImages(@UploadedFiles() files: any[], @Req() req: Request & { user: { id: string } }) {
     if (!files?.length) {
-      throw new BadRequestException('No image files uploaded (field name: files)');
+      throw new BadRequestException('No image files uploaded');
     }
 
     // convert to URLs
@@ -177,11 +177,25 @@ export class AuthController {
   @Post('video')
   @UseInterceptors(FileInterceptor('file', videoUploadOptions))
   async uploadVideo(@UploadedFile() file: any, @Req() req: any) {
-    if (!file) throw new BadRequestException('No video file uploaded (field name: file)');
+    if (!file) throw new BadRequestException('No video file uploaded');
 
     const rel = `uploads/videos/${file.filename}`;
     const user = await this.users.findOne({ where: { id: req.user.id } });
     if (!user) throw new NotFoundException('User not found');
+
+    // Delete old video if it exists
+    if (user.introVideoUrl) {
+      const oldPath = join(process.cwd(), user.introVideoUrl);
+      try {
+        await fsp.unlink(oldPath);
+      } catch (err) {
+        // File may not exist, ignore
+        if ((err as any).code !== 'ENOENT') {
+          console.error('Failed to delete old video:', err);
+        }
+      }
+    }
+
     user.introVideoUrl = rel; // <-- ensure this column exists on User
     await this.users.save(user);
     return {
@@ -193,6 +207,40 @@ export class AuthController {
       path: rel,
     };
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('video')
+  async deleteVideo(
+    @Req() req: Request & { user: { id: string } }
+  ) {
+    const user = await this.users.findOne({ where: { id: req.user.id } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (!user.introVideoUrl) {
+      throw new NotFoundException('No video uploaded');
+    }
+
+    const absPath = join(process.cwd(), user.introVideoUrl);
+
+    // Remove the file from disk
+    try {
+      await fsp.unlink(absPath);
+    } catch (err: any) {
+      if (err?.code !== 'ENOENT') {
+        console.warn('Failed to delete video:', err);
+      }
+    }
+
+    // Clear the DB field
+    user.introVideoUrl = null;
+    await this.users.save(user);
+
+    return {
+      message: 'Video removed',
+      removed: user.introVideoUrl,
+    };
+  }
+
 
   private toRelPathFromUrl2(raw: string, allowedPrefix: string) {
     if (!raw) return '';
@@ -222,24 +270,27 @@ export class AuthController {
   @Post('portfolio-file')
   @UseInterceptors(FileInterceptor('file', fileUploadOptions))
   async uploadPortfolioFile(@UploadedFile() file: any, @Req() req: any) {
-    if (!file) throw new BadRequestException('No document uploaded (field: file)');
+    if (!file) throw new BadRequestException('No document uploaded');
 
-    const rel = `uploads/files/${file.originalname}`;
+    const rel = `uploads/files/${file.filename}`;
 
     const user = await this.users.findOne({ where: { id: req.user.id } });
     if (!user) throw new NotFoundException('User not found');
 
     // Delete old file if exists
-    if (user.portfolioFile) {
+    if (user?.portfolioFile) {
       try {
-        const oldRel = this.toRelPathFromUrl2(user.portfolioFile, 'uploads/files/');
+        const oldRel = this.toRelPathFromUrl2(user.portfolioFile.url, 'uploads/files/');
         await fsp.unlink(join(process.cwd(), oldRel));
       } catch (e: any) {
         if (e?.code !== 'ENOENT') console.warn('unlink old portfolioFile failed:', e);
       }
     }
 
-    user.portfolioFile = rel; // store absolute URL (or store rel if you prefer)
+    user.portfolioFile = {
+      url: rel,
+      filename: file.originalname
+    }
     await this.users.save(user);
 
     return {
@@ -264,7 +315,7 @@ export class AuthController {
 
     // If a URL is provided, make sure it matches the stored one
     if (body?.url) {
-      const storedRel = this.toRelPathFromUrl2(user.portfolioFile, 'uploads/files/');
+      const storedRel = this.toRelPathFromUrl2(user?.portfolioFile.url, 'uploads/files/');
       const givenRel = this.toRelPathFromUrl2(body.url, 'uploads/files/');
       if (storedRel !== givenRel) {
         throw new BadRequestException('Provided file does not match current portfolio file');
@@ -273,7 +324,7 @@ export class AuthController {
 
     // Delete the file from disk
     try {
-      const rel = this.toRelPathFromUrl2(user.portfolioFile, 'uploads/files/');
+      const rel = this.toRelPathFromUrl2(user?.portfolioFile.url, 'uploads/files/');
       await fsp.unlink(join(process.cwd(), rel));
     } catch (e: any) {
       if (e?.code !== 'ENOENT') console.warn('unlink portfolioFile failed:', e);

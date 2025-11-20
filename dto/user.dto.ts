@@ -1,4 +1,5 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, MaxLength, Matches } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, MaxLength, Matches, ArrayMaxSize, ValidateNested, IsArray, IsNumber, IsBoolean } from 'class-validator';
 import { UserRole } from 'entities/global.entity';
 
 export class RegisterDto {

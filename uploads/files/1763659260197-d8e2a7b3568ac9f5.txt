@@ -1,0 +1,19 @@
+- ال checkout بيعتمد علي السعر الأساسي مش المتغير حسب ال variants و بالتالي بيفشل في ال chechout endpoint بالاضافه ل خصمه الخصم مرتين بعد الطلب مبيتم
+- المنتجات مبتسمحش بفلتره حسب التصنيفات و لا بتسمح بتحديد عدد االمنتجات للصفحه الواحده
+- لما تغير ال Parent Category في ال category مش بتتغير ديما بتكون نفس ال Category حتي في الإضافه نفس المشكله
+- ازاي اعرف ان coupons صح و ازاي يتبعت مع checkout و quick
+- ال footer logo مش بيرجع في أي endpoint خصوصا menu settings
+- ال minو max بتتصرف بطريقه غريبه أحيانا بقدر تغيرها و أحيانا بتختفي لوحديها و أحيانا بيرجعوا فاضيين رغم وجود قيمه 
+- ازاي أجيب محتوي ال thank you page
+- ال general settings مش بتتغير بتدي 
+""errors": {
+        "lanugage": [
+            "The lanugage field is required."
+        ],
+        "local": [
+            "The local field is required."
+        ]
+    }"
+- ال store logo مش بيرجعوا خالص 
+- مفروض بكون في تحكم في عدد النجود في ال reviews زي 3.6/5
+-

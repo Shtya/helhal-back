@@ -60,7 +60,7 @@ import { SessionService } from './session.service';
     AppleStrategy,
     JwtAuthGuard,
     RolesGuard,
-    MailService,
+    MailService
   ],
   controllers: [AuthController],
   exports: [AuthService, JwtAuthGuard, RolesGuard],

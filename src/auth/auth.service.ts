@@ -297,7 +297,7 @@ export class AuthService {
   async login(loginDto: LoginDto, res: Response, req) {
     const { email, password } = loginDto;
 
-    const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').where('user.email = :email', { email }).andWhere('user.status != :deleted', { deleted: UserStatus.DELETED }).getOne();
+    const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').leftJoinAndSelect('user.country', 'country').where('user.email = :email', { email }).andWhere('user.status != :deleted', { deleted: UserStatus.DELETED }).getOne();
     if (!user || !(await user.comparePassword(password))) {
       throw new UnauthorizedException('Incorrect email or password');
     }
@@ -351,7 +351,7 @@ export class AuthService {
   async getCurrentUser(userId: string) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['referredBy'],
+      relations: ['referredBy', 'country'],
     });
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -359,14 +359,33 @@ export class AuthService {
     return this.serializeUser(user);
   }
   async getUserInfo(userId: string) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['services'],
-    });
+    const qb = this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.country', 'country')
+      .where('user.id = :userId', { userId });
+
+    // Conditionally join and order by created_at, limit to 10
+    qb.leftJoinAndSelect(
+      'user.services',
+      'services',
+      "user.role != 'buyer'"
+    ).orderBy('services.created_at', 'DESC')
+      .limit(10);
+
+    qb.leftJoinAndSelect(
+      'user.jobs',
+      'jobs',
+      "user.role = 'buyer'"
+    ).orderBy('jobs.created_at', 'DESC')
+      .limit(10);
+
+    const user = await qb.getOne();
+
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
+
     return this.serializeUser(user);
+
   }
 
   async refreshTokens(refreshToken: string) {
@@ -531,6 +550,7 @@ export class AuthService {
     const user = await this.userRepository.findOne({
       where: { id: userId },
       select: ['id', 'username', 'email', 'phone', 'profileImage', 'role', 'status', 'description', 'languages', 'skills', 'education', 'certifications', 'introVideoUrl', 'portfolioItems', 'memberSince', 'lastLogin', 'portfolioFile', 'responseTime', 'deliveryTime', 'ageGroup', 'revisions', 'sellerLevel', 'lastActivity', 'preferences', 'balance', 'totalSpent', 'totalEarned', 'reputationPoints'],
+      relations: ['country']
     });
     if (!user) throw new NotFoundException('User not found');
     return user;
@@ -540,7 +560,7 @@ export class AuthService {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    const allowedFields: (keyof User)[] = ['username', 'email', 'phone', 'profileImage', 'description', 'languages', 'skills', 'education', 'certifications', 'introVideoUrl', 'portfolioItems', 'portfolioFile', 'responseTime', 'deliveryTime', 'ageGroup', 'revisions', 'sellerLevel', 'preferences', 'type'];
+    const allowedFields: (keyof User)[] = ['profileImage', 'username', 'phone', 'description', 'languages', 'skills', 'education', 'certifications', 'deliveryTime', 'ageGroup', 'revisions', 'preferences', 'type', 'countryId'];
 
     if (typeof updateData.email !== 'undefined' && updateData.email !== user.email) {
       const exists = await this.userRepository.findOne({ where: { email: updateData.email } });

@@ -19,6 +19,7 @@ async function bootstrap() {
   app.enableCors({
     // origin: configService.get('ALLOWED_ORIGINS')?.split(',') || '*',
     origin: [
+      'https://helhal-front.vercel.app',
       'https://main.d2ovvpcdqp4v8z.amplifyapp.com', // موقعك على Amplify
       'http://localhost:3000', // للتجارب
     ],
@@ -36,6 +37,6 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ disableErrorMessages: false, transform: true, forbidNonWhitelisted: true, whitelist: true }));
 
   Logger.log(`🚀 server is running on port ${port}`);
-  await app.listen(port || 8081, '0.0.0.0'); 
+  await app.listen(port || 8081, '0.0.0.0');
 }
 bootstrap();
