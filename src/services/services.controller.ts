@@ -8,7 +8,7 @@ import { CRUD } from 'common/crud.service';
 
 @Controller('services')
 export class ServicesController {
-  constructor(private servicesService: ServicesService) {}
+  constructor(private servicesService: ServicesService) { }
 
   @Get('/admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -36,7 +36,7 @@ export class ServicesController {
   // services.controller.ts
   @Get('all')
   async getAllServices(@Query() query: any) {
-    return this.servicesService.getAllServices(query);
+    return this.servicesService.getCategoryServices(null, query);
   }
 
   @Get('category/:category')
@@ -50,8 +50,8 @@ export class ServicesController {
   }
 
   @Get('filter-options')
-  async getGlobalFilterOptions(@Query() query: any) {
-    return this.servicesService.getAllFilterOptions(query);
+  async getGlobalFilterOptions() {
+    return this.servicesService.getAllFilterOptions();
   }
 
   @Get(':slug')
