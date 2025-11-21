@@ -13,17 +13,17 @@ export interface CustomPaginatedResponse<T> {
 }
 
 export class CRUD {
-  static async findAll<T>(repository: Repository<T>, 
-		entityName: string, 
-		search?: string, 
-		page: any = 1, 
-		limit: any = 10, 
-		sortBy?: string, 
-		sortOrder: 'ASC' | 'DESC' = 'DESC', 
-		relations?: string[], 
-		searchFields?: string[], 
-		filters?: Record<string, 
-		any>): Promise<CustomPaginatedResponse<T>> {
+  static async findAll<T>(repository: Repository<T>,
+    entityName: string,
+    search?: string,
+    page: any = 1,
+    limit: any = 10,
+    sortBy?: string,
+    sortOrder: 'ASC' | 'DESC' = 'DESC',
+    relations?: string[],
+    searchFields?: string[],
+    filters?: Record<string,
+      any>): Promise<CustomPaginatedResponse<T>> {
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
 
@@ -198,8 +198,8 @@ export class CRUD {
       options.columns ??
       (data.length > 0
         ? Object.keys(data[0])
-            .filter(key => key !== 'updated_at' && key !== 'deleted_at')
-            .map(key => ({ header: key, key, width: 20 }))
+          .filter(key => key !== 'updated_at' && key !== 'deleted_at')
+          .map(key => ({ header: key, key, width: 20 }))
         : []);
 
     worksheet.columns = columns;

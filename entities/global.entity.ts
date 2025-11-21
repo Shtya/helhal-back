@@ -672,6 +672,7 @@ export interface Package {
 }
 
 @Entity('services')
+@Index(['popular', 'status', 'ordersCount'])//this index used to get popular services
 export class Service extends CoreEntity {
   @ManyToOne(() => User, user => user.services)
   @JoinColumn({ name: 'seller_id' })
@@ -732,6 +733,12 @@ export class Service extends CoreEntity {
 
   @Column({ default: false })
   additionalRevision: boolean;
+
+  @Column({ name: 'popular', default: false })
+  popular: boolean;
+
+  @Column({ name: 'icon_url', nullable: true })
+  iconUrl: string;
 
   @Column({ type: 'float', default: 0, nullable: true })
   rating: number;

@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In, Between, LessThanOrEqual, MoreThanOrEqual, DataSource } from 'typeorm';
 import { Service, Category, User, ServiceStatus, ServiceRequirement, ServiceReview, Notification } from 'entities/global.entity';
+import { join } from 'path';
+import { promises as fsp } from 'fs';
 
 @Injectable()
 export class ServicesService {
@@ -696,4 +698,69 @@ export class ServicesService {
     return { message: 'Click tracked' };
   }
 
+  async markAsPopular(serviceId: string, iconUrl: string) {
+    const service = await this.serviceRepository.findOne({ where: { id: serviceId } });
+    if (!service) throw new NotFoundException('Service not found');
+
+    if (service.status != ServiceStatus.ACTIVE) {
+      throw new BadRequestException('Only active services can be marked as popular');
+    }
+    // limit max 10 popular items
+    const count = await this.serviceRepository.count({ where: { popular: true } });
+    if (count >= 10) {
+      throw new BadRequestException('Maximum 10 popular services allowed.');
+    }
+
+    service.popular = true;
+    service.iconUrl = iconUrl;
+
+    return this.serviceRepository.save(service);
+  }
+
+  async updatePopularIcon(id: string, iconUrl: string) {
+    const service = await this.serviceRepository.findOne({ where: { id } });
+
+    if (!service) throw new NotFoundException('Service not found');
+
+    if (!service.popular) throw new NotFoundException('Service not popular');
+    // Update only the icon
+    service.iconUrl = iconUrl;
+
+    await this.serviceRepository.save(service);
+
+    return { message: 'Popular icon updated', iconUrl };
+  }
+
+
+  async unmarkAsPopular(serviceId: string) {
+    const service = await this.serviceRepository.findOne({ where: { id: serviceId } });
+    if (!service) throw new NotFoundException('Service not found');
+
+
+    if (service.iconUrl) {
+      const oldPath = join(process.cwd(), service.iconUrl);
+      try {
+        await fsp.unlink(oldPath);
+      } catch (err) {
+        // File may not exist, ignore
+        if ((err as any).code !== 'ENOENT') {
+          console.error('Failed to delete old icon:', err);
+        }
+      }
+    }
+
+    service.popular = false;
+    service.iconUrl = null;
+
+    return this.serviceRepository.save(service);
+  }
+
+
+  async getPopularServices(limit = 4) {
+    return this.serviceRepository.find({
+      where: { popular: true, status: ServiceStatus.ACTIVE },
+      take: limit,
+      order: { ordersCount: 'DESC' },
+    });
+  }
 }

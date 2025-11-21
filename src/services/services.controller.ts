@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { RolesGuard } from '../auth/guard/roles.guard';
 import { Roles } from 'decorators/roles.decorator';
 import { UserRole } from 'entities/global.entity';
 import { ServicesService } from './services.service';
 import { CRUD } from 'common/crud.service';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
+import { serviceIconOptions } from 'common/upload.config';
 
 @Controller('services')
 export class ServicesController {
@@ -96,4 +98,53 @@ export class ServicesController {
   async trackClick(@Param('id') id: string) {
     return this.servicesService.trackClick(id);
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('icon', serviceIconOptions))
+  @Post(':id/popular')
+  async setPopular(
+    @Param('id') id: string,
+    @UploadedFile() file?: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Icon file is required to mark as popular');
+    }
+    const iconUrl = `uploads/service-icons/${file.filename}`;
+    return this.servicesService.markAsPopular(id, iconUrl);
+  }
+
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @UseInterceptors(FileInterceptor('icon', serviceIconOptions))
+  @Post(':id/popular/icon')
+  async updatePopularIcon(
+    @Param('id') id: string,
+    @UploadedFile() file: any
+  ) {
+
+    if (!file) {
+      throw new BadRequestException('Icon file is required to update popular icon');
+    }
+
+
+    const iconUrl = `uploads/service-icons/${file.filename}`;
+    return this.servicesService.updatePopularIcon(id, iconUrl);
+  }
+
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Delete(':id/unpopular')
+  async unsetPopular(@Param('id') id: string) {
+    return this.servicesService.unmarkAsPopular(id);
+  }
+
+  @Get('popular/list')
+  async getPopular(@Query('limit') limit?: string) {
+    return this.servicesService.getPopularServices(limit ? parseInt(limit, 10) : 4);
+  }
+
+
 }
