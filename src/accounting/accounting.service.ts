@@ -36,7 +36,7 @@ export class AccountingService {
     @InjectRepository(UserBankAccount)
     private userBankAccountRepository: Repository<UserBankAccount>,
     private readonly dataSource: DataSource,
-  ) {}
+  ) { }
 
   async getBillingInformation(userId: string) {
     let billingInfo = await this.userBillingInfoRepository.findOne({
@@ -61,7 +61,7 @@ export class AccountingService {
   }
 
   async updateBillingInformation(userId: string, billingInfoData: any) {
-    let billingInfo:any = await this.userBillingInfoRepository.findOne({
+    let billingInfo: any = await this.userBillingInfoRepository.findOne({
       where: { userId },
     });
 
@@ -88,7 +88,7 @@ export class AccountingService {
   async createBankAccount(userId: string, bankAccountData: any) {
     const bankAccounts = await this.getBankAccounts(userId);
 
-    const bankAccount:any = this.userBankAccountRepository.create({
+    const bankAccount: any = this.userBankAccountRepository.create({
       userId,
       ...bankAccountData,
     });
@@ -205,7 +205,7 @@ export class AccountingService {
     };
   }
 
- 
+
   // ────────────────────────────────────────────────────────────────────────────
   // Escrow hold (into platform)
   // ────────────────────────────────────────────────────────────────────────────
@@ -526,23 +526,23 @@ export class AccountingService {
           }) as any,
           sellerAmount > 0
             ? (manager.getRepository(Notification).create({
-                userId: sellerId,
-                type: 'payout_reversed',
-                title: 'Payout reversed',
-                message: `Your previous payout for order #${orderId} was reversed back to escrow.`,
-                relatedEntityType: 'order',
-                relatedEntityId: orderId,
-              }) as any)
+              userId: sellerId,
+              type: 'payout_reversed',
+              title: 'Payout reversed',
+              message: `Your previous payout for order #${orderId} was reversed back to escrow.`,
+              relatedEntityType: 'order',
+              relatedEntityId: orderId,
+            }) as any)
             : null,
           buyerRefund > 0
             ? (manager.getRepository(Notification).create({
-                userId: buyerId,
-                type: 'refund_reversed',
-                title: 'Refund reversed',
-                message: `Your previous refund for order #${orderId} was reversed back to escrow.`,
-                relatedEntityType: 'order',
-                relatedEntityId: orderId,
-              }) as any)
+              userId: buyerId,
+              type: 'refund_reversed',
+              title: 'Refund reversed',
+              message: `Your previous refund for order #${orderId} was reversed back to escrow.`,
+              relatedEntityType: 'order',
+              relatedEntityId: orderId,
+            }) as any)
             : null,
         ].filter(Boolean) as any[],
       );
@@ -592,26 +592,49 @@ export class AccountingService {
   // ────────────────────────────────────────────────────────────────────────────
   // (Everything below left unchanged)
   // ────────────────────────────────────────────────────────────────────────────
-  async getUserTransactions(userId: string, page: number = 1, type?: string) {
-    const limit = 20;
+  async getTransactions(
+    options: {
+      page?: number;
+      limit?: number;
+      type?: string;
+      search?: string;
+    } = {}, userId?: string
+  ) {
+    const page = options.page || 1;
+    const limit = options.limit || 20;
     const skip = (page - 1) * limit;
 
-    const whereClause: any = { userId };
-    if (type) whereClause.type = type;
+    const qb = this.transactionRepository.createQueryBuilder('transaction')
+      .leftJoinAndSelect('transaction.order', 'order')
 
-    const [transactions, total] = await this.transactionRepository.findAndCount({
-      where: whereClause,
-      relations: ['order'],
-      order: { created_at: 'DESC' },
-      skip,
-      take: limit,
-    });
+
+    if (userId) {
+      qb.where('transaction.userId = :userId', { userId });
+    }
+
+    if (options.type) {
+      qb.andWhere('transaction.type = :type', { type: options.type });
+    }
+
+    if (options.search) {
+      qb.andWhere(
+        '(transaction.description ILIKE :search)',
+        { search: `%${options.search}%` }
+      );
+    }
+
+    qb.orderBy('transaction.created_at', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    const [transactions, total] = await qb.getManyAndCount();
 
     return {
       transactions,
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     };
   }
+
 
   async withdrawFunds(userId: string, amount: number, paymentMethodId: string) {
     if (amount <= 0) throw new BadRequestException('Invalid withdrawal amount');

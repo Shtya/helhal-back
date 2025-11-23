@@ -2,14 +2,13 @@
 import { Controller, Post, Get, Body, Res, Req, UseGuards, Query, UnauthorizedException, BadRequestException, Put, Delete, Param, UseInterceptors, UploadedFile, NotFoundException, UploadedFiles } from '@nestjs/common';
 import { Request, Response } from 'express';
 import axios from 'axios';
-
 import { AuthService } from './auth.service';
 import { OAuthService } from './oauth.service';
-import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto } from 'dto/user.dto';
+import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto } from 'dto/user.dto';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { RolesGuard } from './guard/roles.guard';
 import { Roles } from 'decorators/roles.decorator';
-import { User, UserRole } from 'entities/global.entity';
+import { SellerLevel, User, UserRole } from 'entities/global.entity';
 import { CRUD } from 'common/crud.service';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { CalculateRemainingImagesInterceptor, fileUploadOptions, imageUploadOptions, videoUploadOptions } from './upload.config';
@@ -68,9 +67,16 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('account-deactivation')
-  async deactivateAccount(@Req() req: any, @Body() body: { reason: string }) {
-    return this.authService.deactivateAccount(req.user.id, body.reason || 'No reason given');
+  async deactivateAccount(
+    @Req() req: any,
+    @Body() body: DeactivateAccountDto
+  ) {
+    return this.authService.deactivateAccount(
+      req.user.id,
+      body.reason || 'No reason given'
+    );
   }
+
 
   @UseGuards(JwtAuthGuard)
   @Put('password')
@@ -348,6 +354,13 @@ export class AuthController {
     return this.authService.updateProfile(req.user.id, dto);
   }
 
+  @Put('profile/:id')
+  @UseGuards(JwtAuthGuard)
+  async adminUpdateProfile(@Param('id') id: string, @Req() req: any, @Body() dto: any) {
+    return this.authService.updateProfile(id, dto, req.user.id);
+  }
+
+
   @Put('profile/skills')
   @UseGuards(JwtAuthGuard)
   async updateSkills(@Req() req: any, @Body() body: { skills: string[] }) {
@@ -369,7 +382,12 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async getAllUsers(@Query('') query: any) {
-    return CRUD.findAll(this.authService.userRepository, 'user', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['username', 'email'], { role: query.filter === 'all' ? '' : query.filter });
+    return CRUD.findAll(this.authService.userRepository, 'user', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['username', 'email'],
+      {
+        role: query.filter === 'all' ? '' : query.filter,
+        status: query.status === 'all' ? '' : query.status === 'Deleted' ? '' : query.status,
+        deleted_at: query.status === 'Deleted' ? { isNull: false } : ''
+      });
   }
 
   @Delete('user/:id')
@@ -474,9 +492,21 @@ export class AuthController {
   // auth.controller.ts
   @UseGuards(JwtAuthGuard)
   @Get('sessions')
-  async listSessions(@Req() req: any, @Query('active') active?: string) {
+  async listSessions(
+    @Req() req: any,
+    @Query('active') active?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+  ) {
     const activeOnly = active === '1' || active === 'true';
-    return this.authService.getSessionsForUser(req.user.id, { activeOnly });
+
+    const parsedLimit = Math.min(parseInt(limit || '50', 10), 200); // max safety limit
+
+    return this.authService.getSessionsForUser(req.user.id, {
+      activeOnly,
+      cursor,
+      limit: parsedLimit,
+    });
   }
 
   // Revoke a specific session (device logout)
@@ -503,4 +533,58 @@ export class AuthController {
     this.authService.clearTokenCookies(res);
     return res.json({ message: 'Logged out successfully' });
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Put('users/:id/level')
+  async updateSellerLevel(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Body() dto: { sellerLevel: SellerLevel },
+  ) {
+    return this.authService.updateSellerLevel(id, dto.sellerLevel, req.user.id);
+  }
+
+
+  @Post('request-email-change')
+  @UseGuards(JwtAuthGuard)
+  async requestEmailChange(@Req() req: any, @Body() body: { newEmail: string }) {
+    return this.authService.requestEmailChange(req.user.id, body.newEmail);
+  }
+
+  @Post('resend-email-confirmation')
+  @UseGuards(JwtAuthGuard)
+  async resendEmailConfirmation(@Req() req: any) {
+    return this.authService.resendEmailConfirmation(req.user.id);
+  }
+
+  @Post('cancel-email-change')
+  @UseGuards(JwtAuthGuard)
+  async cancelEmailChange(@Req() req: any) {
+    return this.authService.cancelEmailChange(req.user.id);
+  }
+
+  @Get('confirm-email-change')
+  async confirmEmailChange(
+    @Query('userId') userId: string,
+    @Query('pendingEmail') pendingEmail: string,
+    @Query('code') code: string,
+    @Res() res: any
+  ) {
+    try {
+      await this.authService.confirmEmailChange(userId, pendingEmail, code);
+
+      return res.redirect(`${process.env.FRONTEND_URL}`);
+    } catch (err) {
+      console.error(err);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=confirmation_failed`);
+    }
+  }
+
+  @Get('users/admin')
+  async getAdminUser() {
+    return this.authService.getFirstAdmin();
+  }
+
+
 }

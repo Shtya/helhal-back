@@ -9,7 +9,7 @@ type ProposeResolutionBody = { resolution: string } | { sellerAmount: number; bu
 
 @Controller('disputes')
 export class DisputesController {
-  constructor(private disputesService: DisputesService) {}
+  constructor(private disputesService: DisputesService) { }
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -20,9 +20,26 @@ export class DisputesController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  async getDisputes(@Query('status') status?: string, @Query('page') page: string = '1') {
-    return this.disputesService.getDisputes(status, Number(page) || 1);
+  async getDisputes(
+    @Query('status') status?: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '20',
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+  ) {
+    return this.disputesService.getDisputes({
+      status,
+      page: Number(page) || 1,
+      limit: Number(limit) || 20,
+      search,
+      sortBy,
+      sortOrder,
+    });
   }
+
+
+
 
   @Get('stats')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,8 +50,16 @@ export class DisputesController {
 
   @Get('my-disputes')
   @UseGuards(JwtAuthGuard)
-  async myDisputes(@Req() req, @Query('page') page: string = '1') {
-    return this.disputesService.getUserDisputes(req.user.id, Number(page) || 1);
+  async myDisputes(
+    @Req() req,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10', // default as 10
+    @Query('search') search: string = ''
+  ) {
+    const pageNumber = Number(page) || 1;
+    const limitNumber = Number(limit) || 10;
+
+    return this.disputesService.getUserDisputes(req.user.id, pageNumber, limitNumber, search);
   }
 
   @Get(':id')
@@ -63,7 +88,7 @@ export class DisputesController {
     @Param('id') id: string,
     @Body()
     body: {
-      status: 'open' | 'in_review' | 'resolved' | 'rejected';
+      status: 'open' | 'in_review' | 'resolved' | 'rejected' | 'closed_no_action';
       sellerAmount?: number;
       buyerRefund?: number;
       note?: string;

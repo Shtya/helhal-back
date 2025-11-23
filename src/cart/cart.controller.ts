@@ -5,26 +5,21 @@ import { CartService } from './cart.service';
 @Controller('cart')
 @UseGuards(JwtAuthGuard)
 export class CartController {
-  constructor(private cartService: CartService) {}
+  constructor(private cartService: CartService) { }
 
   @Get()
   async getCart(@Req() req) {
     return this.cartService.getUserCart(req.user.id);
   }
 
-  @Post('item')
-  async addToCart(@Req() req, @Body() addToCartDto: any) {
-    return this.cartService.addToCart(req.user.id, addToCartDto);
+  @Post('item/:serviceId/toggle')
+  async toggleCartItem(@Req() req, @Param('serviceId') serviceId: string) {
+    return this.cartService.toggleCartItem(req.user.id, serviceId);
   }
 
-  @Put('item/:itemId')
-  async updateCartItem(@Req() req, @Param('itemId') itemId: string, @Body() updateCartItemDto: any) {
-    return this.cartService.updateCartItem(req.user.id, itemId, updateCartItemDto);
-  }
-
-  @Delete('item/:itemId')
-  async removeFromCart(@Req() req, @Param('itemId') itemId: string) {
-    return this.cartService.removeFromCart(req.user.id, itemId);
+  @Delete('item/:serviceId')
+  async removeCartItem(@Req() req, @Param('serviceId') serviceId: string) {
+    return this.cartService.removeCartItem(req.user.id, serviceId);
   }
 
   @Delete()

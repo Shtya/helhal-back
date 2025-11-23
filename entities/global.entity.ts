@@ -3,6 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { CoreEntity } from './core.entity';
 import { Asset } from './assets.entity';
+import { Exclude } from 'class-transformer';
 
 export type IUserRole = 'buyer' | 'seller' | 'admin';
 
@@ -87,6 +88,15 @@ export class User extends CoreEntity {
   @Column({ unique: true })
   email: string;
 
+  @Column({ nullable: true })
+  pendingEmail: string | null;
+
+  @Column({ nullable: true, select: false })
+  pendingEmailCode: string | null;
+
+  @Column({ nullable: true, select: false })
+  lastEmailChangeSentAt: Date;
+
   @Column({ nullable: true, select: false })
   password: string;
 
@@ -132,7 +142,7 @@ export class User extends CoreEntity {
   @Column({ nullable: true })
   lastResetPasswordSentAt: Date;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, select: false })
   resetPasswordExpires: Date;
 
   // referrals
@@ -199,6 +209,10 @@ export class User extends CoreEntity {
   @Column({ name: 'response_time', type: 'decimal', nullable: true })
   responseTime: number;
 
+  @Column({ name: 'response_time_formatted', type: 'varchar', nullable: true })
+  responseTimeFormatted: string;
+
+
   @Column({ name: 'orders_completed', default: 0 })
   ordersCompleted: number;
 
@@ -207,6 +221,9 @@ export class User extends CoreEntity {
 
   @Column({ name: 'top_rated', default: false })
   topRated: boolean;
+
+  @Column({ name: 'payment_verified', default: false })
+  paymentVerified: boolean;
 
   @Column({ name: 'delivery_time', nullable: true })
   deliveryTime: string;
@@ -385,6 +402,7 @@ export class PendingUserRegistration extends CoreEntity {
   @Column()
   email: string;
 
+
   @Column()
   passwordHash: string;
 
@@ -506,8 +524,9 @@ export class Setting extends CoreEntity {
   @Column({ name: 'business_recommendations', type: 'int', array: true, default: [] })
   businessRecommendations: number[];
 
-  @Column({ name: 'faqs', type: 'int', array: true, default: [] })
-  faqs: number[];
+  @Column({ name: 'faqs', type: 'jsonb', default: [] })
+  faqs: { question: string; answer: string }[];
+
 
   @Column({ name: 'buyer_stories', type: 'int', array: true, default: [] })
   buyerStories: number[];
@@ -637,6 +656,12 @@ export class Category extends CoreEntity {
 
   @OneToMany(() => Service, service => service.subcategory)
   subcategoryServices: Service[];
+
+  @Column({ default: false })
+  top: boolean;
+
+  @Column({ nullable: true })
+  topIconUrl: string;
 
   @BeforeInsert()
   @BeforeUpdate()
@@ -781,6 +806,27 @@ export class Service extends CoreEntity {
     }
   }
 }
+
+@Entity('service_clicks')
+@Index(['serviceId', 'userId'])
+@Index(['serviceId', 'ipAddress'])
+export class ServiceClick {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  serviceId: string;
+
+  @Column({ name: "user_id", nullable: true })
+  userId?: string;
+
+  @Column({ name: 'ip_address', nullable: true })
+  ipAddress?: string;
+
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  clickedAt: Date;
+}
+
 
 @Entity('service_requirements')
 export class ServiceRequirement extends CoreEntity {
@@ -953,6 +999,7 @@ export enum OrderStatus {
   DELIVERED = 'Delivered',
   COMPLETED = 'Completed',
   CANCELLED = 'Cancelled',
+  ChangeRequested = 'Change Requested',
   MISSING_DETAILS = 'Missing Details',
   DISPUTED = 'Disputed',
 }
@@ -1006,6 +1053,12 @@ export class Order extends CoreEntity {
   @Column({ default: 1 })
   quantity: number;
 
+  @Column({ default: 1 })
+  deliveryTime: number;
+
+  @Column({ name: 'submission_date', type: 'timestamptz', nullable: true })
+  submissionDate: Date;
+
   @Column({ name: 'total_amount', type: 'decimal' })
   totalAmount: number;
 
@@ -1038,6 +1091,58 @@ export class Order extends CoreEntity {
 
   @OneToMany(() => Invoice, invoice => invoice.order)
   invoices: Invoice[];
+
+  @OneToMany(() => Dispute, dispute => dispute.order)
+  disputes: Dispute[];
+
+  @OneToMany(() => OrderSubmission, submission => submission.order)
+  submissions: OrderSubmission[];
+
+  @OneToMany(() => OrderChangeRequest, change => change.order)
+  changeRequests: OrderChangeRequest[];
+
+  @Column({ type: 'text', nullable: true })
+  notes: string;
+}
+
+@Entity('order_submissions')
+export class OrderSubmission extends CoreEntity {
+  @ManyToOne(() => Order, order => order.submissions)
+  @JoinColumn({ name: 'order_id' })
+  order: Order;
+
+  @Column({ name: 'order_id' })
+  orderId: string;
+
+  @Column({ type: 'text', nullable: true })
+  message: string;
+
+  @Column({ type: 'jsonb', default: [] })
+  files: { filename: string; url: string }[];
+
+  // Optionally, track who submitted it (freelancer)
+  @Column({ name: 'seller_id' })
+  sellerId: string;
+}
+
+@Entity('order_change_requests')
+export class OrderChangeRequest extends CoreEntity {
+  @ManyToOne(() => Order, order => order.changeRequests)
+  @JoinColumn({ name: 'order_id' })
+  order: Order;
+
+  @Column({ name: 'order_id' })
+  orderId: string;
+
+  @Column({ type: 'text', nullable: true })
+  message: string;
+
+  @Column({ type: 'jsonb', default: [] })
+  files: { filename: string; url: string }[];
+
+  // Track the buyer who requested the changes
+  @Column({ name: 'buyer_id' })
+  buyerId: string;
 }
 
 export enum PaymentStatus {
@@ -1214,11 +1319,26 @@ export class Message extends CoreEntity {
   @Column({ name: 'sender_id' })
   senderId: string;
 
-  @Column({ type: 'text' })
+  @Column({ type: 'text', nullable: true })
   message: string;
 
-  @Column({ type: process.env.DB_TYPE === 'postgres' ? 'jsonb' : 'text', nullable: true })
-  attachments?: string[];
+  @Column({
+    type: process.env.DB_TYPE === 'postgres' ? 'jsonb' : 'text',
+    nullable: true,
+    transformer:
+      process.env.DB_TYPE !== 'postgres'
+        ? {
+          to: (value: any) => (value ? JSON.stringify(value) : null),
+          from: (value: any) => (value ? JSON.parse(value) : null),
+        }
+        : undefined,
+  })
+  attachments?: {
+    url: string;
+    type: string;
+    filename: string;
+  }[];
+
 
   @Column({ name: 'read_at', type: 'timestamptz', nullable: true })
   readAt: Date;
@@ -1311,17 +1431,6 @@ export class CartItem extends CoreEntity {
   @Column({ name: 'service_id' })
   serviceId: string;
 
-  @Column({ type: 'enum', enum: PackageType })
-  packageType: PackageType;
-
-  @Column({ default: 1 })
-  quantity: number;
-
-  @Column({ name: 'price_snapshot', type: 'decimal' })
-  priceSnapshot: number;
-
-  @Column({ name: 'extra_services', type: 'jsonb', default: [] })
-  extraServices: any[];
 }
 
 @Entity('favorites')
@@ -1414,11 +1523,19 @@ export enum DisputeStatus {
   IN_REVIEW = 'in_review',
   RESOLVED = 'resolved',
   REJECTED = 'rejected',
+  CLOSE_NO_ACTION = 'closed_no_payout',
+}
+
+export enum DisputeType {
+  MONEY = 'money',
+  QUALITY = 'quality',
+  REQUIREMENTS = 'requirements',
+  OTHER = 'other',
 }
 
 @Entity('disputes')
 export class Dispute extends CoreEntity {
-  @ManyToOne(() => Order, order => order.invoices)
+  @ManyToOne(() => Order, order => order.disputes)
   @JoinColumn({ name: 'order_id' })
   order: Order;
 
@@ -1434,6 +1551,16 @@ export class Dispute extends CoreEntity {
 
   @Column({ type: 'text' })
   reason: string;
+
+  @Column({ type: 'text' })
+  subject: string;
+
+  @Column({
+    type: 'enum',
+    enum: DisputeType,
+    default: DisputeType.OTHER, // optional default
+  })
+  type: DisputeType;
 
   @Column({ type: 'enum', enum: DisputeStatus, default: DisputeStatus.OPEN })
   status: DisputeStatus;
@@ -1472,6 +1599,14 @@ export class DisputeMessage extends CoreEntity {
 
   @Column({ type: 'jsonb', default: [] })
   attachments: any[];
+
+  // ✅ Self-referencing parent message
+  @ManyToOne(() => DisputeMessage, { nullable: true })
+  @JoinColumn({ name: 'parent_id' })
+  parent: DisputeMessage | null;
+
+  @Column({ name: 'parent_id', type: 'uuid', nullable: true, default: null })
+  parentId: string | null;
 }
 
 // -----------------------------------------------------

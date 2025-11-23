@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { User, UserRole } from 'entities/global.entity';
+import { User, UserRole, UserStatus } from 'entities/global.entity';
 import { AuthService } from './auth.service';
 
 @Injectable()
@@ -46,6 +46,7 @@ export class OAuthService {
     const email = profile.email;
 
     let user = await this.userRepository.findOne({ where: { email } });
+
     if (!user) {
       user = this.userRepository.create({
         username: profile.name || email.split('@')[0],
@@ -68,6 +69,20 @@ export class OAuthService {
     if (!email) throw new UnauthorizedException('No email found in Apple profile');
 
     let user = await this.userRepository.findOne({ where: { email } });
+
+    if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
+      throw new UnauthorizedException('Your account is inactive. Please contact support.');
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new UnauthorizedException('Your account has been suspended. Please contact support.');
+    }
+
+    if (user.status === UserStatus.PENDING_VERIFICATION) {
+      throw new UnauthorizedException('Please verify your email before logging in');
+    }
+
+
     if (!user) {
       user = this.userRepository.create({
         username: profile.name || email.split('@')[0],

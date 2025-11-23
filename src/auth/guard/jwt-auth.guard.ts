@@ -19,3 +19,14 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     return user;
   }
 }
+
+@Injectable()
+export class OptionalJwtAuthGuard extends JwtAuthGuard {
+  handleRequest(err, user, info: any) {
+    // Instead of throwing, just return null if no user or error
+    if (err || !user) {
+      return null;
+    }
+    return user;
+  }
+}

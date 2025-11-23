@@ -6,7 +6,7 @@ import { CreateConversationDto, SendMessageDto } from 'dto/conversation.dto';
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
 export class ConversationsController {
-  constructor(private conversationsService: ConversationsService) {}
+  constructor(private conversationsService: ConversationsService) { }
 
   @Get()
   async getConversations(@Req() req, @Query('page') page: number = 1) {
@@ -30,7 +30,7 @@ export class ConversationsController {
 
   @Post(':id/message')
   async sendMessage(@Req() req, @Param('id') id: string, @Body() sendMessageDto: any) {
-    return this.conversationsService.sendMessage(req.user.id, id, sendMessageDto.message);
+    return this.conversationsService.sendMessage(req.user.id, id, sendMessageDto.message, sendMessageDto.attachments);
   }
 
   @Post(':id/read')

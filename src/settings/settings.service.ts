@@ -8,7 +8,7 @@ export class SettingsService {
   constructor(
     @InjectRepository(Setting)
     private settingsRepository: Repository<Setting>,
-  ) {}
+  ) { }
 
   async getSettings() {
     let settings = await this.settingsRepository.findOne({ where: {} });

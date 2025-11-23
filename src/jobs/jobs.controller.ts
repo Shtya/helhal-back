@@ -17,23 +17,20 @@ export class JobsController {
     private jobsService: JobsService,
     @Inject(forwardRef(() => PaymentsService))
     private paymentsService: PaymentsService,
-  ) {}
+  ) { }
 
   @Get()
-  async getJobs(@Query() query: any, @Req() req: any) {
-    return CRUD.findAll(
-      this.jobsService.jobRepository,
-      'job',
-      query.search,
-      query.page,
-      query.limit,
-      query.sortBy,
-      query.sortOrder,
-      ['buyer'], // relation
-      ['title', 'budget'], // search
-      query.filters, // filter
-    );
+  async getJobs(@Query() query: any) {
+    return this.jobsService.getJobs(query);
   }
+
+  @Get("admin")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async adminGetJobs(@Query() query: any) {
+    return this.jobsService.adminGetJobs(query);
+  }
+
   @Get('my-jobs')
   async getMyJobs(@Query() query: any, @Req() req: any) {
     return CRUD.findAll(
@@ -52,8 +49,8 @@ export class JobsController {
 
   @Get('my-proposals')
   @UseGuards(JwtAuthGuard)
-  async getMyProposals(@Req() req, @Query('status') status?: string, @Query('page') page: number = 1) {
-    return this.jobsService.getUserProposals(req.user.id, status, page);
+  async getMyProposals(@Req() req, @Query('status') status?: string, @Query('page') page: number = 1, @Query('limit') limit: number = 20) {
+    return this.jobsService.getUserProposals(req.user.id, status, page, limit);
   }
 
   // jobs/jobs.controller.ts
@@ -61,7 +58,7 @@ export class JobsController {
   @UseGuards(JwtAuthGuard)
   async updateProposalStatus(@Param('proposalId') proposalId: string, @Body() body: any, @Req() req: any) {
     return this.jobsService.updateProposalStatusAtomic(req.user.id, req.user.role, proposalId, body.status, { checkout: body.checkout });
- 
+
   }
 
   @Get(':id')
@@ -98,10 +95,26 @@ export class JobsController {
 
   @Get(':id/proposals')
   @UseGuards(JwtAuthGuard)
-  async getJobProposals(@Req() req, @Param('id') id: string, @Query('page') page: number = 1) {
-    return this.jobsService.getJobProposals(req.user.id, req.user.role, id, page);
+  async getJobProposals(
+    @Req() req,
+    @Param('id') id: string,
+    @Query('page') page: number = 1,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortdir') sortdir?: 'asc' | 'desc',
+  ) {
+    return this.jobsService.getJobProposals(
+      req.user.id,
+      req.user.role,
+      id,
+      page,
+      search,
+      status,
+      sortBy,
+      sortdir,
+    );
   }
-
   // @Put('proposals/:proposalId/status')
   // @UseGuards(JwtAuthGuard)
   // async updateProposalStatus(@Req() req, @Param('proposalId') proposalId: string, @Body() body: { status: string }) {

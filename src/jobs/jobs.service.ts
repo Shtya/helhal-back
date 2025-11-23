@@ -28,37 +28,171 @@ export class JobsService {
 
     @Inject(forwardRef(() => PaymentsService))
     public readonly paymentsService: PaymentsService,
-  ) {}
+  ) { }
 
   async getJobs(query: any) {
-    const { page = 1, limit = 20, category, subcategory, minBudget, maxBudget, budgetType, status = 'published' } = query;
+    const {
+      page = 1,
+      limit = 50,
+      search = '',
+      category,
+      budgetType = '',
+      max7days,
+      withAttachments,
+      priceRange = '',
+      customBudget,
+      sortBy = 'created_at',
+      sortOrder = 'DESC',
+    } = query;
 
     const skip = (page - 1) * limit;
-    const whereClause: any = { status };
 
-    if (category) whereClause.categoryId = category;
-    if (subcategory) whereClause.subcategoryId = subcategory;
-    if (budgetType) whereClause.budgetType = budgetType;
-    if (minBudget || maxBudget) {
-      whereClause.budget = Between(minBudget || 0, maxBudget || 999999);
+    const qb = this.jobRepository.createQueryBuilder('job')
+      .leftJoinAndSelect('job.buyer', 'buyer')
+      .leftJoinAndSelect('job.category', 'category')
+      .where('job.status = :status', { status: 'published' });
+
+    // --- Search ---
+    if (search) {
+      qb.andWhere('(job.title ILIKE :search)', { search: `%${search}%` });
     }
 
-    const [jobs, total] = await this.jobRepository.findAndCount({
-      where: whereClause,
-      relations: ['buyer', 'category', 'subcategory', 'proposals'],
-      order: { created_at: 'DESC' },
-      skip,
-      take: limit,
-    });
+    // --- Category filter ---
+    if (category) {
+      qb.andWhere('job.categoryId = :categoryId', { categoryId: category });
+    }
+
+    // --- Budget type filter ---
+    if (budgetType && ['fixed', 'hourly'].includes(budgetType.toLowerCase())) {
+      qb.andWhere('job.budgetType = :budgetType', { budgetType: budgetType.toLowerCase() });
+    }
+
+    // --- Max 7 days ---
+    if (max7days === 'true' || max7days === true) {
+      qb.andWhere('job.preferredDeliveryDays <= 7');
+    }
+
+    // --- Attachments filter ---
+    if (withAttachments === 'true' || withAttachments === true) {
+      qb.andWhere("jsonb_array_length(job.attachments) > 0");
+    }
+
+    // --- Price range filter ---
+    if (priceRange) {
+      const priceRanges: Record<string, [number, number]> = {
+        u1000: [0, 1000],
+        m1000_3600: [1000, 3600],
+        h3600: [3600, 999999],
+      };
+
+      if (priceRange === 'custom' && customBudget) {
+        qb.andWhere('job.budget <= :customBudget', { customBudget: Number(customBudget) });
+      } else if (priceRanges[priceRange]) {
+        const [min, max] = priceRanges[priceRange];
+        qb.andWhere('job.budget BETWEEN :min AND :max', { min, max });
+      }
+    }
+
+    // --- Sorting ---
+    const validSortFields = ['created_at', 'budget', 'title', 'preferredDeliveryDays'];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
+    const order: 'ASC' | 'DESC' = sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    qb.orderBy(`job.${sortField}`, order);
+
+    // --- Total count for pagination ---
+    const [jobs, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     return {
-      jobs,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
+      records: jobs,
+      per_page: limit,
+      current_page: page,
+      total_records: total
+    };
+  }
+
+  async adminGetJobs(query: any) {
+    const {
+      page = 1,
+      limit = 50,
+      search = '',
+      category,
+      budgetType = '',
+      max7days,
+      withAttachments,
+      priceRange = '',
+      customBudget,
+      sortBy = 'created_at',
+      sortOrder = 'DESC',
+      status,
+    } = query;
+
+    const skip = (page - 1) * limit;
+
+    const qb = this.jobRepository.createQueryBuilder('job')
+      .leftJoinAndSelect('job.buyer', 'buyer')
+      .leftJoinAndSelect('job.category', 'category')
+      // Map the number of proposals
+      .loadRelationCountAndMap('job.proposalsLength', 'job.proposals');
+
+    if (status) {
+      qb.where('job.status = :status', { status: status });
+    }
+
+    // --- Search ---
+    if (search) {
+      qb.andWhere('(job.title ILIKE :search)', { search: `%${search}%` });
+    }
+
+    // --- Category filter ---
+    if (category) {
+      qb.andWhere('job.categoryId = :categoryId', { categoryId: category });
+    }
+
+    // --- Budget type filter ---
+    if (budgetType && ['fixed', 'hourly'].includes(budgetType.toLowerCase())) {
+      qb.andWhere('job.budgetType = :budgetType', { budgetType: budgetType.toLowerCase() });
+    }
+
+    // --- Max 7 days ---
+    if (max7days === 'true' || max7days === true) {
+      qb.andWhere('job.preferredDeliveryDays <= 7');
+    }
+
+    // --- Attachments filter ---
+    if (withAttachments === 'true' || withAttachments === true) {
+      qb.andWhere("jsonb_array_length(job.attachments) > 0");
+    }
+
+    // --- Price range filter ---
+    if (priceRange) {
+      const priceRanges: Record<string, [number, number]> = {
+        u1000: [0, 1000],
+        m1000_3600: [1000, 3600],
+        h3600: [3600, 999999],
+      };
+
+      if (priceRange === 'custom' && customBudget) {
+        qb.andWhere('job.budget <= :customBudget', { customBudget: Number(customBudget) });
+      } else if (priceRanges[priceRange]) {
+        const [min, max] = priceRanges[priceRange];
+        qb.andWhere('job.budget BETWEEN :min AND :max', { min, max });
+      }
+    }
+
+    // --- Sorting ---
+    const validSortFields = ['created_at', 'budget', 'title', 'preferredDeliveryDays'];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
+    const order: 'ASC' | 'DESC' = sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    qb.orderBy(`job.${sortField}`, order);
+
+    // --- Total count for pagination ---
+    const [jobs, total] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    return {
+      records: jobs,
+      per_page: limit,
+      current_page: page,
+      total_records: total
     };
   }
 
@@ -226,7 +360,14 @@ export class JobsService {
       throw new NotFoundException('Job not found');
     }
 
-    if (job.buyerId !== userId) {
+    // Fetch the user to check their role
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Allow delete if the user is the owner or an admin
+    if (job.buyerId !== userId && user.role !== 'admin') {
       throw new ForbiddenException('You can only delete your own jobs');
     }
 
@@ -277,13 +418,20 @@ export class JobsService {
     return savedProposal;
   }
 
-  async getJobProposals(userId: string, userRole: string, jobId: string, page: number = 1) {
+  async getJobProposals(
+    userId: string,
+    userRole: string,
+    jobId: string,
+    page: number = 1,
+    search: string = '',
+    status: string = '',
+    sortBy: string = 'created_at',
+    sortdir: 'asc' | 'desc' = 'desc',
+  ) {
     const job = await this.jobRepository.findOne({ where: { id: jobId } });
-    if (!job) {
-      throw new NotFoundException('Job not found');
-    }
+    if (!job) throw new NotFoundException('Job not found');
 
-    // Check permissions: only job owner or admin can view proposals
+    // Only admin or job owner can see proposals
     if (userRole !== UserRole.ADMIN && job.buyerId !== userId) {
       throw new ForbiddenException('Access denied');
     }
@@ -291,13 +439,31 @@ export class JobsService {
     const limit = 20;
     const skip = (page - 1) * limit;
 
-    const [proposals, total] = await this.proposalRepository.findAndCount({
-      where: { jobId },
-      relations: ['seller', 'job'],
-      order: { submittedAt: 'DESC' },
-      skip,
-      take: limit,
-    });
+    const qb = this.proposalRepository.createQueryBuilder('proposal')
+      .leftJoinAndSelect('proposal.seller', 'seller')
+      .leftJoinAndSelect('proposal.job', 'job')
+      .where('proposal.jobId = :jobId', { jobId });
+
+    // --- Filter by status ---
+    if (status) {
+      qb.andWhere('proposal.status = :status', { status });
+    }
+
+    // --- Search ---
+    if (search) {
+      qb.andWhere('(seller.username ILIKE :search OR proposal.coverLetter ILIKE :search)', { search: `%${search}%` });
+    }
+
+    // --- Sorting ---
+    const validSortFields = ['created_at', 'bidAmount', 'estimatedTimeDays'];
+    const sortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
+    const order: 'ASC' | 'DESC' = sortdir.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    qb.orderBy(`proposal.${sortField}`, order);
+
+    // Pagination
+    qb.skip(skip).take(limit);
+
+    const [proposals, total] = await qb.getManyAndCount();
 
     return {
       proposals,
@@ -402,6 +568,7 @@ export class JobsService {
             packageType: PackageType.BASIC,
             status: OrderStatus.PENDING,
             orderDate: new Date(),
+            deliveryTime: proposal.estimatedTimeDays,
           } as any);
           await orderRepo.save(order);
         }
@@ -452,8 +619,7 @@ export class JobsService {
     });
   }
 
-  async getUserProposals(userId: string, status?: string, page: number = 1) {
-    const limit = 20;
+  async getUserProposals(userId: string, status?: string, page: number = 1, limit: number = 20) {
     const skip = (page - 1) * limit;
     console.log('HERE');
 

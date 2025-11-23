@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
+import { JwtAuthGuard, OptionalJwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { RolesGuard } from '../auth/guard/roles.guard';
 import { Roles } from 'decorators/roles.decorator';
 import { UserRole } from 'entities/global.entity';
@@ -57,8 +57,9 @@ export class ServicesController {
   }
 
   @Get(':slug')
-  async getService(@Param('slug') slug: string) {
-    return this.servicesService.getService(slug);
+  @UseGuards(OptionalJwtAuthGuard)
+  async getService(@Param('slug') slug: string, @Req() req) {
+    return this.servicesService.getService(slug, req.user?.id);
   }
 
   @Post()
@@ -73,6 +74,17 @@ export class ServicesController {
   @Roles(UserRole.SELLER, UserRole.ADMIN)
   async updateService(@Req() req, @Param('id') id: string, @Body() updateServiceDto: any) {
     return this.servicesService.updateService(req.user.id, id, updateServiceDto);
+  }
+
+
+  @Put(':id/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async updateServiceStatus(
+    @Param('id') id: string,
+    @Body() body: { status },
+  ) {
+    return this.servicesService.updateServiceStatus(id, body.status);
   }
 
   @Delete(':id')
@@ -94,9 +106,10 @@ export class ServicesController {
     return this.servicesService.trackImpression(id);
   }
 
-  @Post(':id/click')
-  async trackClick(@Param('id') id: string) {
-    return this.servicesService.trackClick(id);
+  @Put(':id/click')
+  @UseGuards(OptionalJwtAuthGuard)
+  async trackClick(@Param('id') id: string, @Req() req) {
+    return this.servicesService.trackClick(id, req, req.user?.id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)

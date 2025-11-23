@@ -33,9 +33,17 @@ import { JobsModule } from './jobs/jobs.module';
 import { BlogsModule } from './blogs/blogs.module';
 import { BlogCategoriesModule } from './blog-categories/blog-categories.module';
 import { CountriesModule } from './counties/countries.module';
+import { InviteModule } from './invite/invite.module';
+import { NotificationSubscriber } from './notification/NotificationSubscriber';
+import { Notification } from 'entities/global.entity';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ResponseTimeUpdaterService } from 'backgroundServices/response-time-updater.service';
+import { OrderAutoUpdaterService } from 'backgroundServices/order-auto-udater-service';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
+    TypeOrmModule.forFeature([Notification]),
     ConfigModule.forRoot(),
     TypeOrmModule.forRoot({
       type: 'postgres',
@@ -91,10 +99,11 @@ import { CountriesModule } from './counties/countries.module';
     ReportsModule,
     BlogsModule,
     BlogCategoriesModule,
-    CountriesModule
+    CountriesModule,
+    InviteModule
   ],
   controllers: [ApiController],
-  providers: [LoggingValidationPipe, QueryFailedErrorFilter],
+  providers: [LoggingValidationPipe, QueryFailedErrorFilter, NotificationSubscriber, ResponseTimeUpdaterService, OrderAutoUpdaterService],
   exports: [LoggingValidationPipe],
 })
 export class AppModule { }

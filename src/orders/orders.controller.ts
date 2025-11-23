@@ -9,32 +9,28 @@ import { CRUD } from 'common/crud.service';
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
 export class OrdersController {
-  constructor(private ordersService: OrdersService) {}
+  constructor(private ordersService: OrdersService) { }
 
-  @Get('/admin')
+  @Get('admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
   async getOrdersAdmin(@Query('') query: any) {
-    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'seller', 'service', 'invoices'], ['title', 'status'], { status: query.status == 'all' ? '' : query.status });
+    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'seller', 'service', 'invoices'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
+
+  @Get('invoices')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async getOrdersInvoices(@Query() query: any) {
+    return this.ordersService.getInvoices(query);
+  }
+
 
   @Get()
   async getOrders(@Req() req, @Query() query: any) {
-    const userRole = req.user.role;
-    const userId = req.user.id;
-
-    const whereClause: any = {};
-
-    if (userRole === UserRole.BUYER) {
-      whereClause.buyerId = userId;
-    } else if (userRole === UserRole.SELLER) {
-      whereClause.sellerId = userId;
-    }
-
-    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['service', 'buyer' , 'seller' ], ['title', 'status'], { status: query.status == 'all' ? '' : query.status, ...whereClause });
-
-    // this.ordersService.getUserOrders(req.user.id, req.user.role, status, page);
+    return this.ordersService.getOrdersForUser(req.user.id, query);
   }
+
 
   @Post(':orderId/mark-paid')
   @UseGuards(JwtAuthGuard)
@@ -67,8 +63,31 @@ export class OrdersController {
   }
 
   @Post(':id/deliver')
-  async deliverOrder(@Req() req, @Param('id') id: string) {
-    return this.ordersService.deliverOrder(req.user.id, id);
+  async deliverOrder(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body: { message?: string; files?: { filename: string; url: string }[] },
+  ) {
+    return this.ordersService.deliverOrder(req.user.id, id, body);
+  }
+
+  @Get(':id/last-submission')
+  async getLastSubmission(@Req() req, @Param('id') orderId: string) {
+    return this.ordersService.getLastSubmission(req.user.id, orderId);
+  }
+
+  @Post(':id/request-changes')
+  async requestChanges(
+    @Req() req,
+    @Param('id') orderId: string,
+    @Body() body: { message?: string; files?: { filename: string; url: string }[]; },
+  ) {
+    return this.ordersService.createChangeRequest(req.user.id, orderId, body);
+  }
+
+  @Get(':id/last-change-request')
+  async lastChangeRequest(@Req() req, @Param('id') orderId: string) {
+    return this.ordersService.changeRequest(req.user.id, orderId);
   }
 
   @Post(':id/complete')

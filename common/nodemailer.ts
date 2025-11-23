@@ -3,16 +3,16 @@ import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
-  private transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
+    private transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS,
+        },
+    });
 
-  async sendOTPEmail(to: string, otp: string, actionType: string) {
-    const htmlContent = `
+    async sendOTPEmail(to: string, otp: string, actionType: string) {
+        const htmlContent = `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -132,18 +132,18 @@ export class MailService {
     </html>
     `;
 
-    await this.transporter.sendMail({
-      from: `"${process.env.PROJECT_NAME}" <${process.env.EMAIL_USER}>`,
-      to,
-      subject: actionType,
-      html: htmlContent,
-    });
-  }
+        await this.transporter.sendMail({
+            from: `"${process.env.PROJECT_NAME}" <${process.env.EMAIL_USER}>`,
+            to,
+            subject: actionType,
+            html: htmlContent,
+        });
+    }
 
-  async sendVerificationEmail(email: string, code: string, username: string) {
-    const subject = 'Verify Your Email Address';
+    async sendVerificationEmail(email: string, code: string, username: string) {
+        const subject = 'Verify Your Email Address';
 
-    const html = `
+        const html = `
     <html>
         <head>
             <style>
@@ -250,18 +250,18 @@ export class MailService {
     </html>
   `;
 
-    await this.transporter.sendMail({
-      from: process.env.EMAIL_FROM,
-      to: email,
-      subject,
-      html,
-    });
-  }
+        await this.transporter.sendMail({
+            from: process.env.EMAIL_FROM,
+            to: email,
+            subject,
+            html,
+        });
+    }
 
-  async sendPasswordResetOtp(email: string, username: string, otp: string) {
-    const subject = 'Password Reset OTP';
+    async sendPasswordResetOtp(email: string, username: string, otp: string) {
+        const subject = 'Password Reset OTP';
 
-    const html = `
+        const html = `
   <html>
       <head>
           <style>
@@ -356,18 +356,18 @@ export class MailService {
   </html>
   `;
 
-    await this.transporter.sendMail({
-      from: process.env.EMAIL_FROM,
-      to: email,
-      subject,
-      html,
-    });
-  }
+        await this.transporter.sendMail({
+            from: process.env.EMAIL_FROM,
+            to: email,
+            subject,
+            html,
+        });
+    }
 
-  async sendPasswordChangeNotification(userEmail: string, username: string, adminEmail: string) {
-    const subject = 'Password Changed Successfully';
+    async sendPasswordChangeNotification(userEmail: string, username: string, adminEmail: string) {
+        const subject = 'Password Changed Successfully';
 
-    const html = `
+        const html = `
   <html>
       <head>
           <style>
@@ -447,13 +447,202 @@ export class MailService {
   </html>
   `;
 
-    await this.transporter.sendMail({
-      from: process.env.EMAIL_FROM,
-      to: userEmail,
-      subject,
-      html,
-    });
-  }
+        await this.transporter.sendMail({
+            from: process.env.EMAIL_FROM,
+            to: userEmail,
+            subject,
+            html,
+        });
+    }
+
+
+    async sendEmailChangeConfirmation(email: string, username: string, userId: string, code: string) {
+        const subject = 'Confirm Your New Email Address';
+
+        const confirmLink = `${process.env.BACKEND_URL}/api/v1/auth/confirm-email-change?userId=${userId}&pendingEmail=${encodeURIComponent(email)}&code=${code}`;
+
+        const html = `
+  <html>
+      <head>
+          <style>
+              body {
+                  font-family: 'Arial', sans-serif;
+                  color: #333;
+                  background-color: #f5f5f5;
+                  margin: 0;
+                  padding: 0;
+                  -webkit-font-smoothing: antialiased;
+                  -moz-osx-font-smoothing: grayscale;
+              }
+              .container {
+                  width: 100%;
+                  padding: 40px 20px;
+                  text-align: center;
+              }
+              .email-content {
+                  background-color: #ffffff;
+                  padding: 30px;
+                  border-radius: 8px;
+                  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+                  max-width: 600px;
+                  margin: auto;
+              }
+              .email-header {
+                  font-size: 28px;
+                  color: #4CAF50;
+                  margin-bottom: 20px;
+                  font-weight: bold;
+              }
+              .email-body {
+                  font-size: 16px;
+                  line-height: 1.5;
+                  color: #555;
+                  margin-bottom: 20px;
+              }
+              .confirm-btn {
+                  display: inline-block;
+                  background-color: #4CAF50;
+                  color: white;
+                  padding: 10px 20px;
+                  border-radius: 4px;
+                  text-decoration: none;
+                  font-weight: bold;
+                  margin-top: 20px;
+              }
+              .footer {
+                  font-size: 12px;
+                  color: #777;
+                  margin-top: 30px;
+                  text-align: center;
+              }
+              .footer a {
+                  color: #4CAF50;
+                  text-decoration: none;
+              }
+              @media (max-width: 600px) {
+                  .email-content {
+                      padding: 20px;
+                  }
+                  .email-header {
+                      font-size: 24px;
+                  }
+                  .email-body {
+                      font-size: 14px;
+                  }
+              }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <div class="email-content">
+                  <div class="email-header">
+                      Hello ${username},
+                  </div>
+                  <div class="email-body">
+                      <p>You requested to change your email address.</p>
+                      <p>Click the button below to confirm your new email:</p>
+                      <p><a href="${confirmLink}" class="confirm-btn">Confirm Email</a></p>
+                      <p>If you did not request this change, please ignore this email.</p>
+                  </div>
+              </div>
+          </div>
+      </body>
+  </html>
+  `;
+
+        await this.transporter.sendMail({
+            from: process.env.EMAIL_FROM,
+            to: email,
+            subject,
+            html,
+        });
+    }
+
+    async sendInviteEmail(opts: {
+        to: string;
+        subject: string;
+        senderName: string;
+        message: string;
+    }) {
+        const htmlContent = `
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f4f7fb;
+        margin: 0;
+        padding: 0;
+        color: #333;
+      }
+      .email-container {
+        width: 100%;
+        max-width: 620px;
+        margin: auto;
+        background: #fff;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+      h2 {
+        color: #444;
+        font-size: 22px;
+        margin-bottom: 10px;
+      }
+      p {
+        line-height: 1.6;
+        color: #555;
+        font-size: 15px;
+      }
+      .message-box {
+        background: #f0f7ff;
+        padding: 15px;
+        border-left: 4px solid #007bff;
+        margin: 20px 0;
+        border-radius: 6px;
+      }
+      .footer {
+        margin-top: 30px;
+        font-size: 12px;
+        color: #888;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-container">
+
+      <h2>You Have Been Invited!</h2>
+
+      <p><strong>${opts.senderName}</strong> has invited you to join our platform.</p>
+
+      <div class="message-box">
+        ${opts.message}
+      </div>
+
+      <p>
+        If you wish to join, simply click the link included above inside the invitation message.
+      </p>
+
+      <div class="footer">
+        © ${new Date().getFullYear()} ${process.env.PROJECT_NAME}. All rights reserved.
+      </div>
+
+    </div>
+  </body>
+  </html>
+  `;
+
+        await this.transporter.sendMail({
+            from: `"${process.env.PROJECT_NAME}" <${process.env.EMAIL_USER}>`,
+            to: opts.to,
+            subject: opts.subject,
+            html: htmlContent,
+        });
+    }
 
 }
 

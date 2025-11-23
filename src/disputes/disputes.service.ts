@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Not, Repository } from 'typeorm';
 import { Dispute, Order, User, Notification, DisputeStatus, OrderStatus, Setting, DisputeMessage } from 'entities/global.entity';
 import { AccountingService } from 'src/accounting/accounting.service';
 
@@ -15,19 +15,23 @@ export class DisputesService {
     @InjectRepository(Notification) private notificationRepository: Repository<Notification>,
     private accountingService: AccountingService,
     private dataSource: DataSource,
-  ) {}
+  ) { }
 
   async createDispute(userId: string, createDisputeDto: any) {
-    const { orderId, reason } = createDisputeDto;
+    const { orderId, reason, type, subject } = createDisputeDto;
+
     const order = await this.orderRepository.findOne({ where: { id: orderId }, relations: ['buyer', 'seller'] });
+
     if (!order) throw new NotFoundException('Order not found');
+
     if (order.buyerId !== userId && order.sellerId !== userId) throw new ForbiddenException('You can only open disputes for your own orders');
+
     if (![OrderStatus.ACCEPTED, OrderStatus.DELIVERED].includes(order.status)) throw new BadRequestException('Order is not in a disputable state');
 
     const existing = await this.disputeRepository.findOne({ where: { orderId } });
     if (existing) throw new BadRequestException('A dispute already exists for this order');
 
-    const dispute = this.disputeRepository.create({ orderId, raisedById: userId, reason, status: DisputeStatus.OPEN });
+    const dispute = this.disputeRepository.create({ orderId, raisedById: userId, reason, type, subject, status: DisputeStatus.OPEN });
     const savedDispute = await this.disputeRepository.save(dispute);
 
     // Update order -> DISPUTED + timeline
@@ -120,11 +124,11 @@ export class DisputesService {
       order: order ? { id: order.id, title: order.title, buyer: order.buyer, seller: order.seller, status: order.status } : null,
       invoice: invoice
         ? {
-            id: invoice.id,
-            subtotal: invoice.subtotal,
-            serviceFee: invoice.serviceFee,
-            totalAmount: invoice.totalAmount,
-          }
+          id: invoice.id,
+          subtotal: invoice.subtotal,
+          serviceFee: invoice.serviceFee,
+          totalAmount: invoice.totalAmount,
+        }
         : null,
       messages: messages.map(m => ({
         id: m.id,
@@ -191,32 +195,83 @@ export class DisputesService {
     }
   }
 
-  async getDisputes(status?: string, page: number = 1) {
-    const limit = 20;
-    const skip = ((Number(page) || 1) - 1) * limit;
+  async getDisputes(query: {
+    status?: string;
+    page?: number;
+    limit?: number;
+    search?: string;
+    sortBy?: string;
+    sortOrder?: 'ASC' | 'DESC';
+  }) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 20;
+    const skip = (page - 1) * limit;
 
-    const whereClause: any = {};
-    if (status) whereClause.status = status;
+    const qb = this.disputeRepository
+      .createQueryBuilder('dispute')
+      .leftJoinAndSelect('dispute.order', 'order')
+      .leftJoinAndSelect('dispute.raisedBy', 'raisedBy')
+      .leftJoinAndSelect('order.buyer', 'buyer')
+      .leftJoinAndSelect('order.seller', 'seller');
 
-    const [disputes, total] = await this.disputeRepository.findAndCount({
-      where: whereClause,
-      relations: ['order', 'raisedBy', 'order.buyer', 'order.seller'],
-      order: { created_at: 'DESC' },
-      skip,
-      take: limit,
-    });
+    // --- Filter by status ---
+    if (query.status && query.status !== 'all') {
+      qb.andWhere('dispute.status = :status', { status: query.status });
+    }
+
+    // --- Search ---
+    if (query.search) {
+      qb.andWhere(
+        '(order.title ILIKE :search OR dispute.subject ILIKE :search)',
+        { search: `%${query.search}%` }
+      );
+    }
+
+    // --- Sorting ---
+    const validSortFields = ['created_at', 'updated_at', 'subject', 'status'];
+    const sortBy = validSortFields.includes(query.sortBy) ? query.sortBy : 'created_at';
+    const sortDir: 'ASC' | 'DESC' = query.sortOrder?.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    qb.orderBy(`dispute.${sortBy}`, sortDir);
+
+    // --- Pagination ---
+    qb.skip(skip).take(limit);
+
+    // Execute
+    const [disputes, total] = await qb.getManyAndCount();
 
     return {
       disputes,
-      pagination: { page: Number(page) || 1, limit, total, pages: Math.ceil(total / limit) },
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
     };
   }
 
-  async getUserDisputes(userId: string, page: number = 1) {
-    const limit = 20;
+  async getUserDisputes(userId: string, page: number = 1, limit: number = 20, search: string = '') {
     const skip = ((Number(page) || 1) - 1) * limit;
 
-    const qb = this.disputeRepository.createQueryBuilder('dispute').leftJoinAndSelect('dispute.order', 'order').leftJoinAndSelect('order.buyer', 'buyer').leftJoinAndSelect('order.seller', 'seller').leftJoinAndSelect('dispute.raisedBy', 'raisedBy').where('dispute.raisedById = :userId', { userId }).orWhere('order.buyerId = :userId', { userId }).orWhere('order.sellerId = :userId', { userId }).orderBy('dispute.created_at', 'DESC').skip(skip).take(limit);
+    const qb = this.disputeRepository
+      .createQueryBuilder('dispute')
+      .leftJoinAndSelect('dispute.order', 'order')
+      .leftJoinAndSelect('order.buyer', 'buyer')
+      .leftJoinAndSelect('order.seller', 'seller')
+      .leftJoinAndSelect('dispute.raisedBy', 'raisedBy')
+      .where(
+        '(dispute.raisedById = :userId OR order.buyerId = :userId OR order.sellerId = :userId)',
+        { userId }
+      );
+
+    if (search)
+      qb.andWhere(
+        'dispute.subject ILIKE :search',
+        { search: `%${search}%` }
+      );
+
+    qb.orderBy('dispute.created_at', 'DESC').skip(skip).take(limit);
+
 
     const [disputes, total] = await qb.getManyAndCount();
 
@@ -309,16 +364,17 @@ export class DisputesService {
       note: String(parsed.note || ''),
     };
   }
- 
+
   // -----------------------
   // SMART STATUS ENDPOINT
   // -----------------------
+
   async updateDisputeStatusSmart(
     userId: string,
     userRole: string,
     disputeId: string,
     body: {
-      status: 'open' | 'in_review' | 'resolved' | 'rejected';
+      status: 'open' | 'in_review' | 'resolved' | 'rejected' | 'closed_no_action';
       sellerAmount?: number;
       buyerRefund?: number;
       note?: string;
@@ -326,6 +382,12 @@ export class DisputesService {
       setResolutionOnly?: boolean;
     },
   ) {
+    const restrictedNextStatuses = [
+      DisputeStatus.RESOLVED,
+      DisputeStatus.REJECTED,
+      DisputeStatus.CLOSE_NO_ACTION,
+    ];
+
     const dispute = await this.disputeRepository.findOne({
       where: { id: disputeId },
       relations: ['order', 'order.buyer', 'order.seller'],
@@ -345,6 +407,15 @@ export class DisputesService {
         throw new ForbiddenException('Only administrators can change dispute status');
       }
     }
+
+    if (restrictedNextStatuses.includes(next)) {
+      if (![DisputeStatus.OPEN, DisputeStatus.IN_REVIEW].includes(prev)) {
+        throw new BadRequestException(
+          `Dispute status "${next}" can only be set if the previous status is OPEN or IN_REVIEW.`
+        );
+      }
+    }
+
 
     if (next === DisputeStatus.IN_REVIEW) {
       // If coming back from RESOLVED → IN_REVIEW, reverse funds first
@@ -429,12 +500,28 @@ export class DisputesService {
       return dispute;
     }
 
+    if (next === DisputeStatus.CLOSE_NO_ACTION) {
+      if (user.role !== 'admin') throw new ForbiddenException('Only administrators can close dispute');
+      dispute.status = DisputeStatus.CLOSE_NO_ACTION;
+      await this.disputeRepository.save(dispute);
+
+      order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
+
+      order.status = OrderStatus.ACCEPTED;
+      await this.orderRepository.save(order);
+
+      await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "close without action" on "${order.title}".`, dispute.id);
+
+      return dispute;
+    }
+
     if (next === DisputeStatus.REJECTED) {
       if (user.role !== 'admin') throw new ForbiddenException('Only administrators can reject');
       dispute.status = DisputeStatus.REJECTED;
       await this.disputeRepository.save(dispute);
 
       order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
+      order.status = OrderStatus.ACCEPTED;
       await this.orderRepository.save(order);
 
       await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "rejected" on "${order.title}".`, dispute.id);
@@ -651,6 +738,29 @@ export class DisputesService {
       if (payload.closeAs === 'completed') {
         order.status = OrderStatus.COMPLETED;
         (order as any).completedAt = new Date();
+
+
+        // Update seller stats inside transaction
+        const seller = await manager.getRepository(User).findOne({ where: { id: order.sellerId } });
+        if (seller) {
+          seller.ordersCompleted = (seller.ordersCompleted || 0) + 1;
+
+          const previousOrders = await manager.getRepository(Order).count({
+            where: {
+              sellerId: seller.id,
+              buyerId: order.buyerId,
+              status: OrderStatus.COMPLETED,
+              id: Not(order.id),
+            },
+          });
+
+          if (previousOrders === 0) {
+            seller.repeatBuyers = (seller.repeatBuyers || 0) + 1;
+          }
+
+          await manager.getRepository(User).save(seller);
+        }
+
       } else {
         order.status = OrderStatus.CANCELLED; // ensure this exists in your enum
         (order as any).cancelledAt = new Date();

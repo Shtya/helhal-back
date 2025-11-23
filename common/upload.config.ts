@@ -34,3 +34,42 @@ export const serviceIconOptions = {
   },
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
 };
+
+export const categoryIconOptions = {
+  storage: diskStorage({
+    destination: (_req, file, cb) => {
+      if (!file.mimetype.startsWith('image/')) return cb(new Error('Only images allowed'), '');
+      const dir = join(process.cwd(), 'uploads', 'category-icons');
+      ensureDir(dir);
+      cb(null, dir);
+    },
+    filename: (_req, file, cb) => cb(null, randName(file.originalname)),
+  }),
+  fileFilter: (req: any, file: MulterFile, cb: Function) => {
+    cb(null, file.mimetype.startsWith('image/'));
+  },
+  limits: { fileSize: 10 * 1024 * 1024 },
+};
+
+
+const IMG_RE = /^image\/(jpeg|png|jpg|gif|webp|svg\+xml)$/;
+
+export const logoUploadOptions = {
+  storage: diskStorage({
+    destination: async (_req, _file, cb) => {
+      const dir = join(process.cwd(), 'uploads', 'siteLogo');
+      await ensureDir(dir);
+      cb(null, dir);
+    },
+    filename: (_req, file, cb) => {
+      const ext = file.originalname.split('.').pop();
+      const filename = `siteLogo-${Date.now()}.${ext}`;
+      cb(null, filename);
+    },
+  }),
+  fileFilter: (_req, file, cb) => {
+    if (IMG_RE.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Only image files are allowed'), false);
+  },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+};

@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Like, Repository } from 'typeorm';
+import { IsNull, Like, Repository } from 'typeorm';
 import { Conversation, Message, User, Order, Service as ServiceEntity, FavoriteConversation } from 'entities/global.entity';
+import { ChatGateway } from 'src/chat/chat.gateway';
 
 @Injectable()
 export class ConversationsService {
@@ -18,7 +19,9 @@ export class ConversationsService {
     private serviceRepository: Repository<ServiceEntity>,
     @InjectRepository(FavoriteConversation)
     private favoriteRepository: Repository<FavoriteConversation>,
-  ) {}
+    @Inject(forwardRef(() => ChatGateway))
+    private chatGateway: ChatGateway,
+  ) { }
 
   async getConversation(userId: string, conversationId: string) {
     const conversation = await this.conversationRepository.findOne({
@@ -38,7 +41,7 @@ export class ConversationsService {
       where: {
         conversationId,
         senderId: conversation.buyerId === userId ? conversation.sellerId : conversation.buyerId,
-        readAt: null,
+        readAt: IsNull(),
       },
     });
 
@@ -88,7 +91,11 @@ export class ConversationsService {
    * Create and save a message with optional attachments.
    * At least one of (messageText, attachments) must be present.
    */
-  async sendMessage(userId: string, conversationId: string, messageText?: string, attachments?: string[]) {
+  async sendMessage(userId: string, conversationId: string, messageText?: string, attachments?: {
+    url: string;
+    type: string;
+    filename: string;
+  }[]) {
     const text = (messageText || '').trim();
 
     if (!text && (!attachments || attachments.length === 0)) {
@@ -121,6 +128,20 @@ export class ConversationsService {
 
     conversation.lastMessageAt = new Date();
     await this.conversationRepository.save(conversation);
+
+    // Determine receiver
+    const otherUserId =
+      conversation.buyerId === userId
+        ? conversation.sellerId
+        : conversation.buyerId;
+
+    const user = await this.userRepository.findOne({
+      where: [{ id: userId }],
+
+    });
+    // 🔥 Emit message to receiver
+    this.chatGateway.emitNewMessage(otherUserId, message, user);
+
 
     return this.messageRepository.save(message);
   }
@@ -176,7 +197,7 @@ export class ConversationsService {
         where: {
           conversationId: conversation.id,
           senderId: otherUserId,
-          readAt: null,
+          readAt: IsNull(),
         },
       });
 
@@ -210,7 +231,7 @@ export class ConversationsService {
 
     const [conversations, total] = await this.conversationRepository.findAndCount({
       where: [{ buyerId: userId }, { sellerId: userId }],
-      relations: ['buyer', 'seller', 'service', 'order', 'messages'],
+      relations: ['buyer', 'seller', 'service', 'order'],
       order: { lastMessageAt: 'DESC' as any },
       skip,
       take: limit,
@@ -222,7 +243,7 @@ export class ConversationsService {
           where: {
             conversationId: conversation.id,
             senderId: conversation.buyerId === userId ? conversation.sellerId : conversation.buyerId,
-            readAt: null,
+            readAt: IsNull(),
           },
         });
 
@@ -366,8 +387,14 @@ export class ConversationsService {
 
     if (initialMessage) {
       await this.sendMessage(userId, savedConversation.id, initialMessage);
+
     }
 
-    return savedConversation;
+
+    // Return with relations
+    return this.conversationRepository.findOne({
+      where: { id: savedConversation.id },
+      relations: ['buyer', 'seller'],
+    });
   }
 }

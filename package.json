@@ -9,7 +9,7 @@
     "seed": "ts-node -r tsconfig-paths/register src/seeder.run.ts",
     "build": "nest build",
     "start": "node dist/src/main.js",
-		"postinstall": "npm run build" ,
+    "postinstall": "npm run build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "nodemon": "nodemon --ext json,yaml --exec npm run start",
     "start:dev": "nest start --watch",
@@ -36,6 +36,7 @@
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.4.20",
     "@nestjs/platform-socket.io": "^10.4.18",
+    "@nestjs/schedule": "^6.0.1",
     "@nestjs/typeorm": "^11.0.0",
     "@nestjs/websockets": "^10.4.18",
     "@types/passport": "^1.0.17",
@@ -65,7 +66,7 @@
     "typeorm": "^0.3.20",
     "uuid": "^11.0.5"
   },
-  "devDependencies": { 
+  "devDependencies": {
     "@nestjs/cli": "^10.0.0",
     "@nestjs/schematics": "^10.0.0",
     "@nestjs/testing": "^10.0.0",

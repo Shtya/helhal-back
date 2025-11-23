@@ -40,6 +40,7 @@ export class AuthService {
   REFRESH_TOKEN_EXPIRY_DAYS = 7;
   MAX_REFRESH_TOKENS = 5;
 
+
   private hash(token: string) {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
@@ -51,6 +52,10 @@ export class AuthService {
     }
 
     user.status = status;
+
+    if (user.role === UserRole.ADMIN) {
+      throw new ForbiddenException("You cannot update admin's status");
+    }
 
     if (status === UserStatus.DELETED) {
       user.deactivatedAt = new Date();
@@ -96,6 +101,10 @@ export class AuthService {
     user.status = UserStatus.DELETED;
     user.deactivatedAt = new Date();
 
+    if (user.role === UserRole.ADMIN) {
+      throw new ForbiddenException("You cannot delete admin");
+    }
+
     // Record deactivation reason
     const deactivation = this.accountDeactivationRepository.create({
       user,
@@ -125,11 +134,10 @@ export class AuthService {
       }
     }
 
-
     const pendingUser = await this.pendingUserRepository.findOne({ where: { email } });
     const currentTimestamp = Date.now();
 
-    if (pendingUser) {
+    if (pendingUser && pendingUser?.lastSentAt) {
       const lastSentTime = pendingUser.lastSentAt.getTime();
       const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
 
@@ -271,12 +279,16 @@ export class AuthService {
     }
 
     const currentTimestamp = Date.now();
-    const lastSentTime = pendingUser.lastSentAt.getTime();
-    const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
 
-    if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
-      const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-      throw new ForbiddenException(`Please wait ${remainingSeconds} minutes before resending email`);
+    if (!pendingUser?.lastSentAt) {
+
+      const lastSentTime = pendingUser.lastSentAt.getTime();
+      const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
+
+      if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
+        const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+        throw new ForbiddenException(`Please wait ${remainingSeconds} minutes before resending email`);
+      }
     }
 
     const newVerificationCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -297,13 +309,13 @@ export class AuthService {
   async login(loginDto: LoginDto, res: Response, req) {
     const { email, password } = loginDto;
 
-    const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').leftJoinAndSelect('user.country', 'country').where('user.email = :email', { email }).andWhere('user.status != :deleted', { deleted: UserStatus.DELETED }).getOne();
+    const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').leftJoinAndSelect('user.country', 'country').where('user.email = :email', { email }).getOne();
     if (!user || !(await user.comparePassword(password))) {
       throw new UnauthorizedException('Incorrect email or password');
     }
 
-    if (user.status === UserStatus.INACTIVE) {
-      throw new UnauthorizedException('Your account is inactive. Please contact support or reactivate your account to continue.');
+    if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
+      throw new UnauthorizedException('Your account is inactive. Please contact support.');
     }
 
     if (user.status === UserStatus.SUSPENDED) {
@@ -321,16 +333,13 @@ export class AuthService {
     await this.userRepository.save(user);
 
     // 1) create a new DB session
-    const session = this.sessionsRepo.create({
-      userId: user.id,
-      ipAddress: deviceInfo.ip_address,
-      userAgent: req.headers['user-agent'] || '',
-      deviceType: deviceInfo.device_type,
-      browser: deviceInfo.browser,
-      os: deviceInfo.os,
-      lastActivity: new Date(),
-      revokedAt: null,
+    const session = await this.createSession(user, {
+      deviceInfo: deviceInfo,
+      ip: deviceInfo.ip_address,
+      userAgent: req.headers['user-agent'] ?? null,
     });
+
+
     await this.sessionsRepo.save(session);
 
     // 2) issue tokens embedding sid
@@ -438,7 +447,7 @@ export class AuthService {
       return { message: 'OTP sent if account exists' };
     }
 
-    if (user.resetPasswordExpires) {
+    if (user.resetPasswordExpires && user?.lastResetPasswordSentAt) {
       const currentTimestamp = Date.now();
       const lastSentTime = user.lastResetPasswordSentAt.getTime();
       const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
@@ -556,9 +565,14 @@ export class AuthService {
     return user;
   }
 
-  async updateProfile(userId: string, updateData: Partial<User>) {
+  async updateProfile(userId: string, updateData: Partial<User>, adminId?: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
+
+    const isAdmin = !!adminId;
+    if (isAdmin && user.role === UserRole.ADMIN && user.id != adminId) {
+      throw new ForbiddenException("You cannot update another admin's profile");
+    }
 
     const allowedFields: (keyof User)[] = ['profileImage', 'username', 'phone', 'description', 'languages', 'skills', 'education', 'certifications', 'deliveryTime', 'ageGroup', 'revisions', 'preferences', 'type', 'countryId'];
 
@@ -566,6 +580,22 @@ export class AuthService {
       const exists = await this.userRepository.findOne({ where: { email: updateData.email } });
       if (exists) throw new ConflictException('Email already in use');
       user.email = updateData.email!;
+    }
+
+    // ✅ Username update check
+    if (
+      updateData.username && typeof updateData.username !== 'undefined' &&
+      updateData.username !== user.username
+    ) {
+      const usernameExists = await this.userRepository.findOne({
+        where: { username: updateData.username },
+      });
+
+      if (usernameExists) {
+        throw new ConflictException('Username already taken');
+      }
+
+      user.username = updateData.username;
     }
 
     for (const f of allowedFields) {
@@ -605,7 +635,7 @@ export class AuthService {
     return { ...profile, ordersCompleted, repeatBuyers, averageRating, topRated } as any;
   }
 
-  async updateSellerLevel(userId: string) {
+  async updateSellerLevelAutomatically(userId: string) {
     const stats = await this.getProfileStats(userId);
     let sellerLevel = SellerLevel.LVL1;
     if (stats.ordersCompleted >= 50 && stats.averageRating >= 4.8)
@@ -616,6 +646,25 @@ export class AuthService {
     if (!user) throw new NotFoundException('User not found');
     user.sellerLevel = sellerLevel;
     user.topRated = sellerLevel === SellerLevel.TOP;
+    return this.userRepository.save(user);
+  }
+
+  async updateSellerLevel(userId: string, level: SellerLevel, adminId) {
+    // Validate the level
+    if (!Object.values(SellerLevel).includes(level)) {
+      throw new BadRequestException(`Invalid seller level: ${level}`);
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException(`User with ID ${userId} not found`);
+
+
+    // Optional: prevent changing other admins
+    if (user.role === UserRole.ADMIN && user.id !== adminId) {
+      throw new BadRequestException(`Cannot change seller level for another admin`);
+    }
+
+    user.sellerLevel = level;
     return this.userRepository.save(user);
   }
 
@@ -668,14 +717,42 @@ export class AuthService {
     }
     return { message: 'Session revoked', id: sessionId };
   }
-  async getSessionsForUser(userId: string, opts?: { activeOnly?: boolean }) {
-    const rows = await this.sessionsRepo.find({
-      where: { userId },
-      order: { created_at: 'DESC' },
-      select: ['id', 'userId', 'ipAddress', 'userAgent', 'deviceType', 'browser', 'os', 'lastActivity', 'revokedAt', 'created_at'],
-    });
-    return opts?.activeOnly ? rows.filter(r => !r.revokedAt) : rows;
+  // auth.service.ts
+  async getSessionsForUser(
+    userId: string,
+    opts?: { activeOnly?: boolean; cursor?: string; limit?: number }
+  ) {
+    const qb = this.sessionsRepo
+      .createQueryBuilder('s')
+      .where('s.userId = :userId', { userId })
+      .orderBy('s.created_at', 'DESC')
+      .limit(opts?.limit ?? 50);
+
+    // Apply cursor
+    if (opts?.cursor) {
+      qb.andWhere('s.created_at < :cursorDate', {
+        cursorDate: new Date(opts.cursor),
+      });
+    }
+
+    // Active-only filter
+    if (opts?.activeOnly) {
+      qb.andWhere('s.revokedAt IS NULL');
+    }
+
+    const rows = await qb.getMany();
+
+    // New cursor → last item timestamp
+    const nextCursor = rows.length > 0 ? rows[rows.length - 1].created_at : null;
+
+    return {
+      data: rows,
+      nextCursor,
+      hasMore: !!nextCursor,
+    };
   }
+
+
   async logoutAllExcept(userId: string, keepSessionId?: string) {
     const qb = this.sessionsRepo
       .createQueryBuilder()
@@ -686,4 +763,226 @@ export class AuthService {
     await qb.execute();
     return { message: keepSessionId ? 'Other sessions revoked' : 'All sessions revoked' };
   }
+
+
+  async requestEmailChange(userId: string, newEmail: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    // Check if new email is already used
+    const emailExists = await this.userRepository.findOne({
+      where: { email: newEmail },
+      select: [
+        'id',
+        'username',
+        'email',
+        'pendingEmail',
+        'pendingEmailCode',
+        'lastEmailChangeSentAt',
+      ],
+    });
+    if (emailExists) throw new BadRequestException('Email already in use');
+
+    // Cooldown check
+    if (user.lastEmailChangeSentAt) {
+      const currentTimestamp = Date.now();
+      const lastSentTime = user.lastEmailChangeSentAt.getTime();
+      const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
+
+      if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
+        const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
+      }
+    }
+
+    // Update last sent timestamp
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+    user.lastEmailChangeSentAt = new Date();
+    user.pendingEmail = newEmail;
+    user.pendingEmailCode = code;
+
+    await this.userRepository.save(user);
+
+    // Send confirmation email
+    await this.emailService.sendEmailChangeConfirmation(newEmail, user.username, user.id, code);
+
+    return { message: 'Confirmation email sent to new email address' };
+  }
+
+  async resendEmailConfirmation(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId }, select: [
+        'id',
+        'username',
+        'email',
+        'pendingEmail',
+        'pendingEmailCode',
+        'lastEmailChangeSentAt',
+      ],
+    });
+    if (!user || !user.pendingEmail || !user.pendingEmailCode) {
+      throw new BadRequestException('No pending email change found');
+    }
+
+    // Cooldown check
+    if (user.lastEmailChangeSentAt) {
+      const currentTimestamp = Date.now();
+      const lastSentTime = user.lastEmailChangeSentAt.getTime();
+      const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
+
+      if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
+        const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
+      }
+    }
+
+    user.lastEmailChangeSentAt = new Date()
+
+    await this.userRepository.save(user);
+
+    await this.emailService.sendEmailChangeConfirmation(
+      user.pendingEmail,
+      user.username,
+      user.id,
+      user.pendingEmailCode
+    );
+
+    return { message: 'Confirmation email resent' };
+  }
+
+  async cancelEmailChange(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId }, select: [
+        'id',
+        'username',
+        'email',
+        'pendingEmail',
+        'pendingEmailCode',
+        'lastEmailChangeSentAt',
+      ],
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    user.pendingEmail = null;
+    user.pendingEmailCode = null;
+    user.lastEmailChangeSentAt = null;
+
+    await this.userRepository.save(user);
+    return { message: 'Pending email change canceled' };
+  }
+
+  async confirmEmailChange(userId: string, pendingEmail: string, code: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId }, select: [
+        'id',
+        'username',
+        'email',
+        'pendingEmail',
+        'pendingEmailCode',
+        'lastEmailChangeSentAt',
+      ],
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (user.pendingEmail !== pendingEmail || user.pendingEmailCode !== code) {
+      throw new BadRequestException('Invalid code or pending email');
+    }
+
+    // Check if email is now used
+    const emailExists = await this.userRepository.findOne({ where: { email: pendingEmail } });
+    if (emailExists) throw new BadRequestException('Email already in use');
+
+    user.email = pendingEmail;
+    user.pendingEmail = null;
+    user.pendingEmailCode = null;
+    user.lastEmailChangeSentAt = null;
+
+    await this.userRepository.save(user);
+
+    return { message: 'Email successfully updated' };
+  }
+
+  async getFirstAdmin() {
+    const admin = await this.userRepository.findOne({
+      where: { role: 'admin' },
+      order: { created_at: 'ASC' }, // get the earliest admin
+    });
+
+    if (!admin) {
+      throw new NotFoundException('No admin user found');
+    }
+
+    return admin;
+  }
+
+  async calculateUsersResponseTime() {
+    const result = await this.userRepository.query(`
+    WITH last60 AS (
+      SELECT 
+        m.id,
+        m.sender_id,
+        m.conversation_id,
+        m.created_at,
+        LAG(m.created_at) OVER (PARTITION BY m.conversation_id ORDER BY m.created_at) AS prev_created,
+        LAG(m.sender_id) OVER (PARTITION BY m.conversation_id ORDER BY m.created_at) AS prev_sender
+      FROM messages m
+      WHERE m.created_at >= NOW() - INTERVAL '60 days'
+    ),
+
+    response_pairs AS (
+      SELECT
+        sender_id AS user_id,
+        EXTRACT(EPOCH FROM (created_at - prev_created)) AS diff_seconds
+      FROM last60
+      WHERE prev_created IS NOT NULL
+      AND sender_id != prev_sender  -- user responded to someone
+    ),
+
+    avg_times AS (
+      SELECT
+        user_id,
+        AVG(diff_seconds) AS avg_seconds
+      FROM response_pairs
+      GROUP BY user_id
+    )
+
+    SELECT 
+      u.id AS user_id,
+      a.avg_seconds,
+      FLOOR(a.avg_seconds / 86400) AS days,
+      FLOOR(MOD(a.avg_seconds, 86400) / 3600) AS hours,
+      FLOOR(MOD(a.avg_seconds, 3600) / 60) AS minutes
+    FROM users u
+    LEFT JOIN avg_times a ON a.user_id = u.id;
+  `);
+
+    return result;
+  }
+
+
+
+  async updateResponseTimes() {
+    // 1) Get computed average response times from raw SQL
+    const responseTimes = await this.calculateUsersResponseTime();
+
+    if (!responseTimes || responseTimes.length === 0) {
+      console.log('No response times found.');
+      return;
+    }
+
+    // 2) Update each user in DB
+    for (const rt of responseTimes) {
+      await this.userRepository.update(
+        { id: rt.user_id },
+        {
+          responseTime: rt.avg_seconds, // store seconds in DB
+          responseTimeFormatted: `${rt?.days ?? 0}d ${rt?.hours ?? 0}h ${rt?.minutes ?? 0}m ${rt?.seconds ?? 0}s`
+        }
+      );
+    }
+
+    console.log(`Updated response time for ${responseTimes.length} users.`);
+  }
+
 }

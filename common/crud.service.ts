@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import * as ExcelJS from 'exceljs';
-import { Repository, Brackets } from 'typeorm';
+import { Repository, Brackets, IsNull, Not } from 'typeorm';
 import { BadRequestException } from '@nestjs/common';
 import { User } from 'entities/global.entity';
 import * as crypto from 'crypto';
@@ -40,25 +40,82 @@ export class CRUD {
 
     function flatten(obj: any, prefix = ''): Record<string, any> {
       let result: Record<string, any> = {};
+
       Object.entries(obj).forEach(([key, value]) => {
         const prefixedKey = prefix ? `${prefix}.${key}` : key;
-        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-          Object.assign(result, flatten(value, prefixedKey));
+
+        if (typeof value === 'object' &&
+          value !== null &&
+          !Array.isArray(value)
+        ) {
+          // Detect operator objects (contain keys like not, isNull, in, like)
+          const operatorKeys = ['not', 'isNull', 'in', 'like'];
+          const isOperatorObject = Object.keys(value).some(k =>
+            operatorKeys.includes(k)
+          );
+
+          if (isOperatorObject) {
+            // Preserve operator object as-is
+            result[prefixedKey] = value;
+          } else {
+            // Normal nested object → keep flattening
+            Object.assign(result, flatten(value, prefixedKey));
+          }
         } else {
           result[prefixedKey] = value;
         }
       });
+
       return result;
     }
+
 
     if (filters && Object.keys(filters).length > 0) {
       const flatFilters = flatten(filters);
       Object.entries(flatFilters).forEach(([flatKey, value]) => {
         if (value !== null && value !== undefined && value !== '') {
           const paramKey = flatKey.replace(/\./g, '_');
+          // Handle explicit null
+          if (value === null) {
+            query.andWhere(`${entityName}.${flatKey} IS NULL`);
+            return;
+          }
+
+          // Handle special operators
+          if (typeof value === 'object' && value !== null) {
+            // Example: { not: 5 } → NOT EQUAL
+            if ('not' in value) {
+              query.andWhere(`${entityName}.${flatKey} != :${paramKey}`, {
+                [paramKey]: value.not,
+              });
+              return;
+            }
+
+            // Example: { isNull: true } → IS NULL
+            if (value.isNull === true) {
+              query.andWhere(`${entityName}.${flatKey} IS NULL`);
+              return;
+            }
+
+            // Example: { isNull: false } → IS NOT NULL
+            if (value.isNull === false) {
+              query.andWhere(`${entityName}.${flatKey} IS NOT NULL`);
+              return;
+            }
+
+            if ('in' in value) {
+              query.andWhere(`${entityName}.${flatKey} IN (:...${paramKey})`, {
+                [paramKey]: value.in,
+              });
+              return;
+            }
+
+          }
+          // Default: equality
           query.andWhere(`${entityName}.${flatKey} = :${paramKey}`, {
             [paramKey]: value,
           });
+
         }
       });
     }

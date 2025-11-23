@@ -1,11 +1,14 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Query, Param, Delete, Put } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { AccountingService } from './accounting.service';
+import { Roles } from 'decorators/roles.decorator';
+import { UserRole } from 'entities/global.entity';
+import { RolesGuard } from 'src/auth/guard/roles.guard';
 
 @Controller('accounting')
 @UseGuards(JwtAuthGuard)
 export class AccountingController {
-  constructor(private accountingService: AccountingService) {}
+  constructor(private accountingService: AccountingService) { }
 
   @Get('billing-information')
   async getBillingInformation(@Req() req) {
@@ -27,10 +30,6 @@ export class AccountingController {
   async createBankAccount(@Req() req, @Body() bankAccountData: any) {
     return this.accountingService.createBankAccount(req.user.id, bankAccountData);
   }
-
-
-
-
 
 
   @Put('bank-accounts/:id')
@@ -65,9 +64,34 @@ export class AccountingController {
     return this.accountingService.getUserBalance(req.user.id);
   }
 
+  @Get('admin/transactions')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  async getAllTransactions(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+    @Query('type') type?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.accountingService.getTransactions({ page, limit, type, search });
+  }
+
+
   @Get('transactions')
-  async getTransactions(@Req() req, @Query('page') page: number = 1, @Query('type') type?: string) {
-    return this.accountingService.getUserTransactions(req.user.id, page, type);
+  @UseGuards(JwtAuthGuard)
+  async getTransactions(
+    @Req() req,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+    @Query('type') type?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.accountingService.getTransactions({
+      page,
+      limit,
+      type,
+      search,
+    }, req.user.id);
   }
 
   @Post('withdraw')

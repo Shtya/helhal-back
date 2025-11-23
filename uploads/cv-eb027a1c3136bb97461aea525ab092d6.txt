@@ -1,0 +1,25 @@
+- صفحه و متحطش ألوان
+- استخدم خط تايم
+- شلاش تعمل cv من مواقع لان ats مش بيقرأه
+
+If unrelated to degree:
+Summary
+Experience
+Projects
+Technical Skills
+Courses
+Education
+
+- بلاش columns و لا icons
+- اكتب معلوماتك الاساسيه من غير ions بس ب tilte
+- الاس ثلاثي و تحته المسمي الوظيفي بخط عادي مع التراك
+- اللنكات كليكابل 
+- التاريخ الشه و السنه كرقم
+- السمري يكون صغير و يوضح بتعرف تعمل ايه مش رغي علي الفاضي 
+"Junior Software Quality Control Engineer. skilled in manual testing including test case design. execution and bug
+with exrxnence in E-commerce and E-learrung dcmuins. Proficient in API testing and automation using Katalcm,
+auu•matiooskilbwith"
+- لو مش عارف تكتب مسؤلياتك اكتب ل gpt و قله انت كنت بتعمل ايه و هو هيكتبلك مسؤلياتك علي هيأة نقط
+- اسم المشروع + وقته + وصف نقا بسيط عنه
+-اسم الكورس و المنصه و خلي الكورس cliable و الوقت
+ اسم ال cv و المسمي الوظيفي

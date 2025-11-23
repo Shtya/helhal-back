@@ -30,7 +30,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private orderRepository: Repository<Order>,
     @InjectRepository(Service)
     private serviceRepository: Repository<Service>,
-  ) {}
+  ) { }
 
   async handleConnection(socket: Socket) {
     try {
@@ -84,82 +84,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     socket.leave(`conversation_${conversationId}`);
   }
 
-  @SubscribeMessage('send_message')
-  async handleMessage(socket: Socket, data: { conversationId: string; message: string; attachments?: string[] }) {
-    try {
-      if (!data.message || data.message.trim().length === 0) {
-        socket.emit('error', { message: 'Message cannot be empty' });
-        return;
-      }
-
-      if (data.message.length > 1000) {
-        socket.emit('error', { message: 'Message too long' });
-        return;
-      }
-      const token = socket.handshake.auth.token;
-      const decoded = this.jwtService.verify(token, { secret: process.env.JWT_SECRET });
-
-      const user = await this.userRepository.findOne({ where: { id: decoded.id } });
-      if (!user) return;
-      const conversation = await this.conversationRepository.findOne({ where: { id: data.conversationId }, relations: ['buyer', 'seller'] });
-      if (!conversation) return;
-      if (conversation.buyerId !== user.id && conversation.sellerId !== user.id) {
-        return;
-      }
-      const message = this.messageRepository.create({
-        conversationId: data.conversationId,
-        senderId: user.id,
-        message: data.message,
+  emitNewMessage(otherUserId: string, message: any, sender: any) {
+    console.log(`User ${sender.username} send message to ${otherUserId}`);
+    this.server
+      .to(`user_${otherUserId}`)
+      .emit('new_message', {
+        ...message,
+        sender,
       });
-
-      const savedMessage = await this.messageRepository.save(message);
-
-      conversation.lastMessageAt = new Date();
-      await this.conversationRepository.save(conversation);
-
-      this.server.to(`conversation_${data.conversationId}`).emit('new_message', {
-        ...savedMessage,
-        sender: { id: user.id, username: user.username },
-      });
-
-      const otherUserId = conversation.buyerId === user.id ? conversation.sellerId : conversation.buyerId;
-      const otherUserSocketId = this.connectedUsers.get(otherUserId);
-
-      if (otherUserSocketId) {
-        this.server.to(otherUserSocketId).emit('message_notification', {
-          conversationId: data.conversationId,
-          message: data.message,
-          sender: user.username,
-        });
-      }
-
-      this.server.to(`conversation_${data.conversationId}`).emit('new_message', {
-        ...savedMessage,
-        sender: { id: user.id, username: user.username, profileImage: user.profileImage },
-      });
-
-      // ALSO send to user's personal room for guaranteed delivery
-      this.server.to(`user_${otherUserId}`).emit('new_message', {
-        ...savedMessage,
-        sender: { id: user.id, username: user.username, profileImage: user.profileImage },
-      });
-    } catch (error) {
-      console.error('Error sending message:', error);
-      socket.emit('error', { message: 'Failed to send message' });
-    }
   }
 
-  @SubscribeMessage('mark_as_read')
-  async handleMarkAsRead(socket: Socket, conversationId: string) {
-    try {
-      const token = socket.handshake.auth.token;
-      const decoded = this.jwtService.verify(token, {
-        secret: process.env.JWT_SECRET,
-      });
-
-      await this.messageRepository.createQueryBuilder().update(Message).set({ readAt: new Date() }).where('conversationId = :conversationId', { conversationId }).andWhere('senderId != :userId', { userId: decoded.id }).andWhere('readAt IS NULL').execute();
-    } catch (error) {
-      console.error('Error marking messages as read:', error);
-    }
+  emitNewNotification(userId: string, notification: any) {
+    this.server.to(`user_${userId}`).emit("new_notification", notification);
+    console.log("📢 Sent notification to user:", userId);
   }
+
 }

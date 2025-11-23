@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, In, Between, LessThanOrEqual, MoreThanOrEqual, DataSource } from 'typeorm';
-import { Service, Category, User, ServiceStatus, ServiceRequirement, ServiceReview, Notification } from 'entities/global.entity';
+import { Repository, Like, In, Between, LessThanOrEqual, MoreThanOrEqual, DataSource, MoreThan } from 'typeorm';
+import { Service, Category, User, ServiceStatus, ServiceRequirement, ServiceReview, Notification, ServiceClick } from 'entities/global.entity';
 import { join } from 'path';
 import { promises as fsp } from 'fs';
+import { SessionService } from 'src/auth/session.service';
 
 @Injectable()
 export class ServicesService {
@@ -12,11 +13,16 @@ export class ServicesService {
     public serviceRepository: Repository<Service>,
     @InjectRepository(Category)
     public categoryRepository: Repository<Category>,
+    @InjectRepository(ServiceRequirement)
+    public serviceRequirementRepository: Repository<ServiceRequirement>,
     @InjectRepository(User)
     public userRepository: Repository<User>,
+    @InjectRepository(ServiceClick)
+    public serviceClickRepository: Repository<ServiceClick>,
     @InjectRepository(Notification) private notificationRepository: Repository<Notification>,
     @InjectRepository(ServiceReview) private reviewRepository: Repository<ServiceReview>,
     private readonly dataSource: DataSource,
+    public sessionService: SessionService,
   ) { }
 
   async getServices(query: any) {
@@ -27,7 +33,8 @@ export class ServicesService {
 
     if (category) whereClause.categoryId = category;
     if (subcategory) whereClause.subcategoryId = subcategory;
-    if (status) whereClause.status = status;
+    // if (status) whereClause.status = status;
+    whereClause.status = ServiceStatus.ACTIVE;
     if (minPrice || maxPrice) {
       whereClause.packages = Between(minPrice || 0, maxPrice || 999999);
     }
@@ -570,7 +577,7 @@ export class ServicesService {
     };
   }
 
-  async getService(slug: string) {
+  async getService(slug: string, userId: string) {
     const service = await this.serviceRepository.findOne({
       where: { slug },
       relations: ['seller', 'category', 'subcategory', 'requirements', 'reviews'],
@@ -579,6 +586,12 @@ export class ServicesService {
     if (!service) {
       throw new NotFoundException('Service not found');
     }
+    // Only allow inactive service preview for the owner or admin
+    const isOwnerOrAdmin = userId && (service.sellerId === userId);
+    if (service.status !== ServiceStatus.ACTIVE && !isOwnerOrAdmin) {
+      throw new NotFoundException('Service not found');
+    }
+
 
     const relatedServices = await this.serviceRepository.find({
       where: service.subcategoryId ? { subcategoryId: service.subcategoryId } : { categoryId: service.categoryId },
@@ -594,10 +607,31 @@ export class ServicesService {
     };
   }
 
+  private createSlog(slug) {
+    const tempSlug = slug
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-');
+
+    return tempSlug;
+  }
   async createService(userId: string, createServiceDto: any) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+
+    // Generate slug from title
+    const tempSlug = this.createSlog(createServiceDto.title);
+
+    // Check if slug already exists
+    const existingService = await this.serviceRepository.findOne({ where: { slug: tempSlug } });
+    if (existingService) {
+      throw new BadRequestException(
+        `Service with title "${createServiceDto.title}" already exists. Please choose a different title.`
+      );
     }
 
     // Create service with pending status
@@ -609,6 +643,18 @@ export class ServicesService {
     });
 
     const savedService: any = await this.serviceRepository.save(service);
+
+    // Save requirements if provided
+    if (createServiceDto.requirements?.length) {
+      const requirements = createServiceDto.requirements.map(req =>
+        this.serviceRequirementRepository.create({
+          ...req,
+          serviceId: savedService.id,
+        })
+      );
+      await this.serviceRequirementRepository.save(requirements);
+    }
+
 
     // Find the first admin user
     const adminUser = await this.userRepository.findOne({
@@ -642,6 +688,19 @@ export class ServicesService {
       throw new NotFoundException('Service not found');
     }
 
+    // If title is being updated, generate new slug and check uniqueness
+    if (updateServiceDto.title && updateServiceDto.title !== service.title) {
+      const newSlug = this.createSlog(updateServiceDto.title);
+
+      const existingService = await this.serviceRepository.findOne({ where: { slug: newSlug } });
+      if (existingService && existingService.id !== service.id) {
+        throw new BadRequestException(
+          `Service with title "${updateServiceDto.title}" already exists. Please choose a different title.`
+        );
+      }
+
+      service.slug = newSlug;
+    }
     const user = await this.userRepository.findOne({ where: { id: userId } });
 
     if (user.role != 'admin')
@@ -649,9 +708,63 @@ export class ServicesService {
         throw new ForbiddenException('You can only update your own services');
       }
 
-    Object.assign(service, updateServiceDto);
+
+    // Explicitly assign only allowed fields
+    const allowedFields = [
+      'title',
+      'brief',
+      'metadata',
+      'searchTags',
+      'categoryId',
+      'subcategoryId',
+      'additionalRevision',
+      'fastDelivery',
+      'faq',
+      'packages',
+      'gallery',
+    ];
+
+    for (const field of allowedFields) {
+      if (field in updateServiceDto) {
+        service[field] = updateServiceDto[field];
+      }
+    }
+
+    service.status = ServiceStatus.PENDING;
+    // Update service first
+    const savedService = await this.serviceRepository.save(service);
+
+    // Update requirements if provided
+    if (updateServiceDto.requirements) {
+      // Delete existing requirements
+      await this.serviceRequirementRepository.delete({ serviceId });
+
+      // Create new requirements
+      const requirements = updateServiceDto.requirements.map(req =>
+        this.serviceRequirementRepository.create({
+          ...req,
+          serviceId,
+        })
+      );
+      await this.serviceRequirementRepository.save(requirements);
+    }
+
+    return savedService;
+  }
+
+  async updateServiceStatus(serviceId: string, status: ServiceStatus) {
+    const service = await this.serviceRepository.findOne({ where: { id: serviceId } });
+    if (!service) throw new NotFoundException('Service not found');
+
+    // Validate that status is a valid enum value
+    if (!Object.values(ServiceStatus).includes(status)) {
+      throw new BadRequestException(`Invalid status "${status}". Allowed values: ${Object.values(ServiceStatus).join(', ')}`);
+    }
+
+    service.status = status;
     return this.serviceRepository.save(service);
   }
+
 
   async deleteService(userId: string, serviceId: string) {
     const service = await this.serviceRepository.findOne({
@@ -693,8 +806,40 @@ export class ServicesService {
     return { message: 'Impression tracked' };
   }
 
-  async trackClick(serviceId: string) {
+  async trackClick(serviceId: string, req, userId?: string) {
+    const deviceInfo = await this.sessionService.getDeviceInfoFromRequest(req);
+    const ip = deviceInfo.ip_address;
+
+    if (!userId && !ip) {
+      throw new BadRequestException('Cannot track click: missing user and IP.');
+    }
+
+    // Time window (24h)
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    // Build search conditions
+    const where: any = { serviceId, clickedAt: MoreThan(since) };
+
+    if (userId) where.userId = userId;
+    else where.ipAddress = ip;
+
+    // Check if already clicked
+    const existingClick = await this.serviceClickRepository.findOne({ where });
+
+    if (existingClick) {
+      return { message: 'Click already counted' };
+    }
+
+    // Save click entry
+    await this.serviceClickRepository.save({
+      serviceId,
+      userId: userId || null,
+      ipAddress: ip || null,
+    });
+
+    // Increment service total clicks
     await this.serviceRepository.increment({ id: serviceId }, 'clicks', 1);
+
     return { message: 'Click tracked' };
   }
 

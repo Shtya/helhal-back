@@ -74,3 +74,20 @@ export class OAuthCallbackDto {
   @IsString()
   error?: string;
 }
+
+export class DeactivateAccountDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500, { message: 'Reason must not exceed 500 characters' })
+  reason?: string;
+}
+
+
+export class ChangePasswordDto {
+  @IsString()
+  currentPassword: string;
+
+  @IsString()
+  @MinLength(8, { message: 'New password must be at least 8 characters long' })
+  newPassword: string;
+}
