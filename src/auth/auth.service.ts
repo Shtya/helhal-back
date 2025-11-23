@@ -343,8 +343,8 @@ export class AuthService {
     await this.sessionsRepo.save(session);
 
     // 2) issue tokens embedding sid
-    const accessToken = this.jwtService.sign({ id: user.id, sid: session.id }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
-    const refreshToken = this.jwtService.sign({ id: user.id, sid: session.id }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
+    const accessToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
+    const refreshToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
 
     // 3) store refresh token hash on the session (for rotation & revocation)
     await this.sessionsRepo.update(session.id, { refreshTokenHash: this.hash(refreshToken) });
@@ -356,6 +356,7 @@ export class AuthService {
     const serialized = this.serializeUser({ ...user, accessToken, refreshToken, currentDeviceId: session.id });
     return { accessToken, refreshToken, user: serialized };
   }
+
 
   async getCurrentUser(userId: string) {
     const user = await this.userRepository.findOne({
@@ -405,6 +406,14 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
+    const user = await this.userRepository.findOne({
+      where: { id: decoded.id },
+    });
+
+
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
     const session = await this.sessionsRepo.findOne({ where: { id: decoded.sid, userId: decoded.id } });
     if (!session || session.revokedAt) {
       throw new UnauthorizedException('Session revoked');
@@ -417,14 +426,14 @@ export class AuthService {
 
     // rotate both tokens
     const newAccess = this.jwtService.sign(
-      { id: decoded.id, sid: decoded.sid },
+      { id: decoded.id, sid: decoded.sid, role: user.role },
       {
         secret: this.configService.get('JWT_SECRET'),
         expiresIn: process.env.JWT_EXPIRE,
       },
     );
     const newRefresh = this.jwtService.sign(
-      { id: decoded.id, sid: decoded.sid },
+      { id: decoded.id, sid: decoded.sid, role: user.role },
       {
         secret: this.configService.get('JWT_REFRESH'),
         expiresIn: process.env.JWT_REFRESH_EXPIRE,
@@ -530,8 +539,8 @@ export class AuthService {
       userAgent: ctx?.userAgent ?? null,
     });
 
-    const accessToken = this.jwtService.sign({ id: user.id, sid: session.id }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
-    const refreshToken = this.jwtService.sign({ id: user.id, sid: session.id }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
+    const accessToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
+    const refreshToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
 
     await this.sessionsRepo.update(session.id, { refreshTokenHash: this.hash(refreshToken) });
 
