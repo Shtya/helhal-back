@@ -53,6 +53,7 @@ export class OAuthService {
         email,
         googleId: profile.id,
         role: 'buyer',
+        type: 'Individual'
       });
       await this.userRepository.save(user);
     }

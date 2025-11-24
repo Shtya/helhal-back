@@ -33,8 +33,8 @@ export class CartService {
 
     return {
       id: cart.id,
-      items: cart.items.map(item => item.service),
-      total: cart.items.length
+      items: cart?.items?.map(item => item.service),
+      total: cart?.items?.length || 0
     }
   }
 

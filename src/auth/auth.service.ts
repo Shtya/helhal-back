@@ -708,6 +708,7 @@ export class AuthService {
     const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').where('user.id = :id', { id: userId }).getOne();
 
     if (!user) throw new NotFoundException('User not found');
+
     const ok = await user.comparePassword(currentPassword);
     if (!ok) throw new UnauthorizedException('Current password is incorrect');
     user.password = newPassword; // your entity hook hashes on save (existing logic)

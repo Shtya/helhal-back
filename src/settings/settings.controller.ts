@@ -8,23 +8,44 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { logoUploadOptions } from 'common/upload.config';
 import { join } from 'path';
 import { promises as fsp } from 'fs';
+
+
 @Controller('settings')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
+
 export class SettingsController {
   constructor(private settingsService: SettingsService) { }
 
+  @Get('public')
+  async getPublicSettings() {
+    const settings = await this.settingsService.getSettings();
+
+    return {
+      privacyPolicy: settings.privacyPolicy,
+      termsOfService: settings.termsOfService,
+      contactEmail: settings.contactEmail,
+      faqs: settings.faqs,
+      siteName: settings.siteName,
+      siteLogo: settings.siteLogo,
+    };
+  }
+
   @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async getSettings() {
     return this.settingsService.getSettings();
   }
 
   @Put()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async updateSettings(@Body() updateSettingsDto: any) {
     return this.settingsService.updateSettings(updateSettingsDto);
   }
 
   @Post('uploads/siteLogo')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @UseInterceptors(FileInterceptor('file', logoUploadOptions))
   async uploadSiteLogo(@UploadedFile() file: any, @Req() req) {
     if (!file) {
