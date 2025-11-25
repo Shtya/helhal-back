@@ -636,6 +636,7 @@ export class AccountingService {
   }
 
 
+
   async withdrawFunds(userId: string, amount: number, paymentMethodId: string) {
     if (amount <= 0) throw new BadRequestException('Invalid withdrawal amount');
 

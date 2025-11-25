@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Not, Repository } from 'typeorm';
 import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest } from 'entities/global.entity';
@@ -27,6 +27,7 @@ export class OrdersService {
 
     private readonly dataSource: DataSource,
     private readonly accountingService: AccountingService,
+
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Proposal) private proposalRepo: Repository<Proposal>,
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
@@ -105,6 +106,8 @@ export class OrdersService {
       records
     };
   }
+
+
 
 
   async markOrderPaid(orderId: string, userId: string) {
