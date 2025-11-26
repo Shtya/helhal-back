@@ -248,6 +248,7 @@ export class OrdersService {
 
   async createOrderCheckout(userId: string, createOrderDto: any) {
     const { serviceId, packageType, quantity, requirementsAnswers, notes } = createOrderDto;
+    const s = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
 
     const service = await this.serviceRepository.findOne({ where: { id: serviceId, status: 'Active' } } as any);
     if (!service) throw new NotFoundException('Service not found or not available');
@@ -278,7 +279,7 @@ export class OrdersService {
     const savedOrder = await this.orderRepository.save(order);
 
     // ---- Invoice
-    const platformPercent = 10;
+    const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
     const serviceFee = (totalAmount * platformPercent) / 100;
     const subtotal = totalAmount - serviceFee;
 
@@ -349,9 +350,10 @@ export class OrdersService {
     });
 
     const savedOrder = await this.orderRepository.save(order);
+    const s = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
 
     // Create invoice
-    const platformPercent = 10;
+    const platformPercent = Number(s?.[0]?.platformPercent ?? 10);;
     const serviceFee = (totalAmount * platformPercent) / 100;
     const subtotal = totalAmount - serviceFee;
 
