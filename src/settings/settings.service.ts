@@ -10,8 +10,6 @@ export class SettingsService {
     private settingsRepository: Repository<Setting>,
   ) { }
 
-
-
   async getSettings() {
     let settings = await this.settingsRepository.findOne({ where: {} });
 

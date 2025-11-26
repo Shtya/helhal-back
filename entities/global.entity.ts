@@ -527,9 +527,26 @@ export class Setting extends CoreEntity {
   @Column({ name: 'faqs', type: 'jsonb', default: [] })
   faqs: { question: string; answer: string }[];
 
-
   @Column({ name: 'buyer_stories', type: 'int', array: true, default: [] })
   buyerStories: number[];
+
+  @Column({ name: 'facebook', nullable: true })
+  facebook: string;
+
+  @Column({ name: 'twitter', nullable: true })
+  twitter: string;
+
+  @Column({ name: 'instagram', nullable: true })
+  instagram: string;
+
+  @Column({ name: 'linkedin', nullable: true })
+  linkedin: string;
+
+  @Column({ name: 'pinterest', nullable: true })
+  pinterest: string;
+
+  @Column({ name: 'tiktok', nullable: true })
+  tiktok: string;
 }
 
 @Entity('wallets')
@@ -793,6 +810,13 @@ export class Service extends CoreEntity {
   @OneToMany(() => Favorite, favorite => favorite.service)
   favorites: Favorite[];
 
+  @Column({ name: 'min_price', type: 'numeric', nullable: true })
+  minPrice: number | null;
+
+  @Column({ name: 'max_price', type: 'numeric', nullable: true })
+  maxPrice: number | null;
+
+
   @BeforeInsert()
   @BeforeUpdate()
   generateSlug() {
@@ -803,6 +827,38 @@ export class Service extends CoreEntity {
         .trim()
         .replace(/\s+/g, '-')
         .replace(/-+/g, '-');
+    }
+  }
+
+
+  // new hook: compute minPrice & maxPrice from packages array
+  @BeforeInsert()
+  @BeforeUpdate()
+  computePackageMinMax() {
+    try {
+      const pkgs = Array.isArray(this.packages) ? this.packages : [];
+
+      const prices: number[] = pkgs
+        .map((p: any) => {
+          // support both number and string price values; defensive parsing
+          if (p == null) return NaN;
+          const v = (typeof p.price === 'number') ? p.price : Number(p.price);
+          return Number.isFinite(v) ? v : NaN;
+        })
+        .filter(p => !Number.isNaN(p));
+
+      if (prices.length > 0) {
+        this.minPrice = Math.min(...prices);
+        this.maxPrice = Math.max(...prices);
+      } else {
+        this.minPrice = null;
+        this.maxPrice = null;
+      }
+    } catch (err) {
+      // fail safe: do not throw from lifecycle hook — but optionally log
+      this.minPrice = null;
+      this.maxPrice = null;
+      // optionally: console.warn('computePackageMinMax error', err);
     }
   }
 }

@@ -348,10 +348,12 @@ export class ServicesService {
         'service.rating',
         'service.slug',
         'service.metadata',
-        'service.search_tags',
+        'service.searchTags',
         'service.packages',
         'service.fastDelivery',
         'service.additionalRevision',
+        'service.maxPrice',
+        'service.minPrice',
       ])
       .leftJoin('service.seller', 'seller')
       // select only specific seller fields
@@ -362,7 +364,7 @@ export class ServicesService {
         'seller.sellerLevel',
         'seller.lastActivity',
         'seller.languages',
-        'seller.country_id',
+        'seller.countryId',
       ])
       .leftJoin('seller.country', 'country')
       .addSelect([
@@ -404,9 +406,9 @@ export class ServicesService {
 
       if (priceRanges[priceRange]) {
         const [min, max] = priceRanges[priceRange];
-        queryBuilder.andWhere("EXISTS (SELECT 1 FROM jsonb_array_elements(service.packages) package WHERE (package->>'price')::numeric BETWEEN :minPrice AND :maxPrice)", {
-          minPrice: min,
-          maxPrice: max,
+        queryBuilder.andWhere("EXISTS (SELECT 1 FROM jsonb_array_elements(service.packages) package WHERE (package->>'price')::numeric BETWEEN :minPriceVal AND :maxPriceVal)", {
+          minPriceVal: min,
+          maxPriceVal: max,
         });
       }
     }
@@ -518,33 +520,12 @@ export class ServicesService {
     // Sorting
     const sortOptions = {
       s0: { field: 'service.created_at', direction: 'DESC' }, // Default: newest first
-      s1: { field: 'min_price', direction: 'ASC' }, // Price low to high
-      s2: { field: 'max_price', direction: 'DESC' }, // Price high to low
-      s3: { field: 'rating', direction: 'DESC' }, // Rating
+      s1: { field: 'service.minPrice', direction: 'ASC' }, // Price low to high
+      s2: { field: 'service.maxPrice', direction: 'DESC' }, // Price high to low
+      s3: { field: 'service.rating', direction: 'DESC' }, // Rating
       s4: { field: 'service.created_at', direction: 'DESC' }, // Newest
     };
 
-    // For price sorting, we need to calculate min/max prices
-    if (sortBy === 's1' || sortBy === 's2') {
-      // Add subquery to get min/max prices for sorting
-      queryBuilder
-        .addSelect(
-          `(
-          SELECT MIN((package->>'price')::numeric) 
-          FROM jsonb_array_elements(service.packages) package
-        )`,
-          'min_price',
-        )
-        .addSelect(
-          `(
-          SELECT MAX((package->>'price')::numeric) 
-          FROM jsonb_array_elements(service.packages) package
-        )`,
-          'max_price',
-        );
-    }
-
-    // Apply sorting
     if (sortBy && sortOptions[sortBy]) {
       const { field, direction } = sortOptions[sortBy];
       queryBuilder.orderBy(field, direction as 'ASC' | 'DESC');
@@ -558,6 +539,7 @@ export class ServicesService {
     // Execute query
     // apply pagination
     const qbForData = queryBuilder.clone().skip(skip).take(limit);
+
 
     // run BOTH queries in parallel
     const [services, total] = await Promise.all([
@@ -677,6 +659,7 @@ export class ServicesService {
 
     return savedService;
   }
+
 
   async updateService(userId: string, serviceId: string, updateServiceDto: any) {
     const service = await this.serviceRepository.findOne({
@@ -905,6 +888,7 @@ export class ServicesService {
     return this.serviceRepository.find({
       where: { popular: true, status: ServiceStatus.ACTIVE },
       take: limit,
+      relations: ['category'],
       order: { ordersCount: 'DESC' },
     });
   }

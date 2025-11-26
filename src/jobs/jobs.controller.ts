@@ -10,8 +10,6 @@ import { AuthGuard } from '@nestjs/passport';
 import { PaymentsService } from 'src/payments/payments.service';
 
 @Controller('jobs')
-@UseGuards(JwtAuthGuard)
-// @UsePipes(new ValidationPipe({ transform: true }))
 export class JobsController {
   constructor(
     private jobsService: JobsService,
@@ -32,6 +30,8 @@ export class JobsController {
   }
 
   @Get('my-jobs')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.BUYER)
   async getMyJobs(@Query() query: any, @Req() req: any) {
     return CRUD.findAll(
       this.jobsService.jobRepository,
@@ -49,13 +49,15 @@ export class JobsController {
 
   @Get('my-proposals')
   @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.SELLER)
   async getMyProposals(@Req() req, @Query('status') status?: string, @Query('page') page: number = 1, @Query('limit') limit: number = 20) {
     return this.jobsService.getUserProposals(req.user.id, status, page, limit);
   }
 
-  // jobs/jobs.controller.ts
+
   @Put('proposals/:proposalId/status')
   @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.BUYER)
   async updateProposalStatus(@Param('proposalId') proposalId: string, @Body() body: any, @Req() req: any) {
     return this.jobsService.updateProposalStatusAtomic(req.user.id, req.user.role, proposalId, body.status, { checkout: body.checkout });
 
@@ -68,6 +70,7 @@ export class JobsController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.BUYER)
   async createJob(@Req() req, @Body() createJobDto: CreateJobDto) {
     return this.jobsService.createJob(req.user.id, createJobDto);
   }
@@ -88,13 +91,14 @@ export class JobsController {
 
   @Post(':id/proposals')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER, UserRole.ADMIN)
+  @Roles(UserRole.SELLER)
   async submitProposal(@Req() req, @Param('id') id: string, @Body() submitProposalDto: any) {
     return this.jobsService.submitProposal(req.user.id, id, submitProposalDto);
   }
 
   @Get(':id/proposals')
   @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN)
   async getJobProposals(
     @Req() req,
     @Param('id') id: string,
@@ -115,14 +119,10 @@ export class JobsController {
       sortdir,
     );
   }
-  // @Put('proposals/:proposalId/status')
-  // @UseGuards(JwtAuthGuard)
-  // async updateProposalStatus(@Req() req, @Param('proposalId') proposalId: string, @Body() body: { status: string }) {
-  //   return this.jobsService.updateProposalStatus(req.user.id, req.user.role, proposalId, body.status);
-  // }
 
   @Get('stats/overview')
   @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN)
   async getJobStats(@Req() req) {
     return this.jobsService.getJobStats(req.user.id);
   }

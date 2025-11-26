@@ -26,6 +26,11 @@ export class SettingsController {
       faqs: settings.faqs,
       siteName: settings.siteName,
       siteLogo: settings.siteLogo,
+      facebook: settings.facebook,
+      twitter: settings.twitter,
+      instagram: settings.instagram,
+      linkedin: settings.linkedin,
+      pinterest: settings.pinterest,
     };
   }
 
