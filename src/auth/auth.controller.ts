@@ -356,6 +356,7 @@ export class AuthController {
 
   @Put('profile/:id')
   @UseGuards(JwtAuthGuard)
+  @Roles(UserRole.ADMIN)
   async adminUpdateProfile(@Param('id') id: string, @Req() req: any, @Body() dto: any) {
     return this.authService.updateProfile(id, dto, req.user.id);
   }

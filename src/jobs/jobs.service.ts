@@ -451,7 +451,7 @@ export class JobsService {
 
     // --- Search ---
     if (search) {
-      qb.andWhere('(seller.username ILIKE :search OR proposal.coverLetter ILIKE :search)', { search: `%${search}%` });
+      qb.andWhere('(seller.username ILIKE :search OR seller.email ILIKE :search OR proposal.coverLetter ILIKE :search)', { search: `%${search}%` });
     }
 
     // --- Sorting ---

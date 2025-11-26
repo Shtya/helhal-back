@@ -44,10 +44,6 @@ export class OrdersService {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    if (![UserRole.BUYER, UserRole.SELLER].includes(user.role as UserRole)) {
-      throw new ForbiddenException('You are not allowed to access orders');
-    }
-
     const qb = this.orderRepository.createQueryBuilder('order')
       .leftJoinAndSelect('order.service', 'service')
       .leftJoinAndSelect('order.buyer', 'buyer')
@@ -55,8 +51,12 @@ export class OrdersService {
       .leftJoinAndSelect('order.disputes', 'disputes');
 
     // Role-based filtering
-    if (user.role === UserRole.BUYER) qb.andWhere('order.buyerId = :userId', { userId });
-    if (user.role === UserRole.SELLER) qb.andWhere('order.sellerId = :userId', { userId });
+    if (user.role === UserRole.BUYER)
+      qb.andWhere('order.buyerId = :userId', { userId });
+    else
+      qb.andWhere('order.sellerId = :userId', { userId });
+
+
 
     // Status filtering
     if (status && status !== 'all') {

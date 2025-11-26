@@ -342,7 +342,7 @@ export class ServicesService {
       .select([
         'service.id',
         'service.created_at',
-        `(service.gallery->0->>'url') AS cover`,
+        'service.gallery',
         'service.title',
         'service.brief',
         'service.rating',

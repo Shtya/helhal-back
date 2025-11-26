@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource, In } from 'typeorm';
-import { UserBalance, Transaction, PaymentMethod, User, Order, TransactionStatus, PaymentMethodType, PaymentStatus, Invoice, Setting, Wallet, Notification, UserBillingInfo, UserBankAccount } from 'entities/global.entity';
+import { UserBalance, Transaction, PaymentMethod, User, Order, TransactionStatus, PaymentMethodType, PaymentStatus, Invoice, Setting, Wallet, Notification, UserBillingInfo, UserBankAccount, Country } from 'entities/global.entity';
 
 type ReverseResolutionInput = {
   orderId: string;
@@ -24,6 +24,7 @@ export class AccountingService {
     @InjectRepository(UserBalance) private userBalanceRepository: Repository<UserBalance>,
     @InjectRepository(Transaction) private transactionRepository: Repository<Transaction>,
     @InjectRepository(PaymentMethod) private paymentMethodRepository: Repository<PaymentMethod>,
+    @InjectRepository(Country) private countryRepository: Repository<Country>,
     @InjectRepository(User) private userRepository: Repository<User>,
     @InjectRepository(Order) private orderRepository: Repository<Order>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
@@ -49,7 +50,7 @@ export class AccountingService {
       billingInfo = this.userBillingInfoRepository.create({
         userId,
         fullName: user?.username || '',
-        country: '',
+        country: null,
         state: '',
         isSaudiResident: null,
         agreeToInvoiceEmails: false,
@@ -64,11 +65,16 @@ export class AccountingService {
     let billingInfo: any = await this.userBillingInfoRepository.findOne({
       where: { userId },
     });
+    const country = await this.countryRepository.findOne({ where: { id: billingInfoData?.countryId } });
+    if (!country) {
+      throw new NotFoundException('Country not found');
+    }
 
     if (!billingInfo) {
       billingInfo = this.userBillingInfoRepository.create({
-        userId,
         ...billingInfoData,
+        userId,
+        isSaudiResident: country.isoAlpha2 === 'SA',
       });
     } else {
       Object.assign(billingInfo, billingInfoData);
@@ -89,8 +95,9 @@ export class AccountingService {
     const bankAccounts = await this.getBankAccounts(userId);
 
     const bankAccount: any = this.userBankAccountRepository.create({
-      userId,
       ...bankAccountData,
+      userId
+
     });
 
     // If this is the first bank account, set it as default
@@ -111,6 +118,7 @@ export class AccountingService {
     }
 
     Object.assign(bankAccount, bankAccountData);
+
     return this.userBankAccountRepository.save(bankAccount);
   }
 
@@ -145,15 +153,15 @@ export class AccountingService {
 
   // Add these methods to your AccountingService
 
-  async getBillingHistory(userId: string, page: number = 1, search?: string, startDate?: string, endDate?: string) {
-    const limit = 15;
+  async getBillingHistory(userId: string, page: number = 1, limit: number = 15, search?: string, startDate?: string, endDate?: string) {
+
     const skip = (page - 1) * limit;
 
     let query = this.transactionRepository.createQueryBuilder('transaction').leftJoinAndSelect('transaction.order', 'order').where('transaction.userId = :userId', { userId }).orderBy('transaction.created_at', 'DESC').skip(skip).take(limit);
 
     // Add search filter
     if (search) {
-      query = query.andWhere('(order.id LIKE :search OR transaction.description LIKE :search)', { search: `%${search}%` });
+      query = query.andWhere('(transaction.description LIKE :search)', { search: `%${search}%` });
     }
 
     // Add date filter

@@ -17,14 +17,14 @@ import {
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { multerOptions } from 'common/multer.config';
 import { CreateAssetDto, UpdateAssetDto } from 'dto/assets.dto';
- import { AssetService } from './asset.service';
+import { AssetService } from './asset.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { RolesGuard } from 'src/auth/guard/roles.guard';
- 
- @UseGuards(JwtAuthGuard, RolesGuard)
+
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('assets')
- export class AssetController {
-  constructor(private readonly assetService: AssetService) {}
+export class AssetController {
+  constructor(private readonly assetService: AssetService) { }
 
   // ✅ Single asset upload
   @Post()
@@ -67,7 +67,7 @@ import { RolesGuard } from 'src/auth/guard/roles.guard';
       sortBy,
       sortOrder,
       ['user'], // relations
-      ['name'],
+      ['url', 'filename', 'mimeType'],
       { user: { id: req.user.id }, category, type },
     );
   }
@@ -87,8 +87,8 @@ import { RolesGuard } from 'src/auth/guard/roles.guard';
     return this.assetService.update(id, dto, file);
   }
 
-  @Delete(':id')
-  async deleteAsset(@Param('id') id: string) {
-    return this.assetService.delete(id);
-  }
+  // @Delete(':id')
+  // async deleteAsset(@Param('id') id: string) {
+  //   return this.assetService.delete(id);
+  // }
 }

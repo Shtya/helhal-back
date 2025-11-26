@@ -567,7 +567,7 @@ export class AuthService {
     // single source of truth: User table
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'username', 'email', 'phone', 'profileImage', 'role', 'status', 'description', 'languages', 'skills', 'education', 'certifications', 'introVideoUrl', 'portfolioItems', 'memberSince', 'lastLogin', 'portfolioFile', 'responseTime', 'deliveryTime', 'ageGroup', 'revisions', 'sellerLevel', 'lastActivity', 'preferences', 'balance', 'totalSpent', 'totalEarned', 'reputationPoints'],
+      select: ['countryCode', 'id', 'username', 'email', 'phone', 'profileImage', 'role', 'status', 'description', 'languages', 'skills', 'education', 'certifications', 'introVideoUrl', 'portfolioItems', 'memberSince', 'lastLogin', 'portfolioFile', 'responseTime', 'deliveryTime', 'ageGroup', 'revisions', 'sellerLevel', 'lastActivity', 'preferences', 'balance', 'totalSpent', 'totalEarned', 'reputationPoints'],
       relations: ['country']
     });
     if (!user) throw new NotFoundException('User not found');
@@ -583,7 +583,7 @@ export class AuthService {
       throw new ForbiddenException("You cannot update another admin's profile");
     }
 
-    const allowedFields: (keyof User)[] = ['profileImage', 'username', 'phone', 'description', 'languages', 'skills', 'education', 'certifications', 'deliveryTime', 'ageGroup', 'revisions', 'preferences', 'type', 'countryId'];
+    const allowedFields: (keyof User)[] = ['countryCode', 'profileImage', 'username', 'phone', 'description', 'languages', 'skills', 'education', 'certifications', 'deliveryTime', 'ageGroup', 'revisions', 'preferences', 'type', 'countryId'];
 
     if (typeof updateData.email !== 'undefined' && updateData.email !== user.email) {
       const exists = await this.userRepository.findOne({ where: { email: updateData.email } });

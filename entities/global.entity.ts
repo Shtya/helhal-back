@@ -106,6 +106,10 @@ export class User extends CoreEntity {
   @Column({ nullable: true })
   phone: string;
 
+  // Add this for storing phone country code info
+  @Column({ type: 'jsonb', nullable: true })
+  countryCode: { code: string; dial_code: string } | null;
+
   @Column({ name: 'profile_image', nullable: true })
   profileImage: string;
 
@@ -1806,8 +1810,12 @@ export class UserBillingInfo extends CoreEntity {
   @Column({ name: 'full_name' })
   fullName: string;
 
-  @Column({ name: 'country' })
-  country: string;
+  @ManyToOne(() => Country, { nullable: true })
+  @JoinColumn({ name: 'country_id' })
+  country: Country;
+
+  @Column({ name: 'country_id', nullable: true })
+  countryId: string;
 
   @Column({ name: 'state' })
   state: string;

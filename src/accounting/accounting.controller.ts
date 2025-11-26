@@ -50,8 +50,8 @@ export class AccountingController {
   // Add these to your existing AccountingController
 
   @Get('billing-history')
-  async getBillingHistory(@Req() req, @Query('page') page: number = 1, @Query('search') search?: string, @Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
-    return this.accountingService.getBillingHistory(req.user.id, page, search, startDate, endDate);
+  async getBillingHistory(@Req() req, @Query('page') page: number = 1, @Query('limit') limit: number = 1, @Query('search') search?: string, @Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+    return this.accountingService.getBillingHistory(req.user.id, page, limit, search, startDate, endDate);
   }
 
   @Get('available-balances')
