@@ -6,6 +6,7 @@ import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { User, UserRole, UserStatus } from 'entities/global.entity';
 import { AuthService } from './auth.service';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class OAuthService {
@@ -44,12 +45,16 @@ export class OAuthService {
 
   async handleGoogleCallback(profile: any, state?: string, res?: Response) {
     const email = profile.email;
-
+    if (!email) throw new UnauthorizedException('No email found in Google profile');
     let user = await this.userRepository.findOne({ where: { email } });
 
     if (!user) {
+      const baseName = profile.name || email.split('@')[0];
+      const uniqueSuffix = randomBytes(6).toString('hex'); // 12-char hex string
+
+
       user = this.userRepository.create({
-        username: profile.name || email.split('@')[0],
+        username: `${baseName}_${uniqueSuffix}`,
         email,
         googleId: profile.id,
         role: 'buyer',
@@ -61,15 +66,6 @@ export class OAuthService {
       user.googleId = profile.id;
       await this.userRepository.save(user);
     }
-
-    return this.finalizeOAuthAuthentication(user, state, res);
-  }
-
-  async handleAppleCallback(profile: any, state?: string, res?: Response) {
-    const email = profile.email;
-    if (!email) throw new UnauthorizedException('No email found in Apple profile');
-
-    let user = await this.userRepository.findOne({ where: { email } });
 
     if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
       throw new UnauthorizedException('Your account is inactive. Please contact support.');
@@ -83,18 +79,43 @@ export class OAuthService {
       throw new UnauthorizedException('Please verify your email before logging in');
     }
 
+    return this.finalizeOAuthAuthentication(user, state, res);
+  }
+
+  async handleAppleCallback(profile: any, state?: string, res?: Response) {
+    const email = profile.email;
+    if (!email) throw new UnauthorizedException('No email found in Apple profile');
+
+    let user = await this.userRepository.findOne({ where: { email } });
 
     if (!user) {
+      const baseName = profile.name || email.split('@')[0];
+      const uniqueSuffix = randomBytes(6).toString('hex'); // 12-char hex string
+
+
       user = this.userRepository.create({
-        username: profile.name || email.split('@')[0],
+        username: `${baseName}_${uniqueSuffix}`,
         email,
         appleId: profile.id,
-        role: 'buyer'
+        role: 'buyer',
+        type: 'Individual'
       });
       await this.userRepository.save(user);
     } else if (!user.appleId) {
       user.appleId = profile.id;
       await this.userRepository.save(user);
+    }
+
+    if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
+      throw new UnauthorizedException('Your account is inactive. Please contact support.');
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new UnauthorizedException('Your account has been suspended. Please contact support.');
+    }
+
+    if (user.status === UserStatus.PENDING_VERIFICATION) {
+      throw new UnauthorizedException('Please verify your email before logging in');
     }
 
     return this.finalizeOAuthAuthentication(user, state, res);

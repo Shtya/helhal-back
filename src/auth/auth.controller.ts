@@ -440,7 +440,7 @@ export class AuthController {
 
       return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}`);
     } catch (e) {
-      return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed`);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${e.message}`);
     }
   }
 
@@ -458,7 +458,7 @@ export class AuthController {
       const result: any = await this.oauthService.handleAppleCallback(req.user, state, res);
       return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}`);
     } catch (e) {
-      return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed`);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${e.message}`);
     }
   }
 
