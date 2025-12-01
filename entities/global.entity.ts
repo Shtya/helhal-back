@@ -635,10 +635,10 @@ export class Notification extends CoreEntity {
   @Column({ name: 'is_read', default: false })
   isRead: boolean;
 
-  @Column({ name: 'related_entity_type' })
+  @Column({ name: 'related_entity_type', nullable: true })
   relatedEntityType: string;
 
-  @Column({ name: 'related_entity_id' })
+  @Column({ name: 'related_entity_id', nullable: true })
   relatedEntityId: string;
 }
 

@@ -26,6 +26,7 @@ import { RolesGuard } from './guard/roles.guard';
 import { MailService } from 'common/nodemailer';
 import { ReferralModule } from 'src/referral/referral.module';
 import { SessionService } from './session.service';
+import { SettingsService } from 'src/settings/settings.service';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { SessionService } from './session.service';
     AppleStrategy,
     JwtAuthGuard,
     RolesGuard,
+    SettingsService,
     MailService
   ],
   controllers: [AuthController],

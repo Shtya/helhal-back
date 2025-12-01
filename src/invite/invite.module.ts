@@ -5,13 +5,14 @@ import { AuthModule } from 'src/auth/auth.module';
 import { MailService } from 'common/nodemailer';
 import { AuthService } from 'src/auth/auth.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { User } from 'entities/global.entity';
+import { Setting, User } from 'entities/global.entity';
+import { SettingsService } from 'src/settings/settings.service';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([User])
+        TypeOrmModule.forFeature([User, Setting])
     ],
     controllers: [InviteController],
-    providers: [InviteService, MailService],
+    providers: [InviteService, MailService, SettingsService],
 })
 export class InviteModule { }

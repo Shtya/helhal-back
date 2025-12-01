@@ -159,5 +159,4 @@ export class ServicesController {
     return this.servicesService.getPopularServices(limit ? parseInt(limit, 10) : 4);
   }
 
-
 }

@@ -521,7 +521,6 @@ export class JobsService {
       const orderRepo = manager.getRepository(Order);
       const invoiceRepo = manager.getRepository(Invoice);
       const settingRepo = manager.getRepository(Setting);
-
       const proposal = await proposalRepo.findOne({
         where: { id: proposalId },
         lock: { mode: 'pessimistic_write' },
@@ -537,6 +536,23 @@ export class JobsService {
       if (userRole !== UserRole.ADMIN && job.buyerId !== userId) {
         throw new ForbiddenException('Access denied');
       }
+      // notification repository within transaction
+      const notifRepo = manager.getRepository(Notification);
+
+      // Helper to create & save a notification for seller
+      const notifySeller = async (message: string, type = 'proposal_status_update') => {
+        try {
+          const n = notifRepo.create({
+            userId: proposal.sellerId,
+            type,
+            title: 'Proposal Status Updated',
+            message,
+          } as any);
+          await notifRepo.save(n as any);
+        } catch (err) {
+          // don't fail the whole transaction for notification problems
+        }
+      };
 
       // ===============================
       // CASE 1: REJECT
@@ -544,6 +560,7 @@ export class JobsService {
       if (status === ProposalStatus.REJECTED) {
         proposal.status = ProposalStatus.REJECTED;
         await proposalRepo.save(proposal);
+        await notifySeller(`Your proposal for job "${job.title}" has been rejected.`);
         return { proposalId, status: ProposalStatus.REJECTED };
       }
 
@@ -604,7 +621,9 @@ export class JobsService {
           await proposalRepo.save(proposal);
         }
 
-        // return fake checkout link for frontend
+        await notifySeller(`Your proposal for job "${job.title}" has been accepted. An order was created.`);
+
+        // return checkout payload for frontend
         const checkoutPayload = {
           orderId: order.id,
           redirectUrl: `/payment?orderId=${order.id}`,
@@ -613,6 +632,16 @@ export class JobsService {
         };
 
         return { __checkout__: checkoutPayload };
+      }
+
+      // ===============================
+      // CASE 3: Generic status update
+      // ===============================
+      if (Object.values(ProposalStatus).includes(status)) {
+        proposal.status = status as ProposalStatus;
+        await proposalRepo.save(proposal);
+        await notifySeller(`Your proposal for job "${job.title}" status has been updated to: ${status}.`);
+        return { proposalId, status };
       }
 
       throw new BadRequestException('Invalid status update');

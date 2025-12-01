@@ -1,5 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { SettingsService } from 'src/settings/settings.service';
 import * as nodemailer from 'nodemailer';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
+import { Setting } from 'entities/global.entity';
 
 @Injectable()
 export class MailService {
@@ -10,6 +13,29 @@ export class MailService {
             pass: process.env.EMAIL_PASS,
         },
     });
+
+    constructor(
+        private readonly settingsService: SettingsService,
+        @Inject(CACHE_MANAGER) private cacheManager: Cache) { }
+
+    private async getFrom(): Promise<string> {
+        try {
+            let settings;
+            settings = await this.cacheManager.get<Setting>(this.settingsService.CACHE_KEY);
+            if (!settings) {
+                settings = await this.settingsService.getSettings();
+            }
+            const siteName = settings?.siteName ?? process.env.PROJECT_NAME ?? 'No-Reply';
+            const contact = settings?.contactEmail ?? process.env.EMAIL_USER ?? process.env.EMAIL_FROM ?? '';
+            if (contact) return `"${siteName}" <${contact}>`;
+            return `${siteName} <no-reply@localhost>`;
+        } catch (err) {
+            const siteName = process.env.PROJECT_NAME ?? 'No-Reply';
+            const contact = process.env.EMAIL_USER ?? process.env.EMAIL_FROM ?? '';
+            if (contact) return `"${siteName}" <${contact}>`;
+            return `${siteName} <no-reply@localhost>`;
+        }
+    }
 
     async sendOTPEmail(to: string, otp: string, actionType: string) {
         const htmlContent = `
@@ -133,7 +159,7 @@ export class MailService {
     `;
 
         await this.transporter.sendMail({
-            from: `"${process.env.PROJECT_NAME}" <${process.env.EMAIL_USER}>`,
+            from: await this.getFrom(),
             to,
             subject: actionType,
             html: htmlContent,
@@ -251,7 +277,7 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: process.env.EMAIL_FROM,
+            from: await this.getFrom(),
             to: email,
             subject,
             html,
@@ -260,6 +286,16 @@ export class MailService {
 
     async sendPasswordResetOtp(email: string, username: string, otp: string) {
         const subject = 'Password Reset OTP';
+        // fetch support email from settings (cache) with env fallback
+        const supportEmail = await (async () => {
+            try {
+                const s = await this.cacheManager.get<Setting>(this.settingsService.CACHE_KEY);
+                const settings = s ?? await this.settingsService.getSettings();
+                return settings?.contactEmail ?? process.env.SUPPORT_EMAIL ?? process.env.EMAIL_FROM ?? 'support@example.com';
+            } catch (err) {
+                return process.env.SUPPORT_EMAIL ?? process.env.EMAIL_FROM ?? 'support@example.com';
+            }
+        })();
 
         const html = `
   <html>
@@ -348,7 +384,7 @@ export class MailService {
                       <p>This OTP is valid for 10 minutes. Please use it to reset your password within that time.</p>
                   </div>
                   <div class="footer">
-                      <p>If you have any questions or need help, contact our support team <a href="mailto:support@example.com">here</a>.</p>
+                      <p>If you have any questions or need help, contact our support team <a href="mailto:${supportEmail}">here</a>.</p>
                   </div>
               </div>
           </div>
@@ -357,7 +393,7 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: process.env.EMAIL_FROM,
+            from: await this.getFrom(),
             to: email,
             subject,
             html,
@@ -448,7 +484,7 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: process.env.EMAIL_FROM,
+            from: await this.getFrom(),
             to: userEmail,
             subject,
             html,
@@ -551,7 +587,7 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: process.env.EMAIL_FROM,
+            from: await this.getFrom(),
             to: email,
             subject,
             html,
@@ -637,7 +673,7 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: `"${process.env.PROJECT_NAME}" <${process.env.EMAIL_USER}>`,
+            from: await this.getFrom(),
             to: opts.to,
             subject: opts.subject,
             html: htmlContent,

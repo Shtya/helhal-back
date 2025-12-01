@@ -1,15 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Setting } from 'entities/global.entity';
+import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 
 @Injectable()
 export class SettingsService {
   constructor(
     @InjectRepository(Setting)
     private settingsRepository: Repository<Setting>,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache
   ) { }
-
+  readonly CACHE_KEY = 'app_settings';
   async getSettings() {
     let settings = await this.settingsRepository.findOne({ where: {} });
 
@@ -27,7 +29,8 @@ export class SettingsService {
       });
       await this.settingsRepository.save(settings);
     }
-
+    // Save to cache
+    await this.cacheManager.set(this.CACHE_KEY, settings);
     return settings;
   }
 
@@ -40,6 +43,8 @@ export class SettingsService {
       Object.assign(settings, updateData);
     }
 
-    return this.settingsRepository.save(settings);
+    const saved = await this.settingsRepository.save(settings);
+    await this.cacheManager.set(this.CACHE_KEY, saved);
+    return saved;
   }
 }

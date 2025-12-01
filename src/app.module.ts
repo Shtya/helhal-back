@@ -40,9 +40,13 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ResponseTimeUpdaterService } from 'backgroundServices/response-time-updater.service';
 import { OrderAutoUpdaterService } from 'backgroundServices/order-auto-udater-service';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { CacheModule } from '@nestjs/cache-manager';
 
 @Module({
   imports: [
+    CacheModule.register({
+      isGlobal: true,
+    }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([Notification]),
     ConfigModule.forRoot(),
