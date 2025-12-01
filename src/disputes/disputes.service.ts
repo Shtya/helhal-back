@@ -26,7 +26,7 @@ export class DisputesService {
 
     if (order.buyerId !== userId && order.sellerId !== userId) throw new ForbiddenException('You can only open disputes for your own orders');
 
-    if (![OrderStatus.ACCEPTED, OrderStatus.DELIVERED].includes(order.status)) throw new BadRequestException('Order is not in a disputable state');
+    if (![OrderStatus.ACCEPTED, OrderStatus.DELIVERED, OrderStatus.ChangeRequested].includes(order.status)) throw new BadRequestException('Order is not in a disputable state');
 
     const existing = await this.disputeRepository.findOne({ where: { orderId } });
     if (existing) throw new BadRequestException('A dispute already exists for this order');

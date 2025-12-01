@@ -3,7 +3,6 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { CoreEntity } from './core.entity';
 import { Asset } from './assets.entity';
-import { Exclude } from 'class-transformer';
 
 export type IUserRole = 'buyer' | 'seller' | 'admin';
 
