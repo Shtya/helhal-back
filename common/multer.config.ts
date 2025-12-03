@@ -2,6 +2,10 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
+const MAX_SIZES = {
+  limit: 200 * 1024 * 1024,  // 200 MB
+};
+
 export const multerOptions = {
   storage: diskStorage({
     // Use 'storage' instead of 'Storage'
@@ -26,6 +30,9 @@ export const multerOptions = {
   fileFilter: (req, file, cb) => {
     cb(null, true); // Accept all file types
   },
+  limits: {
+    fileSize: MAX_SIZES.limit
+  }
 };
 
 export const multerOptionsPdf = {
