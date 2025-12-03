@@ -18,10 +18,11 @@ export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
     super({
       clientID: configService.get('APPLE_CLIENT_ID'),
       teamID: configService.get('APPLE_TEAM_ID'),
-      callbackURL: configService.get('APPLE_REDIRECT_URI'),
       keyID: configService.get('APPLE_KEY_ID'),
+      callbackURL: configService.get('APPLE_REDIRECT_URI'),
       privateKeyString: configService.get('APPLE_PRIVATE_KEY').replace(/\\n/g, '\n'),
       passReqToCallback: true,
+      scope: ['email', 'name'],
     });
   }
 

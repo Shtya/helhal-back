@@ -11,7 +11,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const port = process.env.PORT || 3030;
   // Get the ConfigService instance
-  const configService = app.get(ConfigService);
+  const configService = app.get(ConfigService);  
 
   app.useGlobalFilters(app.get(QueryFailedErrorFilter));
   app.useStaticAssets(join(__dirname, '..', '..', '/uploads'), { prefix: '/uploads/' });
