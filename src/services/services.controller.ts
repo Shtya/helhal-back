@@ -155,8 +155,8 @@ export class ServicesController {
   }
 
   @Get('popular/list')
-  async getPopular(@Query('limit') limit?: string) {
-    return this.servicesService.getPopularServices(limit ? parseInt(limit, 10) : 4);
+  async getPopular() {
+    return this.servicesService.getPopularServices();
   }
 
 }

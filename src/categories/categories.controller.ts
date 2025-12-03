@@ -110,9 +110,7 @@ export class CategoriesController {
   }
 
   @Get('top/list')
-  async getTop(@Query('limit') limit?: string) {
-    return this.categoriesService.getTopCategories(limit ? parseInt(limit, 10) : 4);
+  async getTop() {
+    return this.categoriesService.getTopCategories();
   }
-
-
 }

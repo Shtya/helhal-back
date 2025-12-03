@@ -141,10 +141,9 @@ export class CategoriesService {
     return this.categoryRepository.save(category);
   }
 
-  async getTopCategories(limit = 4) {
+  async getTopCategories() {
     return this.categoryRepository.find({
       where: { top: true },
-      take: limit,
       order: { name: 'ASC' }, // or other ordering logic
     });
   }
