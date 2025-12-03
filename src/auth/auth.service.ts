@@ -913,6 +913,7 @@ export class AuthService {
     const emailExists = await this.userRepository.findOne({ where: { email: pendingEmail } });
     if (emailExists) throw new BadRequestException('Email already in use');
 
+    const oldEmail = user.email;
     user.email = pendingEmail;
     user.pendingEmail = null;
     user.pendingEmailCode = null;
@@ -924,7 +925,7 @@ export class AuthService {
     const adminEmail = settings?.contactEmail || process.env.ADMIN_EMAIL;
 
     // Send password change notification to the user
-    await this.emailService.sendEmailChangeNotification(user.email, user.username, adminEmail);
+    await this.emailService.sendEmailChangeNotification(oldEmail, user.username, adminEmail);
     return { message: 'Email successfully updated' };
   }
 

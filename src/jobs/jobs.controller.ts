@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query, UsePipes, ValidationPipe, forwardRef, Inject } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
+import { JwtAuthGuard, OptionalJwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { RolesGuard } from '../auth/guard/roles.guard';
 import { Roles } from 'decorators/roles.decorator';
 import { UserRole } from 'entities/global.entity';
@@ -64,8 +64,9 @@ export class JobsController {
   }
 
   @Get(':id')
-  async getJob(@Param('id') id: string) {
-    return this.jobsService.getJob(id);
+  @UseGuards(OptionalJwtAuthGuard)
+  async getJob(@Req() req, @Param('id') id: string) {
+    return this.jobsService.getJob(id, req.user?.id);
   }
 
   @Post()
