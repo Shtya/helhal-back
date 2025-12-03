@@ -28,8 +28,9 @@ export class DisputesService {
 
     if (![OrderStatus.ACCEPTED, OrderStatus.DELIVERED, OrderStatus.ChangeRequested].includes(order.status)) throw new BadRequestException('Order is not in a disputable state');
 
-    const existing = await this.disputeRepository.findOne({ where: { orderId } });
-    if (existing) throw new BadRequestException('A dispute already exists for this order');
+    //
+    // const existing = await this.disputeRepository.findOne({ where: { orderId } });
+    // if (existing) throw new BadRequestException('A dispute already exists for this order');
 
     const dispute = this.disputeRepository.create({ orderId, raisedById: userId, reason, type, subject, status: DisputeStatus.OPEN });
     const savedDispute = await this.disputeRepository.save(dispute);
