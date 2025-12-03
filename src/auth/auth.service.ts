@@ -713,6 +713,14 @@ export class AuthService {
     if (!ok) throw new UnauthorizedException('Current password is incorrect');
     user.password = newPassword; // your entity hook hashes on save (existing logic)
     await this.userRepository.save(user);
+
+    // Get admin/contact email from settings
+    const settings = await this.settingsRepo.findOne({ where: {} });
+    const adminEmail = settings?.contactEmail || process.env.ADMIN_EMAIL;
+
+    // Send password change notification to the user
+    await this.emailService.sendPasswordChangeNotification(user.email, user.username, adminEmail);
+
     return { message: 'Password changed successfully' };
   }
 
@@ -725,6 +733,8 @@ export class AuthService {
       session.refreshTokenHash = null;
       await this.sessionsRepo.save(session);
     }
+
+
     return { message: 'Session revoked', id: sessionId };
   }
   // auth.service.ts
@@ -909,7 +919,12 @@ export class AuthService {
     user.lastEmailChangeSentAt = null;
 
     await this.userRepository.save(user);
+    // Get admin/contact email from settings
+    const settings = await this.settingsRepo.findOne({ where: {} });
+    const adminEmail = settings?.contactEmail || process.env.ADMIN_EMAIL;
 
+    // Send password change notification to the user
+    await this.emailService.sendEmailChangeNotification(user.email, user.username, adminEmail);
     return { message: 'Email successfully updated' };
   }
 
