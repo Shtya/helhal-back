@@ -74,6 +74,19 @@ export class DisputesController {
     return this.disputesService.getActivity(req.user.id, req.user.role, id);
   }
 
+  @Get(':id/messages')
+  @UseGuards(JwtAuthGuard)
+  async getMessages(
+    @Req() req,
+    @Param('id') id: string,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '50',
+  ) {
+    const pageNumber = Number(page) || 1;
+    const limitNumber = Number(limit) || 50;
+    return this.disputesService.getDisputeMessages(req.user.id, req.user.role, id, pageNumber, limitNumber);
+  }
+
   @Post(':id/messages')
   @UseGuards(JwtAuthGuard)
   async postMessage(@Req() req, @Param('id') id: string, @Body() body: { message: string; parentId?: string }) {
