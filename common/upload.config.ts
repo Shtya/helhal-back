@@ -23,7 +23,11 @@ export const serviceIconOptions = {
       ensureDir(dir);
       cb(null, dir);
     },
-    filename: (_req, file, cb) => cb(null, randName(file.originalname)),
+    filename: (_req, file, cb) => {
+      file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+      cb(null, randName(file.originalname))
+    },
   }),
 
   fileFilter: (req: any, file: MulterFile, cb: Function) => {
@@ -43,7 +47,11 @@ export const categoryIconOptions = {
       ensureDir(dir);
       cb(null, dir);
     },
-    filename: (_req, file, cb) => cb(null, randName(file.originalname)),
+    filename: (_req, file, cb) => {
+      file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+      cb(null, randName(file.originalname))
+    },
   }),
   fileFilter: (req: any, file: MulterFile, cb: Function) => {
     cb(null, file.mimetype.startsWith('image/'));
@@ -62,6 +70,9 @@ export const logoUploadOptions = {
       cb(null, dir);
     },
     filename: (_req, file, cb) => {
+      file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+
       const ext = file.originalname.split('.').pop();
       const filename = `siteLogo-${Date.now()}.${ext}`;
       cb(null, filename);

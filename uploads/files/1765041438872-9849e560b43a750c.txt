@@ -1,0 +1,11 @@
+think not done at all
+SupportTicket with Priority- Blogs - Guides - Affiliates - Reviews -  Comments-Broadcast  - notification to mobile
+
+thinks need to be done 
+payment integrate and Withdrawal requests - login with apply and phone - Verify phone at billing page - rate limiting
+
+
+comments
+- Copy link at invite page fail at production, because site served over http not https
+- the site url  at settings page at dashboard will give error because site ip not domain name
+- Pinterest button share at invite page fail because domain is ip not domain name

@@ -17,6 +17,9 @@ export const multerOptions = {
       cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
+      file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+
       const name = file.originalname.split('.')[0];
       const extension = extname(file.originalname);
       const randomName = Array(32)
@@ -45,6 +48,9 @@ export const multerOptionsPdf = {
       cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
+      file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+
       const name = file.originalname.split('.')[0];
       const extension = extname(file.originalname);
       const randomName = Array(16)
