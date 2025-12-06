@@ -1,0 +1,2 @@
+- footer change
+- gig tag validation
