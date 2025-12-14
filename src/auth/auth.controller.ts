@@ -588,4 +588,35 @@ export class AuthController {
   }
 
 
+  @Post('create-seller-account')
+  @UseGuards(JwtAuthGuard)
+  async createSellerSubAccount(
+    @Req() req,
+    @Res() res: Response,
+  ) {
+    const result = await this.authService.createSellerSubAccount(req.user.id, res, req);
+    return res.json(result);
+  }
+
+
+  // ------------------ New endpoint ------------------
+  @Post('login-as-related/:relatedUserId')
+  @UseGuards(JwtAuthGuard)
+  async loginAsRelated(
+    @Req() req: any,
+    @Res() res: Response,
+    @Param('relatedUserId') relatedUserId: string,
+  ) {
+    const currentUserId = req.user.id;
+
+    // Delegate to authService
+    const result = await this.authService.loginAsRelatedUser(
+      currentUserId,
+      relatedUserId,
+      res,
+      req,
+    );
+
+    return res.json(result);
+  }
 }

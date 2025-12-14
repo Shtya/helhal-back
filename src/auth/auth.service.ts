@@ -6,11 +6,10 @@ import { Response } from 'express';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
-import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting } from 'entities/global.entity';
+import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount } from 'entities/global.entity';
 import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto } from 'dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from 'common/nodemailer';
-import { CRUD } from 'common/crud.service';
 import { SessionService } from './session.service';
 
 @Injectable()
@@ -18,6 +17,10 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     public userRepository: Repository<User>,
+
+    @InjectRepository(UserRelatedAccount)
+    public userAccountsRepo: Repository<UserRelatedAccount>,
+
     @InjectRepository(PendingUserRegistration)
     public pendingUserRepository: Repository<PendingUserRegistration>,
     @InjectRepository(AccountDeactivation) public accountDeactivationRepository: Repository<AccountDeactivation>,
@@ -351,9 +354,10 @@ export class AuthService {
 
     res.locals.accessToken = accessToken;
     res.locals.refreshToken = refreshToken;
+    const relatedUsers = await this.getRelatedUsers(user.id);
 
     // return serialized user + current session id (optional for UI)
-    const serialized = this.serializeUser({ ...user, accessToken, refreshToken, currentDeviceId: session.id });
+    const serialized = this.serializeUser({ ...user, relatedUsers, accessToken, refreshToken, currentDeviceId: session.id });
     return { accessToken, refreshToken, user: serialized };
   }
 
@@ -366,8 +370,13 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
-    return this.serializeUser(user);
+
+    const relatedUsers = await this.getRelatedUsers(user.id);
+
+    return this.serializeUser({ ...user, relatedUsers });
   }
+
+
   async getUserInfo(userId: string) {
     const qb = this.userRepository.createQueryBuilder('user')
       .leftJoinAndSelect('user.country', 'country')
@@ -394,7 +403,9 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    return this.serializeUser(user);
+    const relatedUsers = await this.getRelatedUsers(user.id);
+
+    return this.serializeUser({ ...user, relatedUsers });
 
   }
 
@@ -1009,6 +1020,153 @@ export class AuthService {
     }
 
     console.log(`Updated response time for ${responseTimes.length} users.`);
+  }
+
+
+  async createSellerSubAccount(activeAccountId, res: Response, req) {
+    const existingSeller = await this.userAccountsRepo.findOne({
+      where: { mainUserId: activeAccountId, role: 'seller' },
+    });
+
+    if (existingSeller) {
+      throw new BadRequestException('You already have a seller account');
+    }
+
+
+    // 1. Load main user
+    const mainUser = await this.userRepository.findOne({
+      where: { id: activeAccountId },
+    });
+
+
+    if (!mainUser) {
+      throw new UnauthorizedException("User not found");
+    }
+
+    if (mainUser.status === UserStatus.INACTIVE || mainUser.status === UserStatus.DELETED) {
+      throw new UnauthorizedException('Your account is inactive. Please contact support.');
+    }
+
+    if (mainUser.status === UserStatus.SUSPENDED) {
+      throw new UnauthorizedException('Your account has been suspended. Please contact support.');
+    }
+
+    if (mainUser.status === UserStatus.PENDING_VERIFICATION) {
+      throw new UnauthorizedException('Please verify your email before logging in');
+    }
+
+
+    if (mainUser.role !== 'buyer') {
+      throw new ForbiddenException('Only buyers can create seller sub accounts');
+    }
+
+    // 2. Create new user (COPY DATA)
+    const subUser = this.userRepository.create({
+      username: `${mainUser.username}_seller_${Date.now() % 100000}`,
+      email: null,
+      password: mainUser.password,
+      role: 'seller',
+      type: mainUser.type,
+      phone: mainUser.phone,
+      countryCode: mainUser.countryCode,
+      profileImage: mainUser.profileImage,
+      countryId: mainUser.countryId,
+      languages: mainUser.languages,
+      preferences: mainUser.preferences,
+    });
+
+    await this.userRepository.save(subUser);
+
+    // 3. Link main → sub
+    await this.userAccountsRepo.save({
+      mainUserId: mainUser.id,
+      subUserId: subUser.id,
+      role: 'seller',
+    });
+
+    // 4. Login sub account (NO PASSWORD)
+    return this.loginAsRelatedUser(mainUser.id, subUser.id, res, req);
+  }
+
+  async loginAsRelatedUser(currentUserId: string, targetUserId: string, res: Response, req) {
+
+    // Verify relation exists
+    // Check relation in BOTH directions
+    const relation = await this.userAccountsRepo.findOne({
+      where: [
+        {
+          mainUserId: currentUserId,
+          subUserId: targetUserId,
+        },
+        {
+          mainUserId: targetUserId,
+          subUserId: currentUserId,
+        },
+      ],
+    });
+
+    if (!relation) {
+      throw new ForbiddenException('Users not related');
+    }
+
+    const targetUser = await this.userRepository.findOne({
+      where: [
+        { id: targetUserId },
+      ],
+    });
+
+    if (!targetUser) {
+      throw new UnauthorizedException("User not found")
+    }
+
+
+    targetUser.lastLogin = new Date();
+    const deviceInfo = await this.sessionService.getDeviceInfoFromRequest(req);
+    await this.sessionService.trackDevice(targetUser.id, deviceInfo);
+    await this.userRepository.save(targetUser);
+
+    // 1) create a new DB session
+    const session = await this.createSession(targetUser, {
+      deviceInfo: deviceInfo,
+      ip: deviceInfo.ip_address,
+      userAgent: req.headers['user-agent'] ?? null,
+    });
+
+
+    await this.sessionsRepo.save(session);
+
+    // 2) issue tokens embedding sid
+    const accessToken = this.jwtService.sign({ id: targetUser.id, sid: session.id, role: targetUser.role }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
+    const refreshToken = this.jwtService.sign({ id: targetUser.id, sid: session.id, role: targetUser.role }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
+
+    // 3) store refresh token hash on the session (for rotation & revocation)
+    await this.sessionsRepo.update(session.id, { refreshTokenHash: this.hash(refreshToken) });
+
+    res.locals.accessToken = accessToken;
+    res.locals.refreshToken = refreshToken;
+
+    const relatedUsers = await this.getRelatedUsers(targetUser.id);
+
+    // return serialized user + current session id (optional for UI)
+    const serialized = this.serializeUser({ ...targetUser, accessToken, refreshToken, currentDeviceId: session.id, relatedUsers });
+    return { accessToken, refreshToken, user: serialized };
+  }
+
+
+  async getRelatedUsers(userId: string) {
+    const relations = await this.userAccountsRepo.find({
+      where: [{ mainUserId: userId }, { subUserId: userId }],
+      relations: ['mainUser', 'subUser'],
+    });
+
+    const relatedUsers = relations
+      .map(rel => (rel.mainUserId === userId ? rel.subUser : rel.mainUser))
+      .filter((user, index, self) =>
+        index === self.findIndex(u => u.id === user.id) // keep only unique users by id
+      );
+
+    return relatedUsers;
+
   }
 
 }

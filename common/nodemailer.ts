@@ -38,6 +38,7 @@ export class MailService {
     }
 
     async sendOTPEmail(to: string, otp: string, actionType: string) {
+        if (!to) return;
         const htmlContent = `
     <!DOCTYPE html>
     <html lang="en">
@@ -167,6 +168,7 @@ export class MailService {
     }
 
     async sendVerificationEmail(email: string, code: string, username: string) {
+        if (!email) return;
         const subject = 'Verify Your Email Address';
 
         const html = `
@@ -285,6 +287,7 @@ export class MailService {
     }
 
     async sendPasswordResetOtp(email: string, username: string, otp: string) {
+        if (!email) return;
         const subject = 'Password Reset OTP';
         // fetch support email from settings (cache) with env fallback
         const supportEmail = await (async () => {
@@ -401,6 +404,7 @@ export class MailService {
     }
 
     async sendPasswordChangeNotification(userEmail: string, username: string, adminEmail: string) {
+        if (!userEmail) return;
         const subject = 'Password Changed Successfully';
 
         const html = `
@@ -493,6 +497,7 @@ export class MailService {
 
 
     async sendEmailChangeNotification(userEmail: string, username: string, adminEmail: string) {
+        if (!userEmail) return;
         const subject = 'Email Address Updated Successfully';
 
         const html = `
@@ -585,6 +590,7 @@ export class MailService {
 
 
     async sendEmailChangeConfirmation(email: string, username: string, userId: string, code: string) {
+        if (!email) return;
         const subject = 'Confirm Your New Email Address';
 
         const confirmLink = `${process.env.BACKEND_URL}/api/v1/auth/confirm-email-change?userId=${userId}&pendingEmail=${encodeURIComponent(email)}&code=${code}`;
@@ -692,6 +698,9 @@ export class MailService {
         senderName: string;
         message: string;
     }) {
+
+        if (!opts.to) return;
+
         const htmlContent = `
   <!DOCTYPE html>
   <html lang="en">
