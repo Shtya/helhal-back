@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Not, Repository } from 'typeorm';
-import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest } from 'entities/global.entity';
+import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest, UserRelatedAccount } from 'entities/global.entity';
 import { AccountingService } from 'src/accounting/accounting.service';
 import { randomBytes } from 'crypto';
 import { CRUD } from 'common/crud.service';
@@ -24,6 +24,9 @@ export class OrdersService {
     public invoiceRepository: Repository<Invoice>,
     @InjectRepository(Payment)
     public paymentRepository: Repository<Payment>,
+
+    @InjectRepository(UserRelatedAccount)
+    public userAccountsRepo: Repository<UserRelatedAccount>,
 
     private readonly dataSource: DataSource,
     private readonly accountingService: AccountingService,
@@ -252,8 +255,14 @@ export class OrdersService {
     const service = await this.serviceRepository.findOne({ where: { id: serviceId, status: 'Active' } } as any);
     if (!service) throw new NotFoundException('Service not found or not available');
 
+    const relation = this.userAccountsRepo.findOne({ where: { mainUserId: userId, subUserId: service.sellerId } })
+    if (relation) {
+      throw new ConflictException('You cannot place an order because you’re already linked to this seller');
+    }
+
     const seller = await this.userRepository.findOne({ where: { id: service.sellerId } });
     if (!seller) throw new NotFoundException('Seller not found');
+
 
     const packageData = service.packages.find((pkg: any) => pkg.type === packageType);
     if (!packageData) throw new BadRequestException('Invalid package type');

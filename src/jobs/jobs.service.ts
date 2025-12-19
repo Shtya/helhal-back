@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In, Between, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
-import { Job, Proposal, User, Category, Order, Notification, JobStatus, ProposalStatus, UserRole, OrderStatus, Setting, PaymentStatus, PackageType, Invoice } from 'entities/global.entity';
+import { Job, Proposal, User, Category, Order, Notification, JobStatus, ProposalStatus, UserRole, OrderStatus, Setting, PaymentStatus, PackageType, Invoice, UserRelatedAccount } from 'entities/global.entity';
 import { CreateJobDto } from 'dto/job.dto';
 import { PaymentsService } from 'src/payments/payments.service';
 
@@ -24,6 +24,8 @@ export class JobsService {
     public settingRepository: Repository<Setting>,
     @InjectRepository(Invoice)
     public invoiceRepo: Repository<Invoice>,
+    @InjectRepository(UserRelatedAccount)
+    public userAccountsRepo: Repository<UserRelatedAccount>,
     private readonly dataSource: DataSource,
 
     @Inject(forwardRef(() => PaymentsService))
@@ -384,6 +386,11 @@ export class JobsService {
     const job = await this.jobRepository.findOne({ where: { id: jobId, status: JobStatus.PUBLISHED } });
     if (!job) {
       throw new NotFoundException('Job not found or not published');
+    }
+
+    const relation = this.userAccountsRepo.findOne({ where: { mainUserId: job.buyerId, subUserId: userId } })
+    if (relation) {
+      throw new ConflictException('You cannot place an submit proposal  because you’re already linked to this buyer');
     }
 
     const user = await this.userRepository.findOne({ where: { id: userId } });
