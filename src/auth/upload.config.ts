@@ -63,7 +63,11 @@ export const imageUploadOptions = {
       ensureDir(dir);
       cb(null, dir);
     },
-    filename: (_req, file, cb) => cb(null, randName(file.originalname)),
+    filename: (_req, file, cb) => {
+      file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+      cb(null, randName(file.originalname))
+    },
   }),
 
   fileFilter: (req: any, file: MulterFile, cb: Function) => {
@@ -98,7 +102,11 @@ export const videoUploadOptions = {
       ensureDir(dir);
       cb(null, dir);
     },
-    filename: (_req, file, cb) => cb(null, randName(file.originalname)),
+    filename: (_req, file, cb) => {
+      file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+      cb(null, randName(file.originalname))
+    },
   }),
   fileFilter: (_req, file, cb) => (VID_RE.test(file.mimetype) ? cb(null, true) : cb(null, false)),
   limits: { fileSize: 200 * 1024 * 1024 }, // 200MB videos
@@ -114,7 +122,11 @@ export const fileUploadOptions = {
       ensureDir(dir);
       cb(null, dir);
     },
-    filename: (_req, file, cb) => cb(null, randName(file.originalname)),
+    filename: (_req, file, cb) => {
+      file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+      cb(null, randName(file.originalname))
+    },
   }),
   fileFilter: (_req, file, cb) => (DOC_RE.test(file.mimetype) ? cb(null, true) : cb(null, false)),
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB

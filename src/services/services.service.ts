@@ -884,10 +884,9 @@ export class ServicesService {
   }
 
 
-  async getPopularServices(limit = 4) {
+  async getPopularServices() {
     return this.serviceRepository.find({
       where: { popular: true, status: ServiceStatus.ACTIVE },
-      take: limit,
       relations: ['category'],
       order: { ordersCount: 'DESC' },
     });

@@ -19,12 +19,12 @@ export class InviteService {
             select: ['id', 'username', 'email', 'referralCode'],
         });
 
-        if (!user) throw new NotFoundException('User not found');
+        // if (!user) throw new NotFoundException('User not found');
 
         const frontend = process.env.FRONTEND_URL;
 
         // Build actual referral link
-        const referralLink = `${frontend}/auth?tab=register&ref=${user.referralCode}`;
+        const referralLink = `${frontend}/auth?tab=register${user ? `&ref=${user.referralCode}` : ""}`;
 
         // Replace placeholder
         const finalMessage = dto.message.replace('{link}', referralLink);

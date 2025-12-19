@@ -7,9 +7,9 @@ import { SendInviteDto } from './dto/invite.dto';
 export class InviteController {
     constructor(private readonly inviteService: InviteService) { }
 
-    @UseGuards(JwtAuthGuard)
+    // @UseGuards(JwtAuthGuard)
     @Post('send')
     async sendInvites(@Req() req: any, @Body() dto: SendInviteDto) {
-        return this.inviteService.sendInvites(req.user.id, dto);
+        return this.inviteService.sendInvites(req?.user?.id, dto);
     }
 }

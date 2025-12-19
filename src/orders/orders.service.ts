@@ -120,7 +120,7 @@ export class OrdersService {
       if (!order) throw new NotFoundException('Order not found');
 
       // Only buyer (or admin) can mark it as paid
-      if (order.buyerId !== userId) throw new ForbiddenException();
+      if (order.buyerId !== userId) throw new ForbiddenException("Only buyer or admin can mark it as paid");
 
       // Mark invoice as paid
       const invoice = order.invoices?.[0];
@@ -133,7 +133,6 @@ export class OrdersService {
 
       // Update order status
       order.status = OrderStatus.ACCEPTED;
-      order.completedAt = new Date(); // keep your original behavior
       await manager.save(order);
 
       // Buyer & Seller notifications inside TX (guaranteed with payment state)
@@ -299,7 +298,7 @@ export class OrdersService {
 
     await this.invoiceRepository.save(invoice);
 
-    const paymentUrl = `http://localhost:3000/payment?orderId=${savedOrder.id}&invoice=${invoice.invoiceNumber}&token=${checkoutToken}`;
+    const paymentUrl = `${process.env.FRONTEND_URL}/payment?orderId=${savedOrder.id}&invoice=${invoice.invoiceNumber}&token=${checkoutToken}`;
 
     // Return order + simulated checkout link
     return {

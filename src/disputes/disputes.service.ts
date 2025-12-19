@@ -28,8 +28,9 @@ export class DisputesService {
 
     if (![OrderStatus.ACCEPTED, OrderStatus.DELIVERED, OrderStatus.ChangeRequested].includes(order.status)) throw new BadRequestException('Order is not in a disputable state');
 
-    const existing = await this.disputeRepository.findOne({ where: { orderId } });
-    if (existing) throw new BadRequestException('A dispute already exists for this order');
+
+    // const existing = await this.disputeRepository.findOne({ where: { orderId } });
+    // if (existing) throw new BadRequestException('A dispute already exists for this order');
 
     const dispute = this.disputeRepository.create({ orderId, raisedById: userId, reason, type, subject, status: DisputeStatus.OPEN });
     const savedDispute = await this.disputeRepository.save(dispute);
@@ -90,11 +91,12 @@ export class DisputesService {
     });
     const invoice = order?.invoices?.[0] || null;
 
-    // messages (threaded)
-    const messages = await this.dmRepo.find({
+    // messages (threaded) - limit to 50 for activity view
+    const [messages, total] = await this.dmRepo.findAndCount({
       where: { disputeId },
       relations: ['sender'],
       order: { created_at: 'ASC' },
+      take: 50,
     });
 
     // derived events
@@ -137,6 +139,7 @@ export class DisputesService {
         message: m.message,
         created_at: m.created_at,
       })),
+      hasMore: total > messages.length,
       events,
     };
   }
@@ -705,6 +708,47 @@ export class DisputesService {
     return dispute;
   }
 
+  async getDisputeMessages(userId: string, userRole: string, disputeId: string, page: number = 1, limit: number = 50) {
+    const dispute = await this.disputeRepository.findOne({ where: { id: disputeId }, relations: ['order'] });
+    if (!dispute) throw new NotFoundException('Dispute not found');
+
+    const user: any = await this.userRepository.findOne({ where: { id: userId } });
+    const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user?.role === 'admin';
+    if (!involved) throw new ForbiddenException('Access denied');
+
+    const pageNumber = Number(page) || 1;
+    const limitNumber = Number(limit) || 50;
+    const skip = (pageNumber - 1) * limitNumber;
+
+    const [messages, total] = await this.dmRepo.findAndCount({
+      where: { disputeId },
+      relations: ['sender'],
+      order: { created_at: 'ASC' },
+      skip,
+      take: limitNumber,
+    });
+
+    const mapped = messages.map(m => ({
+      id: m.id,
+      parentId: (m as any).parentId || null,
+      sender: m.sender ? { id: m.sender.id, username: m.sender.username, profileImage: m.sender.profileImage } : { id: m.senderId },
+      message: m.message,
+      created_at: m.created_at,
+    }));
+
+    const pages = Math.max(1, Math.ceil(total / limitNumber));
+
+    return {
+      messages: mapped,
+      pagination: {
+        page: pageNumber,
+        limit: limitNumber,
+        total,
+        pages,
+      }
+    };
+  }
+
   // --- Admin: resolve and payout immediately (atomic)
   async resolveAndPayout(userId: string, userRole: string, disputeId: string, payload: { sellerAmount: number; buyerRefund: number; note?: string; closeAs: 'completed' | 'cancelled' }) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -732,6 +776,7 @@ export class DisputesService {
       // close dispute
       dispute.status = DisputeStatus.RESOLVED;
       dispute.resolution = JSON.stringify({ sellerAmount: sAmt, buyerRefund: bRef, note: payload.note || '', decidedBy: 'admin' });
+      dispute.resolutionApplied = true;
       await manager.getRepository(Dispute).save(dispute);
 
       // update order

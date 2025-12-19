@@ -84,7 +84,7 @@ export class User extends CoreEntity {
   @Column({ unique: true })
   username: string;
 
-  @Column({ unique: true })
+  @Column({ unique: true, nullable: true })
   email: string;
 
   @Column({ nullable: true })
@@ -343,6 +343,13 @@ export class User extends CoreEntity {
   @OneToMany(() => BlogComment, comment => comment.user)
   blogComments: BlogComment[];
 
+  @OneToMany(() => UserRelatedAccount, ura => ura.mainUser)
+  mainAccounts: UserRelatedAccount[];
+
+  @OneToMany(() => UserRelatedAccount, ura => ura.subUser)
+  subAccounts: UserRelatedAccount[];
+
+
   // ---- security helpers ----
   async comparePassword(candidatePassword: string): Promise<boolean> {
     if (!this.password) return false;
@@ -364,6 +371,32 @@ export class User extends CoreEntity {
       this.password = await bcrypt.hash(this.password, salt);
     }
   }
+}
+
+
+@Entity('user_related_accounts')
+@Unique(['mainUserId', 'subUserId'])
+export class UserRelatedAccount extends CoreEntity {
+
+  // Primary (main) user
+  @Column({ name: 'main_user_id', type: 'uuid' })
+  mainUserId: string;
+
+  @ManyToOne(() => User, user => user.mainAccounts, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'main_user_id' })
+  mainUser: User;
+
+  // Sub (linked) user
+  @Column({ name: 'sub_user_id', type: 'uuid' })
+  subUserId: string;
+
+  @ManyToOne(() => User, user => user.subAccounts, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'sub_user_id' })
+  subUser: User;
+
+  // Role of the sub account relative to the main
+  @Column({ type: 'enum', enum: ['buyer', 'seller', 'admin'], default: 'buyer' })
+  role: string;
 }
 
 

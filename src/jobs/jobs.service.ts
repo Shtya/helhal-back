@@ -223,13 +223,17 @@ export class JobsService {
     };
   }
 
-  async getJob(jobId: string) {
+  async getJob(jobId: string, userId?: string) {
     const job = await this.jobRepository.findOne({
-      where: { id: jobId },
+      where: { id: jobId, },
       relations: ['buyer', 'category', 'subcategory', 'proposals', 'proposals.seller'],
     });
 
     if (!job) {
+      throw new NotFoundException('Job not found');
+    }
+
+    if (job.buyerId != userId && job.status != JobStatus.PUBLISHED) {
       throw new NotFoundException('Job not found');
     }
 

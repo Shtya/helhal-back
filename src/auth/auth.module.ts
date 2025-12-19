@@ -20,6 +20,7 @@ import {
   UserSession,
   Notification,
   Setting,
+  UserRelatedAccount,
 } from 'entities/global.entity';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { RolesGuard } from './guard/roles.guard';
@@ -33,6 +34,7 @@ import { SettingsService } from 'src/settings/settings.service';
     ConfigModule.forRoot(),
     TypeOrmModule.forFeature([
       User,
+      UserRelatedAccount,
       PendingUserRegistration,
       AccountDeactivation,
       Order,

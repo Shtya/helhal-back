@@ -33,6 +33,7 @@ export class CartService {
 
     return {
       id: cart.id,
+      userId: userId,
       items: cart?.items?.map(item => item.service),
       total: cart?.items?.length || 0
     }
