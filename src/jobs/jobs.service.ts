@@ -388,9 +388,9 @@ export class JobsService {
       throw new NotFoundException('Job not found or not published');
     }
 
-    const relation = this.userAccountsRepo.findOne({ where: { mainUserId: job.buyerId, subUserId: userId } })
+    const relation = await this.userAccountsRepo.findOne({ where: { mainUserId: job.buyerId, subUserId: userId } })
     if (relation) {
-      throw new ConflictException('You cannot place an submit proposal  because you’re already linked to this buyer');
+      throw new ConflictException('You cannot submit a proposal  because you’re already linked to this buyer');
     }
 
     const user = await this.userRepository.findOne({ where: { id: userId } });

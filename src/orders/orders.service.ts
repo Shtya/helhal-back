@@ -255,7 +255,7 @@ export class OrdersService {
     const service = await this.serviceRepository.findOne({ where: { id: serviceId, status: 'Active' } } as any);
     if (!service) throw new NotFoundException('Service not found or not available');
 
-    const relation = this.userAccountsRepo.findOne({ where: { mainUserId: userId, subUserId: service.sellerId } })
+    const relation = await this.userAccountsRepo.findOne({ where: { mainUserId: userId, subUserId: service.sellerId } })
     if (relation) {
       throw new ConflictException('You cannot place an order because you’re already linked to this seller');
     }
