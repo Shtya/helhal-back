@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { User, UserRole, UserStatus } from 'entities/global.entity';
 import { AuthService } from './auth.service';
 import { randomBytes } from 'crypto';
+import { MailService } from 'common/nodemailer';
 
 @Injectable()
 export class OAuthService {
@@ -16,6 +17,7 @@ export class OAuthService {
     private authService: AuthService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    public emailService: MailService,
   ) { }
 
   async processReferral(newUser: User, referralCodeUsed?: string): Promise<void> {
@@ -151,6 +153,7 @@ export class OAuthService {
     }
 
     const serializedUser = await this.authService.authenticateUser(user, res);
+    await this.emailService.sendWelcomeEmail(user.email, user.username, user.role);
     return { redirectPath, user: serializedUser };
   }
 

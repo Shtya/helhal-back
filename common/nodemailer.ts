@@ -781,6 +781,159 @@ export class MailService {
         });
     }
 
+
+    async sendWelcomeEmail(
+        email: string,
+        username: string,
+        role: string
+    ) {
+        if (!email) return;
+
+        const isSeller = role === 'seller';
+
+        const subject = isSeller
+            ? 'Welcome to Our Freelancing Platform – Start Selling Today!'
+            : 'Welcome to Our Freelancing Platform – Find the Perfect Freelancer';
+
+        const mainTitle = isSeller
+            ? `Welcome aboard, ${username}!`
+            : `Welcome, ${username}!`;
+
+        const roleMessage = isSeller
+            ? `
+      <p>You’re now part of our growing community of talented sellers.</p>
+      <p>Create your services, showcase your skills, and start earning by working with clients from all over the world.</p>
+      <ul style="text-align:left; max-width:420px; margin:20px auto; color:#555;">
+        <li>✔ Create and publish your services</li>
+        <li>✔ Receive job requests from customers</li>
+        <li>✔ Get paid securely for your work</li>
+      </ul>
+    `
+            : `
+      <p>You’re all set to find skilled professionals for your projects.</p>
+      <p>Post jobs, explore top services, and collaborate with trusted freelancers easily.</p>
+      <ul style="text-align:left; max-width:420px; margin:20px auto; color:#555;">
+        <li>✔ Explore professional services</li>
+        <li>✔ Post job requirements</li>
+        <li>✔ Chat directly with sellers</li>
+      </ul>
+    `;
+
+        const ctaText = isSeller ? 'Create Your First Service' : 'Explore Services';
+        const ctaLink = isSeller
+            ? `${process.env.FRONTEND_URL}/create-gig`
+            : `${process.env.FRONTEND_URL}/explore`;
+
+        const html = `
+  <html>
+    <head>
+      <style>
+        body {
+          font-family: 'Arial', sans-serif;
+          background-color: #f5f7fb;
+          margin: 0;
+          padding: 0;
+          color: #333;
+        }
+        .container {
+          width: 100%;
+          padding: 40px 20px;
+          text-align: center;
+        }
+        .email-content {
+          background-color: #ffffff;
+          padding: 30px;
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+          max-width: 600px;
+          margin: auto;
+        }
+        .logo {
+          margin-bottom: 25px;
+        }
+        .logo img {
+          max-width: 160px;
+        }
+        .email-header {
+          font-size: 26px;
+          font-weight: bold;
+          color: #2e7d32;
+          margin-bottom: 15px;
+        }
+        .email-body {
+          font-size: 15px;
+          line-height: 1.6;
+          color: #555;
+        }
+        .cta-button {
+          display: inline-block;
+          margin-top: 25px;
+          padding: 12px 30px;
+          background-color: #2e7d32;
+          color: #fff;
+          text-decoration: none;
+          border-radius: 30px;
+          font-size: 16px;
+          font-weight: bold;
+        }
+        .cta-button:hover {
+          background-color: #256628;
+        }
+        .footer {
+          margin-top: 30px;
+          font-size: 12px;
+          color: #888;
+        }
+        @media (max-width: 600px) {
+          .email-content {
+            padding: 20px;
+          }
+          .email-header {
+            font-size: 22px;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="email-content">
+          <div class="logo">
+            <img src="${process.env.FRONTEND_URL}" alt="Platform Logo" />
+          </div>
+
+          <div class="email-header">
+            ${mainTitle}
+          </div>
+
+          <div class="email-body">
+            ${roleMessage}
+
+            <a href="${ctaLink}" class="cta-button">
+              ${ctaText}
+            </a>
+
+            <p style="margin-top:25px;">
+              If you have any questions, our support team is always here to help.
+            </p>
+          </div>
+
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} Your Project Name. All rights reserved.</p>
+          </div>
+        </div>
+      </div>
+    </body>
+  </html>
+  `;
+
+        await this.transporter.sendMail({
+            from: await this.getFrom(),
+            to: email,
+            subject,
+            html,
+        });
+    }
+
 }
 
 

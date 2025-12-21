@@ -267,7 +267,9 @@ export class OrdersService {
     const packageData = service.packages.find((pkg: any) => pkg.type === packageType);
     if (!packageData) throw new BadRequestException('Invalid package type');
 
-    const totalAmount = packageData.price * quantity;
+    const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
+    const subtotal = packageData.price * quantity;
+    const totalAmount = subtotal + platformPercent;
 
     const order = this.orderRepository.create({
       buyerId: userId,
@@ -287,9 +289,8 @@ export class OrdersService {
     const savedOrder = await this.orderRepository.save(order);
 
     // ---- Invoice
-    const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
-    const serviceFee = (totalAmount * platformPercent) / 100;
-    const subtotal = totalAmount - serviceFee;
+    // const serviceFee = (totalAmount * platformPercent) / 100;
+    const serviceFee = platformPercent;
 
     const checkoutToken = randomBytes(16).toString('hex');
 
@@ -340,8 +341,10 @@ export class OrdersService {
     if (!packageData) {
       throw new BadRequestException('Invalid package type');
     }
-
-    const totalAmount = packageData.price * quantity;
+    const s = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
+    const platformPercent = Number(s?.[0]?.platformPercent ?? 10);;
+    const subtotal = packageData.price * quantity;
+    const totalAmount = subtotal + platformPercent;
 
     const order = this.orderRepository.create({
       buyerId: userId,
@@ -358,12 +361,9 @@ export class OrdersService {
     });
 
     const savedOrder = await this.orderRepository.save(order);
-    const s = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
 
     // Create invoice
-    const platformPercent = Number(s?.[0]?.platformPercent ?? 10);;
-    const serviceFee = (totalAmount * platformPercent) / 100;
-    const subtotal = totalAmount - serviceFee;
+    const serviceFee = platformPercent;
 
     const invoice = this.invoiceRepository.create({
       invoiceNumber: `INV-${Date.now()}-${savedOrder.id.slice(-6)}`,

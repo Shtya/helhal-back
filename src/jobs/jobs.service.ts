@@ -565,6 +565,8 @@ export class JobsService {
         }
       };
 
+      const s = await settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
+      const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
       // ===============================
       // CASE 1: REJECT
       // ===============================
@@ -592,7 +594,7 @@ export class JobsService {
             proposalId: proposal.id,
             title: job.title,
             quantity: 1,
-            totalAmount: Number(proposal.bidAmount),
+            totalAmount: Number(proposal.bidAmount + platformPercent),
             packageType: PackageType.BASIC,
             status: OrderStatus.PENDING,
             orderDate: new Date(),
@@ -607,11 +609,10 @@ export class JobsService {
           lock: { mode: 'pessimistic_write' },
         });
         if (!inv) {
-          const s = await settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
-          const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
-          const totalAmount = Number(order.totalAmount);
-          const serviceFee = +(totalAmount * (platformPercent / 100)).toFixed(2);
-          const subtotal = +(totalAmount - serviceFee).toFixed(2);
+          const totalAmount = order.totalAmount;
+          // const serviceFee = +(totalAmount * (platformPercent / 100)).toFixed(2);
+          const serviceFee = platformPercent;
+          const subtotal = proposal.bidAmount;
 
           inv = invoiceRepo.create({
             invoiceNumber: `INV-${Date.now()}-${order.id.slice(-6)}`,

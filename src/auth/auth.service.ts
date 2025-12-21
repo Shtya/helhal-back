@@ -237,6 +237,7 @@ export class AuthService {
     await this.pendingUserRepository.delete(pendingUser.id);
 
     const serializedUser = await this.authenticateUser(user, res);
+    await this.emailService.sendWelcomeEmail(user.email, user.username, user.role);
 
     return {
       message: 'Email verified and registration complete',
@@ -1083,7 +1084,7 @@ export class AuthService {
       subUserId: subUser.id,
       role: 'seller',
     });
-
+    await this.emailService.sendWelcomeEmail(subUser.email, subUser.username, subUser.role);
     // 4. Login sub account (NO PASSWORD)
     return this.loginAsRelatedUser(mainUser.id, subUser.id, res, req);
   }
