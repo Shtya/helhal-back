@@ -48,7 +48,14 @@ export class OAuthService {
   async handleGoogleCallback(profile: any, state?: string, res?: Response) {
     const email = profile.email;
     if (!email) throw new UnauthorizedException('No email found in Google profile');
-    let user = await this.userRepository.findOne({ where: { email } });
+
+    let user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.email = :email', { email: email })
+      .getOne();
+
+
 
     if (!user) {
       const baseName = profile.name || email.split('@')[0];
@@ -88,7 +95,13 @@ export class OAuthService {
     const email = profile.email;
     if (!email) throw new UnauthorizedException('No email found in Apple profile');
 
-    let user = await this.userRepository.findOne({ where: { email } });
+
+    let user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.email = :email', { email: email })
+      .getOne();
+
 
     if (!user) {
       const baseName = profile.name || email.split('@')[0];

@@ -252,6 +252,21 @@ export class User extends CoreEntity {
   @Column({ name: 'reputation_points', default: 0 })
   reputationPoints: number;
 
+  @Column({ type: 'jsonb', nullable: true, select: false })
+  permissions: {
+    users?: number;
+    services?: number;
+    categories?: number;
+    jobs?: number;
+    orders?: number;
+    invoices?: number;
+    disputes?: number;
+    finance?: number;
+    settings?: number;
+    statistics?: number;
+  } | null;
+
+
   // ---- relations (unchanged) ----
   @OneToMany(() => Asset, upload => upload.user)
   uploads: Asset[];
@@ -524,11 +539,17 @@ export class Setting extends CoreEntity {
   @Column({ name: 'site_logo' })
   siteLogo: string;
 
-  @Column({ name: 'privacy_policy', type: 'text' })
-  privacyPolicy: string;
+  @Column({ name: 'privacy_policy_en', type: 'text' })
+  privacyPolicy_en: string;
 
-  @Column({ name: 'terms_of_service', type: 'text' })
-  termsOfService: string;
+  @Column({ name: 'terms_of_service_en', type: 'text' })
+  termsOfService_en: string;
+
+  @Column({ name: 'privacy_policy_ar', type: 'text' })
+  privacyPolicy_ar: string;
+
+  @Column({ name: 'terms_of_service_ar', type: 'text' })
+  termsOfService_ar: string;
 
   @Column({ name: 'contact_email' })
   contactEmail: string;
@@ -689,8 +710,12 @@ export class Category extends CoreEntity {
   @Column({ type: 'enum', enum: CategoryType, default: CategoryType.CATEGORY })
   type: CategoryType;
 
+
   @Column()
-  name: string;
+  name_ar: string;
+
+  @Column()
+  name_en: string;
 
   @Column({ nullable: true })
   parentId: string;
@@ -719,8 +744,8 @@ export class Category extends CoreEntity {
   @BeforeInsert()
   @BeforeUpdate()
   generateSlug() {
-    if (this.name) {
-      this.slug = this.name
+    if (this.name_en) {
+      this.slug = this.name_en
         .toLowerCase()
         .replace(/[^a-z0-9\s-]/g, '')
         .trim()

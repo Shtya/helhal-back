@@ -1,13 +1,14 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Query, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { RolesGuard } from '../auth/guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { CategoriesService } from './categories.service';
 import { CRUD } from 'common/crud.service';
 import { IsNull, Not } from 'typeorm';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { categoryIconOptions } from 'common/upload.config';
+import { Permissions } from 'entities/permissions';
 
 @Controller('categories')
 export class CategoriesController {
@@ -37,7 +38,7 @@ export class CategoriesController {
       query.sortBy,
       query.sortOrder,
       [],
-      ['name'],
+      ['name_en', 'name_ar'],
       filters
     );
   }
@@ -48,22 +49,40 @@ export class CategoriesController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  // @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'categories',
+      value: Permissions.Categories.Add
+    }
+  })
   async createCategory(@Body() createCategoryDto: any) {
     return this.categoriesService.createCategory(createCategoryDto);
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'categories',
+      value: Permissions.Categories.Edit
+    }
+  })
   async updateCategory(@Param('id') id: string, @Body() updateCategoryDto: any) {
     return this.categoriesService.updateCategory(id, updateCategoryDto);
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'categories',
+      value: Permissions.Categories.Delete
+    }
+  })
   async deleteCategory(@Param('id') id: string) {
     return this.categoriesService.deleteCategory(id);
   }
@@ -72,8 +91,14 @@ export class CategoriesController {
   async getCategoryServices(@Param('slug') slug: string, @Query('page') page: number = 1) {
     return this.categoriesService.getCategoryServices(slug, page);
   }
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'categories',
+      value: Permissions.Categories.TopToggle
+    }
+  })
   @UseInterceptors(FileInterceptor('icon', categoryIconOptions))
   @Post(':id/top')
   async setTop(
@@ -87,8 +112,14 @@ export class CategoriesController {
     return this.categoriesService.markAsTop(id, iconUrl);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'categories',
+      value: Permissions.Categories.TopToggle
+    }
+  })
   @UseInterceptors(FileInterceptor('icon', categoryIconOptions))
   @Post(':id/top/icon')
   async updateTopIcon(
@@ -102,8 +133,14 @@ export class CategoriesController {
     return this.categoriesService.updateTopIcon(id, iconUrl);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'categories',
+      value: Permissions.Categories.TopToggle
+    }
+  })
   @Delete(':id/untop')
   async unsetTop(@Param('id') id: string) {
     return this.categoriesService.unmarkAsTop(id);

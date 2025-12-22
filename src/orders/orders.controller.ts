@@ -1,9 +1,9 @@
 import { Controller, Get, Post, Put, Body, Param, UseGuards, Req, Query, NotFoundException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { OrdersService } from './orders.service';
-import { RolesGuard } from 'src/auth/guard/roles.guard';
+import { AccessGuard } from 'src/auth/guard/access.guard';
 import { UserRole } from 'entities/global.entity';
-import { Roles } from 'decorators/roles.decorator';
+import { RequireAccess } from 'decorators/access.decorator';
 import { CRUD } from 'common/crud.service';
 
 @Controller('orders')
@@ -12,15 +12,15 @@ export class OrdersController {
   constructor(private ordersService: OrdersService) { }
 
   @Get('admin')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getOrdersAdmin(@Query('') query: any) {
     return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'seller', 'service', 'invoices'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
 
   @Get('invoices')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getOrdersInvoices(@Query() query: any) {
     return this.ordersService.getInvoices(query);
   }

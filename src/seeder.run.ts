@@ -900,12 +900,12 @@ async function seedSettings(dataSource: DataSource) {
       siteName: 'SkillForge',
       platformAccountUserId: platformUser ? String(platformUser.id) : null,
       siteLogo: 'https://images.unsplash.com/photo-1508830524289-0adcbe822b40?ixlib=rb-4.0.3&auto=format&fit=crop&w=320&q=60',
-      privacyPolicy: `
+      privacyPolicy_en: `
 				We value your privacy. We collect only the data needed to operate the marketplace,
 				improve services, and comply with law. You can request data export or deletion at any time by
 				contacting support. See the full policy in your account settings.
       `.trim(),
-      termsOfService: `
+      termsOfService_en: `
 				By using SkillForge, you agree to the platform rules: no illegal content, respect IP rights,
 				and follow fair-use and payment policies. The platform may hold funds in escrow and charge
 				a platform fee on transactions. Disputes are handled per our dispute policy.
@@ -953,30 +953,32 @@ async function seedCategories(dataSource: DataSource) {
   for (const cat of CATEGORIES) {
     const parent = await upsert<Category>(
       repo,
-      { name: cat.name },
+      { name_en: cat.name },
       {
         type: CategoryType.CATEGORY,
-        name: cat.name,
+        name_en: cat.name,
+        name_ar: cat.name,
         description: cat.description ?? null,
         image: cat.image ?? null,
       },
     );
-    byName[parent.name] = parent;
+    byName[parent.name_en] = parent;
 
     if (cat.subs?.length) {
       for (const sub of cat.subs) {
         const subcat = await upsert<Category>(
           repo,
-          { name: sub.name },
+          { name_en: sub.name },
           {
             type: CategoryType.SUBCATEGORY,
-            name: sub.name,
+            name_en: cat.name,
+            name_ar: cat.name,
             description: sub.description ?? null,
             image: sub.image ?? null,
             parentId: parent.id, // parentId is a plain string column in your entity
           },
         );
-        byName[subcat.name] = subcat;
+        byName[subcat.name_en] = subcat;
       }
     }
   }

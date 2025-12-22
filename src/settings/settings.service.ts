@@ -20,8 +20,10 @@ export class SettingsService {
       settings = this.settingsRepository.create({
         siteName: 'Your Platform Name',
         siteLogo: '/logo.png',
-        privacyPolicy: 'Default privacy policy',
-        termsOfService: 'Default terms of service',
+        privacyPolicy_en: 'Default privacy policy',
+        termsOfService_en: 'Default terms of service',
+        privacyPolicy_ar: 'سياسة الخصوصية الافتراضية',
+        termsOfService_ar: 'شروط الخدمة الافتراضية',
         contactEmail: 'support@example.com',
         supportPhone: '+1234567890',
         platformPercent: 10,

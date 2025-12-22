@@ -1,15 +1,15 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { RolesGuard } from '../auth/guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { ServiceRequirementsService } from './service-requirements.service';
 
 @Controller('service-requirements')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.SELLER, UserRole.ADMIN)
+@UseGuards(JwtAuthGuard, AccessGuard)
+@RequireAccess({ roles: [UserRole.SELLER, UserRole.ADMIN] })
 export class ServiceRequirementsController {
-  constructor(private requirementsService: ServiceRequirementsService) {}
+  constructor(private requirementsService: ServiceRequirementsService) { }
 
   @Get('service/:serviceId')
   async getServiceRequirements(@Param('serviceId') serviceId: string) {

@@ -1,9 +1,10 @@
 import { Controller, Get, Post, Put, Body, Param, UseGuards, Req, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { RolesGuard } from '../auth/guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { DisputesService } from './disputes.service';
+import { Permissions } from 'entities/permissions';
 
 type ProposeResolutionBody = { resolution: string } | { sellerAmount: number; buyerRefund: number; note?: string };
 
@@ -18,8 +19,14 @@ export class DisputesController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'disputes',
+      value: Permissions.Disputes.View
+    }
+  })
   async getDisputes(
     @Query('status') status?: string,
     @Query('page') page: string = '1',
@@ -42,8 +49,14 @@ export class DisputesController {
 
 
   @Get('stats')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'disputes',
+      value: Permissions.Disputes.View
+    }
+  })
   async stats() {
     return this.disputesService.getDisputeStats();
   }
@@ -113,15 +126,27 @@ export class DisputesController {
   }
 
   @Put(':id/resolution')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'disputes',
+      value: Permissions.Disputes.Propose
+    }
+  })
   async proposeResolution(@Param('id') id: string, @Body() body: ProposeResolutionBody) {
     return this.disputesService.proposeResolution(id, body);
   }
 
   @Post(':id/resolve-payout')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'disputes',
+      value: Permissions.Disputes.Propose
+    }
+  })
   async resolveAndPayout(@Req() req, @Param('id') id: string, @Body() body: { sellerAmount: number; buyerRefund: number; note?: string; closeAs: 'completed' | 'cancelled' }) {
     return this.disputesService.resolveAndPayout(req.user.id, req.user.role, id, body);
   }

@@ -19,9 +19,9 @@ import { multerOptions } from 'common/multer.config';
 import { CreateAssetDto, UpdateAssetDto } from 'dto/assets.dto';
 import { AssetService } from './asset.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
-import { RolesGuard } from 'src/auth/guard/roles.guard';
+import { AccessGuard } from 'src/auth/guard/access.guard';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, AccessGuard)
 @Controller('assets')
 export class AssetController {
   constructor(private readonly assetService: AssetService) { }

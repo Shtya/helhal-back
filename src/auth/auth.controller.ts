@@ -4,10 +4,10 @@ import { Request, Response } from 'express';
 import axios from 'axios';
 import { AuthService } from './auth.service';
 import { OAuthService } from './oauth.service';
-import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto } from 'dto/user.dto';
+import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto, UpdateUserPermissionsDto } from 'dto/user.dto';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
-import { RolesGuard } from './guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from './guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { SellerLevel, User, UserRole } from 'entities/global.entity';
 import { CRUD } from 'common/crud.service';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
@@ -17,6 +17,8 @@ import { Repository } from 'typeorm';
 
 import { promises as fsp } from 'fs';
 import { join, normalize as pathNormalize } from 'path';
+import { Permissions } from 'entities/permissions';
+
 
 @Controller('auth')
 export class AuthController {
@@ -356,7 +358,13 @@ export class AuthController {
 
   @Put('profile/:id')
   @UseGuards(JwtAuthGuard)
-  @Roles(UserRole.ADMIN)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'users',
+      value: Permissions.Users.Edit
+    }
+  })
   async adminUpdateProfile(@Param('id') id: string, @Req() req: any, @Body() dto: any) {
     return this.authService.updateProfile(id, dto, req.user.id);
   }
@@ -370,8 +378,14 @@ export class AuthController {
 
   // --------- status/admin ----------
   @Put('status')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'users',
+      value: Permissions.Users.ChangeStatus
+    }
+  })
   async updateStatus(@Req() req: any, @Body() body: { status: any; userId: string }) {
     const allowed = ['active', 'suspended', 'pending_verification', 'deleted'];
     if (!allowed.includes(body.status)) throw new BadRequestException('Invalid status');
@@ -380,8 +394,14 @@ export class AuthController {
   }
 
   @Get('users')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'users',
+      value: Permissions.Users.View
+    }
+  })
   async getAllUsers(@Query('') query: any) {
     return CRUD.findAll(this.authService.userRepository, 'user', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['username', 'email'],
       {
@@ -392,8 +412,14 @@ export class AuthController {
   }
 
   @Delete('user/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'users',
+      value: Permissions.Users.Delete
+    }
+  })
   async deleteUser(@Param('id') id: string) {
     return this.authService.deleteUser(id);
   }
@@ -465,11 +491,18 @@ export class AuthController {
   @Get('verify-oauth-token')
   async verifyOAuthToken(@Query('token') token: string, @Res() res: Response) {
     const decoded = this.oauthService.verifyOneTimeToken(token);
-    const user = await this.oauthService['userRepository'].findOne({ where: { id: decoded.userId } });
+
+    const user = await this.oauthService['userRepository']
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: decoded.userId })
+      .getOne();
+
     if (!user) throw new UnauthorizedException('User not found');
     if (decoded.referralCodeUsed && !user.referredBy) {
       await this.oauthService.processReferral(user, decoded.referralCodeUsed);
     }
+
     const serializedUser = await this.oauthService['authService'].authenticateUser(user, res);
     return res.json({ message: 'Authentication successful', user: serializedUser });
   }
@@ -535,8 +568,14 @@ export class AuthController {
     return res.json({ message: 'Logged out successfully' });
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'users',
+      value: Permissions.Users.UpdateLevel
+    }
+  })
   @Put('users/:id/level')
   async updateSellerLevel(
     @Param('id') id: string,
@@ -618,5 +657,13 @@ export class AuthController {
     );
 
     return res.json(result);
+  }
+
+
+  @Put(':id/permissions')
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
+  async updatePermissions(@Body() dto: UpdateUserPermissionsDto, @Param('id') id: string) {
+    return this.authService.updateUserPermissions(id, dto);
   }
 }

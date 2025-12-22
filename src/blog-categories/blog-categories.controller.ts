@@ -1,13 +1,13 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { RolesGuard } from '../auth/guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { BlogCategoriesService } from './blog-categories.service';
 
 @Controller('blog-categories')
 export class BlogCategoriesController {
-  constructor(private blogCategoriesService: BlogCategoriesService) {}
+  constructor(private blogCategoriesService: BlogCategoriesService) { }
 
   @Get()
   async getCategories(@Query('withBlogs') withBlogs: boolean = false) {
@@ -20,22 +20,22 @@ export class BlogCategoriesController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async createCategory(@Body() createCategoryDto: any) {
     return this.blogCategoriesService.createCategory(createCategoryDto);
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async updateCategory(@Param('id') id: string, @Body() updateCategoryDto: any) {
     return this.blogCategoriesService.updateCategory(id, updateCategoryDto);
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async deleteCategory(@Param('id') id: string) {
     return this.blogCategoriesService.deleteCategory(id);
   }
@@ -46,15 +46,15 @@ export class BlogCategoriesController {
   }
 
   @Post(':id/assign-to-blog/:blogId')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SELLER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN, UserRole.SELLER] })
   async assignCategoryToBlog(@Param('id') categoryId: string, @Param('blogId') blogId: string) {
     return this.blogCategoriesService.assignCategoryToBlog(categoryId, blogId);
   }
 
   @Delete(':id/remove-from-blog/:blogId')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SELLER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN, UserRole.SELLER] })
   async removeCategoryFromBlog(@Param('id') categoryId: string, @Param('blogId') blogId: string) {
     return this.blogCategoriesService.removeCategoryFromBlog(categoryId, blogId);
   }

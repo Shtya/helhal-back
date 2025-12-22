@@ -23,7 +23,7 @@ import {
   UserRelatedAccount,
 } from 'entities/global.entity';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
-import { RolesGuard } from './guard/roles.guard';
+import { AccessGuard } from './guard/access.guard';
 import { MailService } from 'common/nodemailer';
 import { ReferralModule } from 'src/referral/referral.module';
 import { SessionService } from './session.service';
@@ -62,11 +62,11 @@ import { SettingsService } from 'src/settings/settings.service';
     GoogleStrategy,
     AppleStrategy,
     JwtAuthGuard,
-    RolesGuard,
+    AccessGuard,
     SettingsService,
     MailService
   ],
   controllers: [AuthController],
-  exports: [AuthService, JwtAuthGuard, RolesGuard],
+  exports: [AuthService, JwtAuthGuard, AccessGuard],
 })
 export class AuthModule { }

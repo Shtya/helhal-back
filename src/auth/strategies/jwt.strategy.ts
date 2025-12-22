@@ -8,7 +8,7 @@ import { User, UserSession } from 'entities/global.entity';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor( @InjectRepository(UserSession) private sessionsRepo: Repository<UserSession>,) {
+  constructor(@InjectRepository(UserSession) private sessionsRepo: Repository<UserSession>,) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
         req => {
@@ -28,13 +28,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    // If the session was revoked, fail immediately even if token is not expired.
-    const session = await this.sessionsRepo.findOne({ where: { id: payload.sid, userId: payload.id } });
+    // Check session
+    const session = await this.sessionsRepo.findOne({
+      where: { id: payload.sid, userId: payload.id }
+    });
     if (!session || session.revokedAt) {
       throw new UnauthorizedException('Session is revoked');
     }
 
-    // Attach what you need on req.user
-    return { id: payload.id, sessionId: payload.sid };
+    // Return all info needed by guards
+    return {
+      id: payload.id,
+      sessionId: payload.sid,
+      role: payload.role,           // <--- add this
+      permissions: payload.permissions, // <--- add this
+    };
   }
+
 }

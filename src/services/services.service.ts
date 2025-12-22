@@ -374,7 +374,7 @@ export class ServicesService {
       .leftJoin('service.category', 'category')
       .addSelect([
         'category.id',
-        'category.name',
+        'category.name_en',
         'category.image',
         'category.slug',
       ])
@@ -509,7 +509,7 @@ export class ServicesService {
     // Seller countries filter (case-insensitive)
     if (sellerCountries) {
       const countries = Array.isArray(sellerCountries) ? sellerCountries : sellerCountries.split(',');
-      queryBuilder.andWhere('LOWER(country.name) IN (:...countries)', {
+      queryBuilder.andWhere('LOWER(country.name_en) IN (:...countries)', {
         countries: countries.map(c => c.toLowerCase()),
       });
     }
@@ -589,7 +589,7 @@ export class ServicesService {
     };
   }
 
-  private createSlog(slug) {
+  private createSlug(slug) {
     const tempSlug = slug
       .toLowerCase()
       .replace(/[^a-z0-9\s-]/g, '')
@@ -599,6 +599,36 @@ export class ServicesService {
 
     return tempSlug;
   }
+
+  async checkServiceTitleUniqueness(
+    title: string,
+    userId: string
+  ) {
+    const slug = this.createSlug(title);
+
+    const existingService = await this.serviceRepository.findOne({
+      where: { slug },
+    });
+
+    if (!existingService) {
+      return {
+        isUnique: true,
+        ownedByCurrentUser: false,
+        message: 'Title is available',
+      };
+    }
+
+    const ownedByCurrentUser = existingService.sellerId === userId;
+
+    return {
+      isUnique: false,
+      ownedByCurrentUser,
+      message: ownedByCurrentUser
+        ? 'You already have a service with this title'
+        : 'This title is already used by another seller',
+    };
+  }
+
   async createService(userId: string, createServiceDto: any) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
@@ -606,7 +636,7 @@ export class ServicesService {
     }
 
     // Generate slug from title
-    const tempSlug = this.createSlog(createServiceDto.title);
+    const tempSlug = this.createSlug(createServiceDto.title);
 
     // Check if slug already exists
     const existingService = await this.serviceRepository.findOne({ where: { slug: tempSlug } });
@@ -673,7 +703,7 @@ export class ServicesService {
 
     // If title is being updated, generate new slug and check uniqueness
     if (updateServiceDto.title && updateServiceDto.title !== service.title) {
-      const newSlug = this.createSlog(updateServiceDto.title);
+      const newSlug = this.createSlug(updateServiceDto.title);
 
       const existingService = await this.serviceRepository.findOne({ where: { slug: newSlug } });
       if (existingService && existingService.id !== service.id) {

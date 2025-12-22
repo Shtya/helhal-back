@@ -1,13 +1,13 @@
 import { Controller, Get, Post, Put, Body, Param, UseGuards, Req, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { RolesGuard } from '../auth/guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { AbuseReportsService } from './abuse-reports.service';
 
 @Controller('abuse-reports')
 export class AbuseReportsController {
-  constructor(private abuseReportsService: AbuseReportsService) {}
+  constructor(private abuseReportsService: AbuseReportsService) { }
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -16,8 +16,8 @@ export class AbuseReportsController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getReports(@Query('status') status?: string, @Query('page') page: number = 1) {
     return this.abuseReportsService.getReports(status, page);
   }
@@ -35,15 +35,15 @@ export class AbuseReportsController {
   }
 
   @Put(':id/status')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async updateReportStatus(@Param('id') id: string, @Body() body: { status: string, actionTaken?: string }) {
     return this.abuseReportsService.updateReportStatus(id, body.status, body.actionTaken);
   }
 
   @Get('stats/summary')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getReportStats() {
     return this.abuseReportsService.getReportStats();
   }

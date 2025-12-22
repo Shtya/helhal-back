@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, MaxLength, Matches, ArrayMaxSize, ValidateNested, IsArray, IsNumber, IsBoolean } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, MaxLength, Matches, ArrayMaxSize, ValidateNested, IsArray, IsNumber, IsBoolean, ArrayUnique } from 'class-validator';
 import { UserRole } from 'entities/global.entity';
+import { Permissions } from 'entities/permissions';
 
 export class RegisterDto {
   @IsString()
@@ -90,4 +91,17 @@ export class ChangePasswordDto {
   @IsString()
   @MinLength(8, { message: 'New password must be at least 8 characters long' })
   newPassword: string;
+}
+
+export class UpdateUserPermissionsDto {
+  @IsOptional() @IsEnum(Permissions.Categories, { each: true }) @ArrayUnique() users?: Permissions.Users[];
+  @IsOptional() @IsEnum(Permissions.Categories, { each: true }) @ArrayUnique() categories?: Permissions.Categories[];
+  @IsOptional() @IsEnum(Permissions.Services, { each: true }) @ArrayUnique() services?: Permissions.Services[];
+  @IsOptional() @IsEnum(Permissions.Jobs, { each: true }) @ArrayUnique() jobs?: Permissions.Jobs[];
+  @IsOptional() @IsEnum(Permissions.Orders, { each: true }) @ArrayUnique() orders?: Permissions.Orders[];
+  @IsOptional() @IsEnum(Permissions.Invoices, { each: true }) @ArrayUnique() invoices?: Permissions.Invoices[];
+  @IsOptional() @IsEnum(Permissions.Disputes, { each: true }) @ArrayUnique() disputes?: Permissions.Disputes[];
+  @IsOptional() @IsEnum(Permissions.Finance, { each: true }) @ArrayUnique() finance?: Permissions.Finance[];
+  @IsOptional() @IsEnum(Permissions.Settings, { each: true }) @ArrayUnique() settings?: Permissions.Settings[];
+  @IsOptional() @IsEnum(Permissions.Statistics, { each: true }) @ArrayUnique() statistics?: Permissions.Statistics[];
 }

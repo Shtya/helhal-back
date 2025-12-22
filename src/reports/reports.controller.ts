@@ -1,14 +1,14 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { RolesGuard } from '../auth/guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { ReportsService } from './reports.service';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard)
 export class ReportsController {
-  constructor(private reportsService: ReportsService) {}
+  constructor(private reportsService: ReportsService) { }
 
   @Get('sales')
   async getSalesReport(@Req() req, @Query('startDate') startDate: string, @Query('endDate') endDate: string) {
@@ -31,15 +31,15 @@ export class ReportsController {
   }
 
   @Get('admin/summary')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getAdminSummaryReport(@Query('startDate') startDate: string, @Query('endDate') endDate: string) {
     return this.reportsService.getAdminSummaryReport(startDate, endDate);
   }
 
   @Get('admin/user-activity')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getUserActivityReport(@Query('userId') userId?: string, @Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
     return this.reportsService.getUserActivityReport(userId, startDate, endDate);
   }

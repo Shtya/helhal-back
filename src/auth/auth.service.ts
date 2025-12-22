@@ -7,10 +7,12 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
 import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount } from 'entities/global.entity';
-import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto } from 'dto/user.dto';
+import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, UpdateUserPermissionsDto } from 'dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from 'common/nodemailer';
 import { SessionService } from './session.service';
+import { PermissionBitmaskHelper } from './permission-bitmask.helper';
+import { PermissionDomain, PermissionDomains } from 'entities/permissions';
 
 @Injectable()
 export class AuthService {
@@ -236,7 +238,7 @@ export class AuthService {
 
     await this.pendingUserRepository.delete(pendingUser.id);
 
-    const serializedUser = await this.authenticateUser(user, res);
+    const serializedUser = await this.authenticateUser({ ...user, permissions: null } as User, res);
     await this.emailService.sendWelcomeEmail(user.email, user.username, user.role);
 
     return {
@@ -313,7 +315,7 @@ export class AuthService {
   async login(loginDto: LoginDto, res: Response, req) {
     const { email, password } = loginDto;
 
-    const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').leftJoinAndSelect('user.country', 'country').where('user.email = :email', { email }).getOne();
+    const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').addSelect('user.permissions').leftJoinAndSelect('user.country', 'country').where('user.email = :email', { email }).getOne();
     if (!user || !(await user.comparePassword(password))) {
       throw new UnauthorizedException('Incorrect email or password');
     }
@@ -347,8 +349,8 @@ export class AuthService {
     await this.sessionsRepo.save(session);
 
     // 2) issue tokens embedding sid
-    const accessToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
-    const refreshToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
+    const accessToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role, permissions: user.permissions }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
+    const refreshToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role, permissions: user.permissions }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
 
     // 3) store refresh token hash on the session (for rotation & revocation)
     await this.sessionsRepo.update(session.id, { refreshTokenHash: this.hash(refreshToken) });
@@ -418,9 +420,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const user = await this.userRepository.findOne({
-      where: { id: decoded.id },
-    });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: decoded.id })
+      .getOne();
 
 
     if (!user) {
@@ -438,14 +442,14 @@ export class AuthService {
 
     // rotate both tokens
     const newAccess = this.jwtService.sign(
-      { id: decoded.id, sid: decoded.sid, role: user.role },
+      { id: decoded.id, sid: decoded.sid, role: user.role, permissions: user.permissions },
       {
         secret: this.configService.get('JWT_SECRET'),
         expiresIn: process.env.JWT_EXPIRE,
       },
     );
     const newRefresh = this.jwtService.sign(
-      { id: decoded.id, sid: decoded.sid, role: user.role },
+      { id: decoded.id, sid: decoded.sid, role: user.role, permissions: user.permissions },
       {
         secret: this.configService.get('JWT_REFRESH'),
         expiresIn: process.env.JWT_REFRESH_EXPIRE,
@@ -551,8 +555,8 @@ export class AuthService {
       userAgent: ctx?.userAgent ?? null,
     });
 
-    const accessToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
-    const refreshToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
+    const accessToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role, permissions: user.permissions }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
+    const refreshToken = this.jwtService.sign({ id: user.id, sid: session.id, role: user.role, permissions: user.permissions }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
 
     await this.sessionsRepo.update(session.id, { refreshTokenHash: this.hash(refreshToken) });
 
@@ -740,6 +744,7 @@ export class AuthService {
   async logoutSession(userId: string, sessionId: string) {
     const session = await this.sessionsRepo.findOne({ where: { id: sessionId, userId } });
     if (!session) throw new NotFoundException('Session not found');
+
     if (!session.revokedAt) {
       session.revokedAt = new Date();
       session.refreshTokenHash = null;
@@ -1110,11 +1115,11 @@ export class AuthService {
       throw new ForbiddenException('Users not related');
     }
 
-    const targetUser = await this.userRepository.findOne({
-      where: [
-        { id: targetUserId },
-      ],
-    });
+    const targetUser = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: targetUserId })
+      .getOne();
 
     if (!targetUser) {
       throw new UnauthorizedException("User not found")
@@ -1137,8 +1142,8 @@ export class AuthService {
     await this.sessionsRepo.save(session);
 
     // 2) issue tokens embedding sid
-    const accessToken = this.jwtService.sign({ id: targetUser.id, sid: session.id, role: targetUser.role }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
-    const refreshToken = this.jwtService.sign({ id: targetUser.id, sid: session.id, role: targetUser.role }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
+    const accessToken = this.jwtService.sign({ id: targetUser.id, sid: session.id, role: targetUser.role, permissions: targetUser.permissions }, { secret: process.env.JWT_SECRET, expiresIn: process.env.JWT_EXPIRE });
+    const refreshToken = this.jwtService.sign({ id: targetUser.id, sid: session.id, role: targetUser.role, permissions: targetUser.permissions }, { secret: process.env.JWT_REFRESH, expiresIn: process.env.JWT_REFRESH_EXPIRE });
 
     // 3) store refresh token hash on the session (for rotation & revocation)
     await this.sessionsRepo.update(session.id, { refreshTokenHash: this.hash(refreshToken) });
@@ -1168,6 +1173,40 @@ export class AuthService {
 
     return relatedUsers;
 
+  }
+
+  static fromArray<T extends number>(permissions?: T[]): number {
+    if (!permissions || permissions.length === 0) return 0;
+
+    return permissions.reduce((mask, perm) => mask | perm, 0);
+  }
+
+  async updateUserPermissions(userId: string, dto: UpdateUserPermissionsDto) {
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
+    if (!user) throw new NotFoundException('User not found');
+
+    const updatedPermissions: Record<string, number> = {};
+
+
+    for (const domain of Object.values(PermissionDomains)) {
+      const value = dto[domain];
+      if (value) {
+        const mask = PermissionBitmaskHelper.fromArray(value);
+        if (mask !== null) {
+          updatedPermissions[domain] = mask;
+        }
+      }
+    }
+
+
+    user.permissions = Object.keys(updatedPermissions).length > 0 ? updatedPermissions : null;
+
+    return this.userRepository.save(user);
   }
 
 }

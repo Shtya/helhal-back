@@ -1,13 +1,13 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { RolesGuard } from '../auth/guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { BlogsService } from './blogs.service';
 
 @Controller('blogs')
 export class BlogsController {
-  constructor(private blogsService: BlogsService) {}
+  constructor(private blogsService: BlogsService) { }
 
   @Get()
   async getBlogs(@Query() query: any) {
@@ -25,36 +25,36 @@ export class BlogsController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SELLER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN, UserRole.SELLER] })
   async createBlog(@Req() req, @Body() createBlogDto: any) {
     return this.blogsService.createBlog(req.user.id, createBlogDto);
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SELLER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN, UserRole.SELLER] })
   async updateBlog(@Req() req, @Param('id') id: string, @Body() updateBlogDto: any) {
     return this.blogsService.updateBlog(req.user.id, id, updateBlogDto);
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SELLER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN, UserRole.SELLER] })
   async deleteBlog(@Req() req, @Param('id') id: string) {
     return this.blogsService.deleteBlog(req.user.id, id);
   }
 
   @Post(':id/publish')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SELLER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN, UserRole.SELLER] })
   async publishBlog(@Req() req, @Param('id') id: string) {
     return this.blogsService.publishBlog(req.user.id, id);
   }
 
   @Post(':id/unpublish')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN, UserRole.SELLER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN, UserRole.SELLER] })
   async unpublishBlog(@Req() req, @Param('id') id: string) {
     return this.blogsService.unpublishBlog(req.user.id, id);
   }
@@ -71,8 +71,8 @@ export class BlogsController {
   }
 
   @Put('comments/:commentId/status')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async updateCommentStatus(@Param('commentId') commentId: string, @Body() body: { status: string }) {
     return this.blogsService.updateCommentStatus(commentId, body.status);
   }

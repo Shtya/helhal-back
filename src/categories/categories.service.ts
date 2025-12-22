@@ -82,7 +82,7 @@ export class CategoriesService {
     return this.categoryRepository
       .createQueryBuilder('category')
       .leftJoin('category.services', 'service')
-      .select(['category.id', 'category.name', 'category.slug', 'category.image'])
+      .select(['category.id', 'category.name_en', 'category.name_ar', 'category.slug', 'category.image'])
       .addSelect('COUNT(service.id)', 'serviceCount')
       .groupBy('category.id')
       .orderBy('serviceCount', 'DESC')
@@ -144,7 +144,7 @@ export class CategoriesService {
   async getTopCategories() {
     return this.categoryRepository.find({
       where: { top: true },
-      order: { name: 'ASC' }, // or other ordering logic
+      order: { name_en: 'ASC' }, // or other ordering logic
     });
   }
 }

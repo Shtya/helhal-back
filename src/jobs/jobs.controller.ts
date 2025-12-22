@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Req, Query, UsePipes, ValidationPipe, forwardRef, Inject } from '@nestjs/common';
 import { JwtAuthGuard, OptionalJwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { RolesGuard } from '../auth/guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { JobsService } from './jobs.service';
 import { CreateJobDto, UpdateJobDto } from 'dto/job.dto';
@@ -23,15 +23,15 @@ export class JobsController {
   }
 
   @Get("admin")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async adminGetJobs(@Query() query: any) {
     return this.jobsService.adminGetJobs(query);
   }
 
   @Get('my-jobs')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.BUYER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.BUYER] })
   async getMyJobs(@Query() query: any, @Req() req: any) {
     return CRUD.findAll(
       this.jobsService.jobRepository,
@@ -49,7 +49,7 @@ export class JobsController {
 
   @Get('my-proposals')
   @UseGuards(JwtAuthGuard)
-  @Roles(UserRole.SELLER)
+  @RequireAccess({ roles: [UserRole.SELLER] })
   async getMyProposals(@Req() req, @Query('status') status?: string, @Query('page') page: number = 1, @Query('limit') limit: number = 20) {
     return this.jobsService.getUserProposals(req.user.id, status, page, limit);
   }
@@ -57,7 +57,7 @@ export class JobsController {
 
   @Put('proposals/:proposalId/status')
   @UseGuards(JwtAuthGuard)
-  @Roles(UserRole.BUYER)
+  @RequireAccess({ roles: [UserRole.BUYER] })
   async updateProposalStatus(@Param('proposalId') proposalId: string, @Body() body: any, @Req() req: any) {
     return this.jobsService.updateProposalStatusAtomic(req.user.id, req.user.role, proposalId, body.status, { checkout: body.checkout });
 
@@ -70,36 +70,36 @@ export class JobsController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.BUYER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.BUYER] })
   async createJob(@Req() req, @Body() createJobDto: CreateJobDto) {
     return this.jobsService.createJob(req.user.id, createJobDto);
   }
 
   @Put(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.BUYER, UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.BUYER, UserRole.ADMIN] })
   async updateJob(@Req() req, @Param('id') id: string, @Body() updateJobDto: UpdateJobDto) {
     return this.jobsService.updateJob(req.user.id, id, updateJobDto);
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.BUYER, UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.BUYER, UserRole.ADMIN] })
   async deleteJob(@Req() req, @Param('id') id: string) {
     return this.jobsService.deleteJob(req.user.id, id);
   }
 
   @Post(':id/proposals')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.SELLER)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.SELLER] })
   async submitProposal(@Req() req, @Param('id') id: string, @Body() submitProposalDto: any) {
     return this.jobsService.submitProposal(req.user.id, id, submitProposalDto);
   }
 
   @Get(':id/proposals')
   @UseGuards(JwtAuthGuard)
-  @Roles(UserRole.ADMIN)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getJobProposals(
     @Req() req,
     @Param('id') id: string,
@@ -123,14 +123,14 @@ export class JobsController {
 
   @Get('stats/overview')
   @UseGuards(JwtAuthGuard)
-  @Roles(UserRole.ADMIN)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getJobStats(@Req() req) {
     return this.jobsService.getJobStats(req.user.id);
   }
 
   @Put(':id/publish')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async publishJob(@Param('id') id: string) {
     return this.jobsService.publishJob(id);
   }

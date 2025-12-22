@@ -1,13 +1,13 @@
 import { Controller, Get, Post, Put, Body, Param, UseGuards, Req, Query } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
-import { RolesGuard } from '../auth/guard/roles.guard';
-import { Roles } from 'decorators/roles.decorator';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { SupportTicketsService } from './support-tickets.service';
 
 @Controller('support-tickets')
 export class SupportTicketsController {
-  constructor(private supportTicketsService: SupportTicketsService) {}
+  constructor(private supportTicketsService: SupportTicketsService) { }
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -16,8 +16,8 @@ export class SupportTicketsController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getTickets(@Query('status') status?: string, @Query('priority') priority?: string, @Query('page') page: number = 1) {
     return this.supportTicketsService.getTickets(status, priority, page);
   }
@@ -41,8 +41,8 @@ export class SupportTicketsController {
   }
 
   @Put(':id/priority')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async updateTicketPriority(@Param('id') id: string, @Body() body: { priority: string }) {
     return this.supportTicketsService.updateTicketPriority(id, body.priority);
   }
@@ -54,8 +54,8 @@ export class SupportTicketsController {
   }
 
   @Get('stats/summary')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getTicketStats() {
     return this.supportTicketsService.getTicketStats();
   }

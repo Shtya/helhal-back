@@ -1,9 +1,9 @@
 import { Controller, Get, Post, Body, UseGuards, Req, Query, Param, Delete, Put } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { AccountingService } from './accounting.service';
-import { Roles } from 'decorators/roles.decorator';
+import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
-import { RolesGuard } from 'src/auth/guard/roles.guard';
+import { AccessGuard } from 'src/auth/guard/access.guard';
 
 @Controller('accounting')
 @UseGuards(JwtAuthGuard)
@@ -65,8 +65,8 @@ export class AccountingController {
   }
 
   @Get('admin/transactions')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ADMIN)
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
   async getAllTransactions(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,
