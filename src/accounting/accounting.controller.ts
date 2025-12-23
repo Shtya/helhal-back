@@ -4,6 +4,7 @@ import { AccountingService } from './accounting.service';
 import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { AccessGuard } from 'src/auth/guard/access.guard';
+import { Permissions } from 'entities/permissions';
 
 @Controller('accounting')
 @UseGuards(JwtAuthGuard)
@@ -60,13 +61,24 @@ export class AccountingController {
   }
 
   @Get('balance')
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'finance',
+      value: Permissions.Finance.View
+    }
+  })
   async getBalance(@Req() req) {
     return this.accountingService.getUserBalance(req.user.id);
   }
 
   @Get('admin/transactions')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'finance',
+      value: Permissions.Finance.View
+    }
+  })
   async getAllTransactions(
     @Query('page') page: number = 1,
     @Query('limit') limit: number = 20,

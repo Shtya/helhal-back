@@ -7,6 +7,7 @@ import { ServicesService } from './services.service';
 import { CRUD } from 'common/crud.service';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { serviceIconOptions } from 'common/upload.config';
+import { Permissions } from 'entities/permissions';
 
 @Controller('services')
 export class ServicesController {
@@ -14,7 +15,13 @@ export class ServicesController {
 
   @Get('/admin')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN],
+    permission: {
+      domain: 'services',
+      value: Permissions.Services.View
+    }
+  })
   async getServicesAdmin(@Query('') query: any) {
     return CRUD.findAll(this.servicesService.serviceRepository, 'service', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['seller', 'category'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
@@ -59,12 +66,17 @@ export class ServicesController {
   @Get(':slug')
   @UseGuards(OptionalJwtAuthGuard)
   async getService(@Param('slug') slug: string, @Req() req) {
-    return this.servicesService.getService(slug, req.user?.id);
+    return this.servicesService.getService(slug, req.user?.id, req);
   }
 
   @Post()
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.SELLER, UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.SELLER, UserRole.ADMIN], permission: {
+      domain: 'services',
+      value: Permissions.Services.Add
+    }
+  })
   async createService(@Req() req, @Body() createServiceDto: any) {
     return this.servicesService.createService(req.user.id, createServiceDto);
   }
@@ -73,13 +85,18 @@ export class ServicesController {
   // @UseGuards(JwtAuthGuard, AccessGuard)
   // @RequireAccess(UserRole.SELLER, UserRole.ADMIN)
   // async updateService(@Req() req, @Param('id') id: string, @Body() updateServiceDto: any) {
-  //   return this.servicesService.updateService(req.user.id, id, updateServiceDto);
+  //   return this.servicesService.updateService(req.user.id, id, updateServiceDto, req);
   // }
 
 
   @Put(':id/status')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'services',
+      value: Permissions.Services.ChangeStatus
+    }
+  })
   async updateServiceStatus(
     @Param('id') id: string,
     @Body() body: { status },
@@ -89,14 +106,24 @@ export class ServicesController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.SELLER, UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.SELLER, UserRole.ADMIN], permission: {
+      domain: 'services',
+      value: Permissions.Services.Delete
+    }
+  })
   async deleteService(@Req() req, @Param('id') id: string) {
     return this.servicesService.deleteService(req.user.id, id);
   }
 
   @Get(':id/analytics')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.SELLER, UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.SELLER, UserRole.ADMIN], permission: {
+      domain: 'services',
+      value: Permissions.Services.View
+    }
+  })
   async getServiceAnalytics(@Req() req, @Param('id') id: string) {
     return this.servicesService.getServiceAnalytics(req.user.id, id);
   }
@@ -113,7 +140,12 @@ export class ServicesController {
   }
 
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'services',
+      value: Permissions.Services.PopularToggle
+    }
+  })
   @UseInterceptors(FileInterceptor('icon', serviceIconOptions))
   @Post(':id/popular')
   async setPopular(
@@ -129,7 +161,12 @@ export class ServicesController {
 
 
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'services',
+      value: Permissions.Services.PopularToggle
+    }
+  })
   @UseInterceptors(FileInterceptor('icon', serviceIconOptions))
   @Post(':id/popular/icon')
   async updatePopularIcon(
@@ -148,7 +185,12 @@ export class ServicesController {
 
 
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'services',
+      value: Permissions.Services.PopularToggle
+    }
+  })
   @Delete(':id/unpopular')
   async unsetPopular(@Param('id') id: string) {
     return this.servicesService.unmarkAsPopular(id);
@@ -160,7 +202,12 @@ export class ServicesController {
   }
 
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.SELLER, UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.SELLER, UserRole.ADMIN], permission: {
+      domain: 'services',
+      value: [Permissions.Services.Add, Permissions.Services.Edit]
+    }
+  })
   @Get('check-title/:title')
   async checkTitle(
     @Param('title') title: string,

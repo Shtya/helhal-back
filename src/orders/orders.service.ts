@@ -5,6 +5,8 @@ import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentS
 import { AccountingService } from 'src/accounting/accounting.service';
 import { randomBytes } from 'crypto';
 import { CRUD } from 'common/crud.service';
+import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
+import { PermissionDomains, Permissions } from 'entities/permissions';
 
 
 @Injectable()
@@ -48,10 +50,23 @@ export class OrdersService {
     if (!user) throw new NotFoundException('User not found');
 
     const qb = this.orderRepository.createQueryBuilder('order')
-      .leftJoinAndSelect('order.service', 'service')
-      .leftJoinAndSelect('order.buyer', 'buyer')
-      .leftJoinAndSelect('order.seller', 'seller')
-      .leftJoinAndSelect('order.disputes', 'disputes');
+      // 1. Join and select specific fields for Service
+      .leftJoin('order.service', 'service')
+      .addSelect(['service.id', 'service.title', 'service.gallery', 'service.slug'])
+
+      // 2. Join and select specific fields for Buyer
+      .leftJoin('order.buyer', 'buyer')
+      .addSelect(['buyer.id', 'buyer.username', 'buyer.email', 'buyer.profileImage'])
+
+      // 3. Join and select specific fields for Seller
+      .leftJoin('order.seller', 'seller')
+      .addSelect(['seller.id', 'seller.username', 'seller.email', 'seller.profileImage'])
+
+      // 4. Join and select Disputes (all fields or specific ones)
+      .leftJoinAndSelect('order.disputes', 'disputes')
+
+      // 5. Join and select Invoices
+      .leftJoinAndSelect('order.invoices', 'invoices');
 
     // Role-based filtering
     if (user.role === UserRole.BUYER)
@@ -123,7 +138,12 @@ export class OrdersService {
       if (!order) throw new NotFoundException('Order not found');
 
       // Only buyer (or admin) can mark it as paid
-      if (order.buyerId !== userId) throw new ForbiddenException("Only buyer or admin can mark it as paid");
+      if (order.buyerId !== userId) throw new ForbiddenException("Only buyer can mark it as paid");
+
+      // Check permissions
+      if (order.status !== OrderStatus.PENDING) {
+        throw new ForbiddenException('Order cannot be marked as paid because it is not in PENDING status');
+      }
 
       // Mark invoice as paid
       const invoice = order.invoices?.[0];
@@ -135,7 +155,7 @@ export class OrdersService {
       await manager.save(invoice);
 
       // Update order status
-      order.status = OrderStatus.ACCEPTED;
+      order.status = OrderStatus.WAITING;
       await manager.save(order);
 
       // Buyer & Seller notifications inside TX (guaranteed with payment state)
@@ -167,7 +187,8 @@ export class OrdersService {
         userId: order.sellerId,
         type: 'payment',
         title: 'Order Paid',
-        message: `The order “${order.title}” has been paid (${amount} ${currency}). Transaction: ${txId}.`,
+        // We tell seller the order price (200) as base, not the total buyer paid (210)
+        message: `The order “${order.title}” has been paid (${amount - invoice.platformPercent} ${currency}). Transaction: ${txId}.`,
         relatedEntityType: 'order',
         relatedEntityId: order.id,
       });
@@ -226,26 +247,24 @@ export class OrdersService {
     };
   }
 
-  async getOrder(userId: string, userRole: string, orderId: string) {
+  async getOrder(userId: string, userRole: string, orderId: string, req: any) {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
       relations: ['service', 'buyer', 'seller', 'invoices', 'invoices.payments'],
     });
 
-    if (!order) {
-      throw new NotFoundException('Order not found');
+    const permissions = req.user.permissions;
+    if (req.user?.role === 'admin' || PermissionBitmaskHelper.has(permissions?.[PermissionDomains.ORDERS], Permissions.Orders.View) ||
+      (userRole === UserRole.BUYER && order.buyerId === userId) || (userRole === UserRole.SELLER && order.sellerId === userId)) {
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      return order;
     }
 
-    // Check if user has access to this order
-    if (userRole === UserRole.BUYER && order.buyerId !== userId) {
-      throw new ForbiddenException('Access denied');
-    }
 
-    if (userRole === UserRole.SELLER && order.sellerId !== userId) {
-      throw new ForbiddenException('Access denied');
-    }
-
-    return order;
+    throw new ForbiddenException('Access denied');
   }
 
   async createOrderCheckout(userId: string, createOrderDto: any) {
@@ -268,6 +287,7 @@ export class OrdersService {
     if (!packageData) throw new BadRequestException('Invalid package type');
 
     const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
+    const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);
     const subtotal = packageData.price * quantity;
     const totalAmount = subtotal + platformPercent;
 
@@ -278,6 +298,7 @@ export class OrdersService {
       title: service.title,
       quantity,
       totalAmount,
+      sellerServiceFee,
       packageType,
       requirementsAnswers,
       status: OrderStatus.PENDING, // waiting for payment
@@ -289,9 +310,6 @@ export class OrdersService {
     const savedOrder = await this.orderRepository.save(order);
 
     // ---- Invoice
-    // const serviceFee = (totalAmount * platformPercent) / 100;
-    const serviceFee = platformPercent;
-
     const checkoutToken = randomBytes(16).toString('hex');
 
     const invoice = this.invoiceRepository.create({
@@ -299,7 +317,7 @@ export class OrdersService {
       orderId: savedOrder.id,
       order: savedOrder,
       subtotal,
-      serviceFee,
+      sellerServiceFee,
       platformPercent,
       totalAmount,
       issuedAt: new Date(),
@@ -343,6 +361,7 @@ export class OrdersService {
     }
     const s = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
     const platformPercent = Number(s?.[0]?.platformPercent ?? 10);;
+    const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);;
     const subtotal = packageData.price * quantity;
     const totalAmount = subtotal + platformPercent;
 
@@ -353,6 +372,7 @@ export class OrdersService {
       title: service.title,
       quantity,
       totalAmount,
+      sellerServiceFee,
       packageType,
       requirementsAnswers,
       status: OrderStatus.PENDING,
@@ -363,13 +383,12 @@ export class OrdersService {
     const savedOrder = await this.orderRepository.save(order);
 
     // Create invoice
-    const serviceFee = platformPercent;
 
     const invoice = this.invoiceRepository.create({
       invoiceNumber: `INV-${Date.now()}-${savedOrder.id.slice(-6)}`,
       orderId: savedOrder.id,
       subtotal,
-      serviceFee,
+      sellerServiceFee,
       platformPercent,
       totalAmount,
       issuedAt: new Date(),
@@ -406,8 +425,8 @@ export class OrdersService {
   }
 
 
-  async updateOrderStatus(userId: string, userRole: string, orderId: string, status: string) {
-    const order = await this.getOrder(userId, userRole, orderId);
+  async updateOrderStatus(userId: string, userRole: string, orderId: string, status: string, req: any) {
+    const order = await this.getOrder(userId, userRole, orderId, req);
 
     // Validate status transition
     const validTransitions = {
@@ -452,8 +471,9 @@ export class OrdersService {
     userId: string,
     orderId: string,
     submissionData: { message?: string; files?: { filename: string; url: string }[] },
+    req: any
   ) {
-    const order = await this.getOrder(userId, UserRole.SELLER, orderId);
+    const order = await this.getOrder(userId, UserRole.SELLER, orderId, req);
 
     if (order.status !== OrderStatus.ACCEPTED && order.status !== OrderStatus.ChangeRequested) {
       throw new BadRequestException('Order must be accepted before delivery');
@@ -541,9 +561,10 @@ export class OrdersService {
     userId: string,
     orderId: string,
     changeData: { message?: string; files?: { filename: string; url: string }[]; newDeliveryTime?: number },
+    req: any
   ) {
     // Fetch order
-    const order = await this.getOrder(userId, UserRole.BUYER, orderId);
+    const order = await this.getOrder(userId, UserRole.BUYER, orderId, req);
 
     if (![OrderStatus.DELIVERED].includes(order.status)) {
       throw new BadRequestException('Cannot request changes for this order at its current status');
@@ -596,8 +617,8 @@ export class OrdersService {
   }
 
 
-  async cancelOrder(userId: string, userRole: string, orderId: string, reason?: string) {
-    const order = await this.getOrder(userId, userRole, orderId);
+  async cancelOrder(userId: string, userRole: string, orderId: string, req: any, reason?: string) {
+    const order = await this.getOrder(userId, userRole, orderId, req);
 
     // Only the buyer can cancel the order
     if (order.buyerId !== userId) {
@@ -632,6 +653,75 @@ export class OrdersService {
       invoice.paymentStatus = PaymentStatus.FAILED; // Mark as refunded
       await this.invoiceRepository.save(invoice);
     }
+
+    return this.orderRepository.save(order);
+  }
+
+
+  async rejectOrder(userId: string, userRole: string, orderId: string, req: any, reason?: string) {
+    const order = await this.getOrder(userId, userRole, orderId, req);
+
+    // Only the buyer can cancel the order
+    if (order.sellerId !== userId) {
+      throw new ForbiddenException('Only the seller can reject this order');
+    }
+
+
+    if (![OrderStatus.PENDING, OrderStatus.ACCEPTED].includes(order.status)) {
+      throw new BadRequestException('Order cannot be rejected at this stage');
+    }
+
+    order.status = OrderStatus.REJECTED;
+    order.cancelledAt = new Date();
+
+    // timeline
+    order.timeline = [
+      ...(order.timeline || []),
+      {
+        type: 'rejected',
+        at: new Date().toISOString(),
+        by: 'seller',
+      },
+    ];
+
+    // Process refund if payment was made
+    const invoice = await this.invoiceRepository.findOne({
+      where: { orderId },
+    });
+
+    if (invoice && invoice.paymentStatus === PaymentStatus.PAID) {
+      // Process refund (implement your refund logic here)
+      invoice.paymentStatus = PaymentStatus.FAILED; // Mark as refunded
+      await this.invoiceRepository.save(invoice);
+    }
+
+    return this.orderRepository.save(order);
+  }
+
+  async acceptOrder(userId: string, userRole: string, orderId: string, req: any, reason?: string) {
+    const order = await this.getOrder(userId, userRole, orderId, req);
+
+    // Only the buyer can cancel the order
+    if (order.sellerId !== userId) {
+      throw new ForbiddenException('Only the seller can accept this order');
+    }
+
+
+    if (![OrderStatus.WAITING].includes(order.status)) {
+      throw new BadRequestException('Order cannot be accepted at this stage');
+    }
+
+    order.status = OrderStatus.ACCEPTED;
+
+    // timeline
+    order.timeline = [
+      ...(order.timeline || []),
+      {
+        type: 'accepted',
+        at: new Date().toISOString(),
+        by: 'seller',
+      },
+    ];
 
     return this.orderRepository.save(order);
   }
@@ -801,8 +891,8 @@ export class OrdersService {
     });
   }
 
-  async completeOrder(userId: string, orderId: string) {
-    const order = await this.getOrder(userId, UserRole.BUYER, orderId);
+  async completeOrder(userId: string, orderId: string, req: any) {
+    const order = await this.getOrder(userId, UserRole.BUYER, orderId, req);
     if (order.status !== OrderStatus.DELIVERED) {
       throw new BadRequestException('Order must be delivered before completion');
     }
@@ -900,7 +990,7 @@ export class OrdersService {
         'invoice.id',
         'invoice.invoiceNumber',
         'invoice.subtotal',
-        'invoice.serviceFee',
+        'invoice.sellerServiceFee',
         'invoice.platformPercent',
         'invoice.totalAmount',
         'invoice.issuedAt',

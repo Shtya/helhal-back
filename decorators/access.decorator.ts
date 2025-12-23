@@ -9,7 +9,7 @@ export interface AccessRule {
     roles?: UserRole[];
     permission?: {
         domain: PermissionDomain;
-        value: number;
+        value: number | number[];
     };
 }
 

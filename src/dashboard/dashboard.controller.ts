@@ -4,15 +4,20 @@ import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { AccessGuard } from 'src/auth/guard/access.guard';
 import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
+import { Permissions } from 'entities/permissions';
 
 @Controller('dashboard')
 @UseGuards(JwtAuthGuard, AccessGuard)
-@RequireAccess({ roles: [UserRole.ADMIN] })
+@RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+        domain: 'statistics',
+        value: Permissions.Statistics.View
+    }
+})
 export class DashboardController {
     constructor(
         private readonly dashboardService: DashboardService,
     ) { }
-
 
     //for line charts
     @Get('overview')

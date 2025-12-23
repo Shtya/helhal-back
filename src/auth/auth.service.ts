@@ -58,10 +58,6 @@ export class AuthService {
 
     user.status = status;
 
-    if (user.role === UserRole.ADMIN) {
-      throw new ForbiddenException("You cannot update admin's status");
-    }
-
     if (status === UserStatus.DELETED) {
       user.deactivatedAt = new Date();
 
@@ -105,10 +101,6 @@ export class AuthService {
 
     user.status = UserStatus.DELETED;
     user.deactivatedAt = new Date();
-
-    if (user.role === UserRole.ADMIN) {
-      throw new ForbiddenException("You cannot delete admin");
-    }
 
     // Record deactivation reason
     const deactivation = this.accountDeactivationRepository.create({
@@ -239,7 +231,25 @@ export class AuthService {
     await this.pendingUserRepository.delete(pendingUser.id);
 
     const serializedUser = await this.authenticateUser({ ...user, permissions: null } as User, res);
-    await this.emailService.sendWelcomeEmail(user.email, user.username, user.role);
+
+
+    const emailPromises = [
+      this.emailService.sendWelcomeEmail(user.email, user.username, user.role)
+    ];
+
+
+    if (user.role === 'seller') {
+      emailPromises.push(
+        this.emailService.sendSellerFeePolicyEmail(user.email, user.username)
+      );
+    }
+
+    try {
+      await Promise.all(emailPromises)
+
+    } catch (err) {
+      console.error('Failed to send onboarding emails:', err);
+    }
 
     return {
       message: 'Email verified and registration complete',
@@ -307,7 +317,6 @@ export class AuthService {
     pendingUser.expiresAt = newDocumentExpiresAt;
 
     await this.pendingUserRepository.save(pendingUser);
-    await this.emailService.sendVerificationEmail(email, newVerificationCode, pendingUser.username);
 
     return { message: 'New verification email sent', email };
   }
@@ -319,6 +328,8 @@ export class AuthService {
     if (!user || !(await user.comparePassword(password))) {
       throw new UnauthorizedException('Incorrect email or password');
     }
+
+    await this.emailService.sendSellerFeePolicyEmail(user.email, user.username);
 
     if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
       throw new UnauthorizedException('Your account is inactive. Please contact support.');
@@ -366,17 +377,25 @@ export class AuthService {
 
 
   async getCurrentUser(userId: string) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['referredBy', 'country'],
-    });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.referredBy', 'referredBy')
+      .leftJoinAndSelect('user.country', 'country')
+      .addSelect('user.permissions') // ✅ تضمين عمود الصلاحيات
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
 
     const relatedUsers = await this.getRelatedUsers(user.id);
 
-    return this.serializeUser({ ...user, relatedUsers });
+    return this.serializeUser({
+      ...user,
+      relatedUsers,
+      permissions: user.permissions,
+    });
   }
 
 
@@ -1089,7 +1108,28 @@ export class AuthService {
       subUserId: subUser.id,
       role: 'seller',
     });
-    await this.emailService.sendWelcomeEmail(subUser.email, subUser.username, subUser.role);
+
+
+    const emailPromises = [
+      this.emailService.sendWelcomeEmail(subUser.email, subUser.username, subUser.role)
+    ];
+
+
+
+    if (subUser.role === 'seller') {
+      emailPromises.push(
+        this.emailService.sendSellerFeePolicyEmail(subUser.email, subUser.username)
+      );
+    }
+
+    try {
+      await Promise.all(emailPromises)
+
+    } catch (err) {
+      console.error('Failed to send onboarding emails:', err);
+    }
+
+
     // 4. Login sub account (NO PASSWORD)
     return this.loginAsRelatedUser(mainUser.id, subUser.id, res, req);
   }
@@ -1192,19 +1232,25 @@ export class AuthService {
 
     const updatedPermissions: Record<string, number> = {};
 
-
     for (const domain of Object.values(PermissionDomains)) {
-      const value = dto[domain];
-      if (value) {
-        const mask = PermissionBitmaskHelper.fromArray(value);
-        if (mask !== null) {
-          updatedPermissions[domain] = mask;
-        }
+      const value = dto[domain as keyof UpdateUserPermissionsDto];
+
+      if (typeof value === 'number' && value > 0) {
+        updatedPermissions[domain] = value;
       }
     }
 
+    user.permissions =
+      Object.keys(updatedPermissions).length > 0 ? updatedPermissions : null;
 
-    user.permissions = Object.keys(updatedPermissions).length > 0 ? updatedPermissions : null;
+
+    const qb = this.sessionsRepo
+      .createQueryBuilder()
+      .update(UserSession)
+      .set({ revokedAt: () => 'NOW()', refreshTokenHash: null })
+      .where('"user_id" = :uid', { uid: userId });
+
+    await qb.execute();
 
     return this.userRepository.save(user);
   }

@@ -8,6 +8,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { logoUploadOptions } from 'common/upload.config';
 import { join } from 'path';
 import { promises as fsp } from 'fs';
+import { Permissions } from 'entities/permissions';
 
 
 @Controller('settings')
@@ -38,21 +39,36 @@ export class SettingsController {
 
   @Get()
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'settings',
+      value: Permissions.Settings.Update
+    }
+  })
   async getSettings() {
     return this.settingsService.getSettings();
   }
 
   @Put()
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'settings',
+      value: Permissions.Settings.Update
+    }
+  })
   async updateSettings(@Body() updateSettingsDto: any) {
     return this.settingsService.updateSettings(updateSettingsDto);
   }
 
   @Post('uploads/siteLogo')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'settings',
+      value: Permissions.Settings.Update
+    }
+  })
   @UseInterceptors(FileInterceptor('file', logoUploadOptions))
   async uploadSiteLogo(@UploadedFile() file: any, @Req() req) {
     if (!file) {

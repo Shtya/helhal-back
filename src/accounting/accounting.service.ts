@@ -213,7 +213,6 @@ export class AccountingService {
     };
   }
 
-
   // ────────────────────────────────────────────────────────────────────────────
   // Escrow hold (into platform)
   // ────────────────────────────────────────────────────────────────────────────
@@ -269,7 +268,7 @@ export class AccountingService {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Escrow release 100% to seller
+  // Escrow release 100% - seller service fee  to seller
   // ────────────────────────────────────────────────────────────────────────────
   async releaseEscrow(orderId: string) {
     const inv = await this.invoiceRepo.findOne({ where: { orderId }, relations: ['order'] });
@@ -280,20 +279,22 @@ export class AccountingService {
     if (!platformUserId) throw new BadRequestException('Platform account is not configured');
 
     const subtotal = Number(inv.subtotal);
+    const netEarnings = Number(inv.subtotal) - (Number(inv.subtotal) * (Number(inv.sellerServiceFee) / 100));
+
     const platformBalance = await this.getUserBalance(platformUserId);
-    if (Number(platformBalance.availableBalance) < subtotal) throw new BadRequestException('Escrow insufficient');
+    if (Number(platformBalance.availableBalance) < netEarnings) throw new BadRequestException('Escrow insufficient');
 
     let platformWallet = await this.walletRepo.findOne({ where: { userId: platformUserId } });
     if (!platformWallet) platformWallet = this.walletRepo.create({ userId: platformUserId, balance: 0, currency: 'SAR' });
 
     // 1) debit platform escrow & wallet
-    platformBalance.availableBalance = Number(platformBalance.availableBalance) - subtotal;
-    platformWallet.balance = Number(platformWallet.balance) - subtotal;
+    platformBalance.availableBalance = Number(platformBalance.availableBalance) - netEarnings;
+    platformWallet.balance = Number(platformWallet.balance) - netEarnings;
 
     // 2) credit seller
     const sellerBalance = await this.getUserBalance(inv.order.sellerId);
-    sellerBalance.availableBalance = Number(sellerBalance.availableBalance) + subtotal;
-    sellerBalance.earningsToDate = Number(sellerBalance.earningsToDate) + subtotal;
+    sellerBalance.availableBalance = Number(sellerBalance.availableBalance) + netEarnings;
+    sellerBalance.earningsToDate = Number(sellerBalance.earningsToDate) + netEarnings;
 
     await this.userBalanceRepository.save([platformBalance, sellerBalance]);
     await this.walletRepo.save(platformWallet);
@@ -311,7 +312,7 @@ export class AccountingService {
       this.transactionRepository.create({
         userId: inv.order.sellerId,
         type: 'earning',
-        amount: subtotal,
+        amount: netEarnings,
         description: `Payout for order #${orderId}`,
         status: TransactionStatus.COMPLETED,
         orderId,
@@ -336,22 +337,25 @@ export class AccountingService {
       throw new BadRequestException('Split must equal subtotal');
     }
 
+    const sellerNetPay = Number(sellerAmount) - (Number(sellerAmount) * (Number(inv.sellerServiceFee) / 100));
+    const totalRequiredFromEscrow = Number(buyerRefund + sellerNetPay);
+
     const platformBalance = await this.getUserBalance(platformUserId);
-    if (Number(platformBalance.availableBalance) < subtotal) throw new BadRequestException('Escrow insufficient');
+    if (Number(platformBalance.availableBalance) < totalRequiredFromEscrow) throw new BadRequestException('Escrow insufficient');
 
     let platformWallet = await this.walletRepo.findOne({ where: { userId: platformUserId } });
     if (!platformWallet) platformWallet = this.walletRepo.create({ userId: platformUserId, balance: 0, currency: 'SAR' });
 
     // move out from platform escrow + wallet
-    platformBalance.availableBalance = Number(platformBalance.availableBalance) - subtotal;
-    platformWallet.balance = Number(platformWallet.balance) - subtotal;
+    platformBalance.availableBalance = Number(platformBalance.availableBalance) - totalRequiredFromEscrow;
+    platformWallet.balance = Number(platformWallet.balance) - totalRequiredFromEscrow;
 
     const txs: Transaction[] = [
       this.transactionRepository.create({
         userId: platformUserId,
         type: 'escrow_release',
-        amount: -subtotal,
-        description: `Escrow split for order #${orderId} (seller ${sellerAmount}, buyer refund ${buyerRefund})`,
+        amount: -totalRequiredFromEscrow,
+        description: `Escrow split for order #${orderId} (seller ${sellerNetPay}, buyer refund ${buyerRefund})`,
         status: TransactionStatus.COMPLETED,
         orderId,
         currencyId: 'SAR',
@@ -362,15 +366,15 @@ export class AccountingService {
     let sellerTxId: string | null = null;
     let buyerTxId: string | null = null;
 
-    if (sellerAmount > 0) {
+    if (sellerNetPay > 0) {
       const sellerBal = await this.getUserBalance(inv.order.sellerId);
-      sellerBal.availableBalance = Number(sellerBal.availableBalance) + sellerAmount;
-      sellerBal.earningsToDate = Number(sellerBal.earningsToDate) + sellerAmount;
+      sellerBal.availableBalance = Number(sellerBal.availableBalance) + sellerNetPay;
+      sellerBal.earningsToDate = Number(sellerBal.earningsToDate) + sellerNetPay;
       balancesToSave.push(sellerBal);
       const sellerTx = this.transactionRepository.create({
         userId: inv.order.sellerId,
         type: 'earning',
-        amount: sellerAmount,
+        amount: sellerNetPay,
         description: `Dispute payout for order #${orderId}`,
         status: TransactionStatus.COMPLETED,
         orderId,
@@ -414,9 +418,7 @@ export class AccountingService {
   // Reverse a previously applied resolution (send funds back to platform escrow)
   // ────────────────────────────────────────────────────────────────────────────
   async reverseResolution(input: ReverseResolutionInput): Promise<{
-    escrowCreditTxId: string;
-    sellerDebitTxId?: string | null;
-    buyerDebitTxId?: string | null;
+    escrowCreditTxId: string; sellerDebitTxId?: string | null; buyerDebitTxId?: string | null;
   }> {
     const { orderId, sellerId, buyerId, sellerAmount, buyerRefund } = input;
 
@@ -456,15 +458,19 @@ export class AccountingService {
         });
         await manager.getRepository(UserBalance).save(fresh);
       }
+
+      const sellerNetPay = Number(sellerAmount) - (Number(sellerAmount) * (Number(inv.sellerServiceFee) / 100));
+      const totalReverseToEscrow = Number(buyerRefund + sellerNetPay);
+
       const escrowBal = await manager.getRepository(UserBalance).findOne({ where: { userId: platformUserId } });
-      escrowBal.availableBalance = Number(escrowBal.availableBalance) + total;
-      platformWallet.balance = Number(platformWallet.balance) + total;
+      escrowBal.availableBalance = Number(escrowBal.availableBalance) + totalReverseToEscrow;
+      platformWallet.balance = Number(platformWallet.balance) + totalReverseToEscrow;
 
       // platform ledger row
       const escrowTx = manager.getRepository(Transaction).create({
         userId: platformUserId,
         type: 'escrow_deposit',
-        amount: total,
+        amount: totalReverseToEscrow,
         description: `Reverse dispute: funds returned to escrow for order #${orderId}`,
         status: TransactionStatus.COMPLETED,
         orderId,
@@ -473,16 +479,16 @@ export class AccountingService {
 
       // 2) debit seller (reverse payout) if any
       let sellerDebitTx: Transaction | null = null;
-      if (sellerAmount > 0) {
+      if (sellerNetPay > 0) {
         const sellerBal = await this.getUserBalanceTx(manager, sellerId);
-        sellerBal.availableBalance = Number(sellerBal.availableBalance) - Number(sellerAmount);
-        sellerBal.earningsToDate = Number(sellerBal.earningsToDate) - Number(sellerAmount);
+        sellerBal.availableBalance = Number(sellerBal.availableBalance) - Number(sellerNetPay);
+        sellerBal.earningsToDate = Number(sellerBal.earningsToDate) - Number(sellerNetPay);
         await manager.getRepository(UserBalance).save(sellerBal);
 
         sellerDebitTx = manager.getRepository(Transaction).create({
           userId: sellerId,
           type: 'earning_reversal', // negative earning
-          amount: -Number(sellerAmount),
+          amount: -Number(sellerNetPay),
           description: `Reversal of dispute payout for order #${orderId}`,
           status: TransactionStatus.COMPLETED,
           orderId,
@@ -532,7 +538,7 @@ export class AccountingService {
             relatedEntityType: 'order',
             relatedEntityId: orderId,
           }) as any,
-          sellerAmount > 0
+          sellerNetPay > 0
             ? (manager.getRepository(Notification).create({
               userId: sellerId,
               type: 'payout_reversed',
@@ -642,7 +648,6 @@ export class AccountingService {
       pagination: { page, limit, total, pages: Math.ceil(total / limit) },
     };
   }
-
 
 
   async withdrawFunds(userId: string, amount: number, paymentMethodId: string) {

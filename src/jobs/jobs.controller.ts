@@ -8,6 +8,7 @@ import { CreateJobDto, UpdateJobDto } from 'dto/job.dto';
 import { CRUD } from 'common/crud.service';
 import { AuthGuard } from '@nestjs/passport';
 import { PaymentsService } from 'src/payments/payments.service';
+import { Permissions } from 'entities/permissions';
 
 @Controller('jobs')
 export class JobsController {
@@ -24,7 +25,12 @@ export class JobsController {
 
   @Get("admin")
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'jobs',
+      value: Permissions.Jobs.View
+    }
+  })
   async adminGetJobs(@Query() query: any) {
     return this.jobsService.adminGetJobs(query);
   }
@@ -76,16 +82,27 @@ export class JobsController {
     return this.jobsService.createJob(req.user.id, createJobDto);
   }
 
-  @Put(':id')
+  @Put(':id/status')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.BUYER, UserRole.ADMIN] })
-  async updateJob(@Req() req, @Param('id') id: string, @Body() updateJobDto: UpdateJobDto) {
-    return this.jobsService.updateJob(req.user.id, id, updateJobDto);
+  @RequireAccess({
+    roles: [UserRole.BUYER, UserRole.ADMIN],
+    permission: {
+      domain: 'jobs',
+      value: Permissions.Jobs.Edit
+    }
+  })
+  async updateJob(@Req() req, @Param('id') id: string, @Query('status') status: string) {
+    return this.jobsService.updateJob(req.user.id, id, status);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.BUYER, UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.BUYER, UserRole.ADMIN], permission: {
+      domain: 'jobs',
+      value: Permissions.Jobs.Delete
+    }
+  })
   async deleteJob(@Req() req, @Param('id') id: string) {
     return this.jobsService.deleteJob(req.user.id, id);
   }
@@ -99,7 +116,12 @@ export class JobsController {
 
   @Get(':id/proposals')
   @UseGuards(JwtAuthGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'jobs',
+      value: Permissions.Jobs.View
+    }
+  })
   async getJobProposals(
     @Req() req,
     @Param('id') id: string,
@@ -118,19 +140,30 @@ export class JobsController {
       status,
       sortBy,
       sortdir,
+      req
     );
   }
 
   @Get('stats/overview')
   @UseGuards(JwtAuthGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'jobs',
+      value: Permissions.Jobs.View
+    }
+  })
   async getJobStats(@Req() req) {
     return this.jobsService.getJobStats(req.user.id);
   }
 
   @Put(':id/publish')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'jobs',
+      value: Permissions.Jobs.ChangeStatus
+    }
+  })
   async publishJob(@Param('id') id: string) {
     return this.jobsService.publishJob(id);
   }

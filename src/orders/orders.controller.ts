@@ -5,6 +5,7 @@ import { AccessGuard } from 'src/auth/guard/access.guard';
 import { UserRole } from 'entities/global.entity';
 import { RequireAccess } from 'decorators/access.decorator';
 import { CRUD } from 'common/crud.service';
+import { Permissions } from 'entities/permissions';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
@@ -13,14 +14,24 @@ export class OrdersController {
 
   @Get('admin')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'orders',
+      value: Permissions.Orders.View
+    }
+  })
   async getOrdersAdmin(@Query('') query: any) {
     return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'seller', 'service', 'invoices'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
 
   @Get('invoices')
   @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({ roles: [UserRole.ADMIN] })
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'invoices',
+      value: Permissions.Invoices.View
+    }
+  })
   async getOrdersInvoices(@Query() query: any) {
     return this.ordersService.getInvoices(query);
   }
@@ -43,7 +54,7 @@ export class OrdersController {
 
   @Get(':id')
   async getOrder(@Req() req, @Param('id') id: string) {
-    return this.ordersService.getOrder(req.user.id, req.user.role, id);
+    return this.ordersService.getOrder(req.user.id, req.user.role, id, req);
   }
 
   @Post("checkout")
@@ -59,7 +70,7 @@ export class OrdersController {
 
   @Put(':id/status')
   async updateOrderStatus(@Req() req, @Param('id') id: string, @Body() body: { status: string }) {
-    return this.ordersService.updateOrderStatus(req.user.id, req.user.role, id, body.status);
+    return this.ordersService.updateOrderStatus(req.user.id, req.user.role, id, body.status, req);
   }
 
   @Post(':id/deliver')
@@ -68,7 +79,7 @@ export class OrdersController {
     @Param('id') id: string,
     @Body() body: { message?: string; files?: { filename: string; url: string }[] },
   ) {
-    return this.ordersService.deliverOrder(req.user.id, id, body);
+    return this.ordersService.deliverOrder(req.user.id, id, body, req);
   }
 
   @Get(':id/last-submission')
@@ -82,7 +93,7 @@ export class OrdersController {
     @Param('id') orderId: string,
     @Body() body: { message?: string; files?: { filename: string; url: string }[]; },
   ) {
-    return this.ordersService.createChangeRequest(req.user.id, orderId, body);
+    return this.ordersService.createChangeRequest(req.user.id, orderId, body, req);
   }
 
   @Get(':id/last-change-request')
@@ -92,11 +103,21 @@ export class OrdersController {
 
   @Post(':id/complete')
   async completeOrder(@Req() req, @Param('id') id: string) {
-    return this.ordersService.completeOrder(req.user.id, id);
+    return this.ordersService.completeOrder(req.user.id, id, req);
   }
 
   @Post(':id/cancel')
   async cancelOrder(@Req() req, @Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.ordersService.cancelOrder(req.user.id, req.user.role, id, body.reason);
+    return this.ordersService.cancelOrder(req.user.id, req.user.role, id, req, body.reason);
+  }
+
+  @Post(':id/accept')
+  async acceptOrder(@Req() req, @Param('id') id: string, @Body() body: { reason?: string }) {
+    return this.ordersService.acceptOrder(req.user.id, req.user.role, id, req, body.reason);
+  }
+
+  @Post(':id/reject')
+  async rejectOrder(@Req() req, @Param('id') id: string, @Body() body: { reason?: string }) {
+    return this.ordersService.rejectOrder(req.user.id, req.user.role, id, req, body.reason);
   }
 }

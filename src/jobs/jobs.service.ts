@@ -4,6 +4,8 @@ import { Repository, Like, In, Between, MoreThanOrEqual, LessThanOrEqual, DataSo
 import { Job, Proposal, User, Category, Order, Notification, JobStatus, ProposalStatus, UserRole, OrderStatus, Setting, PaymentStatus, PackageType, Invoice, UserRelatedAccount } from 'entities/global.entity';
 import { CreateJobDto } from 'dto/job.dto';
 import { PaymentsService } from 'src/payments/payments.service';
+import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
+import { Permissions } from 'entities/permissions';
 
 @Injectable()
 export class JobsService {
@@ -299,36 +301,26 @@ export class JobsService {
     return saved;
   }
 
-  async updateJob(userId: string, jobId: string, updateJobDto: any) {
-    const actor = await this.userRepository.findOne({ where: { id: userId } });
+  async updateJob(userId: string, jobId: string, status: any) {
+    const actor = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
 
     const job = await this.jobRepository.findOne({
       where: { id: jobId },
       relations: ['buyer'],
     });
     if (!job) throw new NotFoundException('Job not found');
-    if (actor?.role != UserRole.ADMIN) {
+    const hasPermission = PermissionBitmaskHelper.has(actor.permissions.jobs, Permissions.Jobs.Edit)
+
+    if (!(actor?.role === UserRole.ADMIN || hasPermission)) {
       if (job.buyerId !== userId) throw new ForbiddenException('You can only update your own jobs');
     }
 
-    const settingsRows = await this.settingRepository.find({ take: 1, order: { created_at: 'DESC' } });
-    const requireApproval = (settingsRows[0]?.jobsRequireApproval ?? true) === true;
+    job.status = status;
 
-    if (requireApproval && actor?.role !== UserRole.ADMIN && typeof updateJobDto?.status !== 'undefined') {
-      throw new ForbiddenException('Only administrators can change job status when approval is required.');
-    }
-
-    const {
-      id: _id,
-      buyerId: _buyerId,
-      created_at: _c,
-      updated_at: _u, // blocked
-      ...cleanDto
-    } = updateJobDto ?? {};
-
-    // (Optional) validate category/subcategory if present, etc.
-
-    Object.assign(job, cleanDto);
     return this.jobRepository.save(job);
   }
 
@@ -367,13 +359,19 @@ export class JobsService {
     }
 
     // Fetch the user to check their role
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions.jobs, Permissions.Jobs.Edit)
 
     // Allow delete if the user is the owner or an admin
-    if (job.buyerId !== userId && user.role !== 'admin') {
+    if (!(job.buyerId === userId && user.role === 'admin' || hasPermission)) {
       throw new ForbiddenException('You can only delete your own jobs');
     }
 
@@ -438,12 +436,16 @@ export class JobsService {
     status: string = '',
     sortBy: string = 'created_at',
     sortdir: 'asc' | 'desc' = 'desc',
+    req: any
   ) {
     const job = await this.jobRepository.findOne({ where: { id: jobId } });
     if (!job) throw new NotFoundException('Job not found');
 
+    const user = req.user;
+
+    const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.jobs, Permissions.Jobs.Edit)
     // Only admin or job owner can see proposals
-    if (userRole !== UserRole.ADMIN && job.buyerId !== userId) {
+    if (!(userRole === UserRole.ADMIN || job.buyerId === userId || hasPermission)) {
       throw new ForbiddenException('Access denied');
     }
 
@@ -610,15 +612,13 @@ export class JobsService {
         });
         if (!inv) {
           const totalAmount = order.totalAmount;
-          // const serviceFee = +(totalAmount * (platformPercent / 100)).toFixed(2);
-          const serviceFee = platformPercent;
           const subtotal = proposal.bidAmount;
 
           inv = invoiceRepo.create({
             invoiceNumber: `INV-${Date.now()}-${order.id.slice(-6)}`,
             orderId: order.id,
             subtotal,
-            serviceFee,
+            sellerServiceFee: order.sellerServiceFee,
             platformPercent,
             totalAmount,
             currencyId: 'SAR',

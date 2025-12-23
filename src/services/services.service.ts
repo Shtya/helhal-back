@@ -5,6 +5,8 @@ import { Service, Category, User, ServiceStatus, ServiceRequirement, ServiceRevi
 import { join } from 'path';
 import { promises as fsp } from 'fs';
 import { SessionService } from 'src/auth/session.service';
+import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
+import { PermissionDomains, Permissions } from 'entities/permissions';
 
 @Injectable()
 export class ServicesService {
@@ -559,7 +561,7 @@ export class ServicesService {
     };
   }
 
-  async getService(slug: string, userId: string) {
+  async getService(slug: string, userId: string, req: any) {
     const service = await this.serviceRepository.findOne({
       where: { slug },
       relations: ['seller', 'category', 'subcategory', 'requirements', 'reviews'],
@@ -568,8 +570,12 @@ export class ServicesService {
     if (!service) {
       throw new NotFoundException('Service not found');
     }
+
+    const user = req.user;
+
     // Only allow inactive service preview for the owner or admin
-    const isOwnerOrAdmin = userId && (service.sellerId === userId);
+    const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.services, Permissions.Services.View)
+    const isOwnerOrAdmin = service.sellerId === userId || user.role === 'admin' || hasPermission;
     if (service.status !== ServiceStatus.ACTIVE && !isOwnerOrAdmin) {
       throw new NotFoundException('Service not found');
     }
@@ -589,17 +595,20 @@ export class ServicesService {
     };
   }
 
-  private createSlug(slug) {
-    const tempSlug = slug
+  private createSlug(slug: string) {
+    return slug
       .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
       .trim()
+      // 1. Replace everything that is NOT a Unicode Letter/Number, space, or dash with empty string
+      // The 'u' flag at the end is REQUIRED for Unicode support
+      .replace(/[^\p{L}\p{N}\s-]/gu, '')
+      // 2. Replace spaces with dashes
       .replace(/\s+/g, '-')
-      .replace(/-+/g, '-');
-
-    return tempSlug;
+      // 3. Remove consecutive dashes
+      .replace(/-+/g, '-')
+      // 4. Remove leading/trailing dashes (optional but recommended)
+      .replace(/^-+|-+$/g, '');
   }
-
   async checkServiceTitleUniqueness(
     title: string,
     userId: string
@@ -691,7 +700,7 @@ export class ServicesService {
   }
 
 
-  async updateService(userId: string, serviceId: string, updateServiceDto: any) {
+  async updateService(userId: string, serviceId: string, updateServiceDto: any, req: any) {
     const service = await this.serviceRepository.findOne({
       where: { id: serviceId },
       relations: ['seller'],
@@ -714,9 +723,10 @@ export class ServicesService {
 
       service.slug = newSlug;
     }
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = req.user;
 
-    if (user.role != 'admin')
+    const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.services, Permissions.Services.ChangeStatus)
+    if (user.role != 'admin' || !hasPermission)
       if (service.sellerId !== userId) {
         throw new ForbiddenException('You can only update your own services');
       }

@@ -1,6 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
-import { UserRole } from "entities/global.entity";
 import { OrdersService } from "src/orders/orders.service";
 
 @Injectable()

@@ -94,14 +94,14 @@ export class ChangePasswordDto {
 }
 
 export class UpdateUserPermissionsDto {
-  @IsOptional() @IsEnum(Permissions.Categories, { each: true }) @ArrayUnique() users?: Permissions.Users[];
-  @IsOptional() @IsEnum(Permissions.Categories, { each: true }) @ArrayUnique() categories?: Permissions.Categories[];
-  @IsOptional() @IsEnum(Permissions.Services, { each: true }) @ArrayUnique() services?: Permissions.Services[];
-  @IsOptional() @IsEnum(Permissions.Jobs, { each: true }) @ArrayUnique() jobs?: Permissions.Jobs[];
-  @IsOptional() @IsEnum(Permissions.Orders, { each: true }) @ArrayUnique() orders?: Permissions.Orders[];
-  @IsOptional() @IsEnum(Permissions.Invoices, { each: true }) @ArrayUnique() invoices?: Permissions.Invoices[];
-  @IsOptional() @IsEnum(Permissions.Disputes, { each: true }) @ArrayUnique() disputes?: Permissions.Disputes[];
-  @IsOptional() @IsEnum(Permissions.Finance, { each: true }) @ArrayUnique() finance?: Permissions.Finance[];
-  @IsOptional() @IsEnum(Permissions.Settings, { each: true }) @ArrayUnique() settings?: Permissions.Settings[];
-  @IsOptional() @IsEnum(Permissions.Statistics, { each: true }) @ArrayUnique() statistics?: Permissions.Statistics[];
+  @IsOptional() @IsNumber() users?: number;
+  @IsOptional() @IsNumber() categories?: number;
+  @IsOptional() @IsNumber() services?: number;
+  @IsOptional() @IsNumber() jobs?: number;
+  @IsOptional() @IsNumber() orders?: number;
+  @IsOptional() @IsNumber() invoices?: number;
+  @IsOptional() @IsNumber() disputes?: number;
+  @IsOptional() @IsNumber() finance?: number;
+  @IsOptional() @IsNumber() settings?: number;
+  @IsOptional() @IsNumber() statistics?: number;
 }

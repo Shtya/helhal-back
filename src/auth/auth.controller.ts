@@ -408,7 +408,8 @@ export class AuthController {
         role: query.filter === 'all' ? '' : query.filter,
         status: query.status === 'all' ? '' : query.status === 'Deleted' ? '' : query.status,
         deleted_at: query.status === 'Deleted' ? { isNull: false } : ''
-      });
+      },
+      ['permissions']);
   }
 
   @Delete('user/:id')

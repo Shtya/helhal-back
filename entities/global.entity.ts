@@ -560,6 +560,10 @@ export class Setting extends CoreEntity {
   @Column({ name: 'platform_percent', type: 'decimal', default: 0 })
   platformPercent: number;
 
+
+  @Column({ name: 'seller_service_fee', type: 'decimal', default: 0 })
+  sellerServiceFee: number;
+
   @Column({ name: 'default_currency' })
   defaultCurrency: number;
 
@@ -884,10 +888,16 @@ export class Service extends CoreEntity {
     if (this.title) {
       this.slug = this.title
         .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
         .trim()
+        // 1. Replace everything that is NOT a Unicode Letter/Number, space, or dash with empty string
+        // The 'u' flag at the end is REQUIRED for Unicode support
+        .replace(/[^\p{L}\p{N}\s-]/gu, '')
+        // 2. Replace spaces with dashes
         .replace(/\s+/g, '-')
-        .replace(/-+/g, '-');
+        // 3. Remove consecutive dashes
+        .replace(/-+/g, '-')
+        // 4. Remove leading/trailing dashes (optional but recommended)
+        .replace(/^-+|-+$/g, '');
     }
   }
 
@@ -1119,6 +1129,8 @@ export enum OrderStatus {
   ChangeRequested = 'Change Requested',
   MISSING_DETAILS = 'Missing Details',
   DISPUTED = 'Disputed',
+  REJECTED = 'Rejected',
+  WAITING = 'Waiting',
 }
 
 export enum PackageType {
@@ -1178,6 +1190,9 @@ export class Order extends CoreEntity {
 
   @Column({ name: 'total_amount', type: 'decimal' })
   totalAmount: number;
+
+  @Column({ name: 'seller_service_fee', type: 'decimal' })
+  sellerServiceFee: number;
 
   @Column({ type: 'enum', enum: PackageType })
   packageType: PackageType;
@@ -1284,7 +1299,7 @@ export class Invoice extends CoreEntity {
   subtotal: number;
 
   @Column({ name: 'service_fee', type: 'decimal' })
-  serviceFee: number;
+  sellerServiceFee: number;
 
   @Column({ name: 'platform_percent', type: 'decimal' })
   platformPercent: number;

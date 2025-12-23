@@ -81,7 +81,12 @@ export class DisputesService {
     });
     if (!dispute) throw new NotFoundException('Dispute not found');
 
-    const user: any = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
     const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.Chat);
 
     const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user.role === 'admin' || hasPermission;
@@ -131,8 +136,9 @@ export class DisputesService {
         ? {
           id: invoice.id,
           subtotal: invoice.subtotal,
-          serviceFee: invoice.serviceFee,
+          sellerServiceFee: invoice.sellerServiceFee,
           totalAmount: invoice.totalAmount,
+          platformPercent: invoice.platformPercent,
         }
         : null,
       messages: messages.map(m => ({
@@ -154,7 +160,12 @@ export class DisputesService {
     const dispute = await this.disputeRepository.findOne({ where: { id: disputeId }, relations: ['order'] });
     if (!dispute) throw new NotFoundException('Dispute not found');
 
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
     const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.Chat);
 
     const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user?.role === 'admin' || hasPermission;
@@ -294,27 +305,35 @@ export class DisputesService {
       relations: ['order', 'raisedBy', 'order.buyer', 'order.seller'],
     });
     if (!dispute) throw new NotFoundException('Dispute not found');
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
 
     const isInvolved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId;
     const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.View);
 
-    if ((user.role !== 'admin' || !hasPermission) && !isInvolved) throw new ForbiddenException('Access denied');
+    if (!(user.role === 'admin' || hasPermission || !isInvolved)) throw new ForbiddenException('Access denied');
 
     return dispute;
   }
 
   async updateDisputeStatus(userId: string, userRole: string, disputeId: string, status: string) {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
     const dispute = await this.getDispute(userId, user.role, disputeId);
 
     const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.ChangeStatus);
 
     // Only admins can change to in_review / resolved / rejected
-    if ((user.role !== 'admin' || !hasPermission) && status !== DisputeStatus.OPEN) {
-      throw new ForbiddenException('Only administrators can change dispute status');
+    if (status === DisputeStatus.OPEN && !(user.role === 'admin' || hasPermission)) {
+      throw new ForbiddenException('Only administrators can change dispute status when it is open');
     }
-
     dispute.status = status as DisputeStatus;
     const saved = await this.disputeRepository.save(dispute);
 
@@ -418,7 +437,7 @@ export class DisputesService {
 
     const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.ChangeStatus);
 
-    if ((user.role !== 'admin' || !hasPermission) && next !== DisputeStatus.OPEN) {
+    if (next !== DisputeStatus.OPEN && !(user.role === 'admin' || hasPermission)) {
       const isAccepting = next === DisputeStatus.RESOLVED && prev === DisputeStatus.IN_REVIEW && !!dispute.resolution && (order.buyerId === userId || order.sellerId === userId);
       if (!isAccepting) {
         throw new ForbiddenException('Only administrators can change dispute status');
@@ -484,7 +503,7 @@ export class DisputesService {
       const { sellerAmount, buyerRefund, note } = this.getAmountsFromBodyOrResolution(body, dispute);
       if (sellerAmount < 0 || buyerRefund < 0) throw new BadRequestException('Amounts must be >= 0');
 
-      if (user.role !== 'admin' || !hasPermission) {
+      if (!(user.role === 'admin' || hasPermission)) {
         if (prev !== DisputeStatus.IN_REVIEW || !dispute.resolution) {
           throw new ForbiddenException('Only admin can directly resolve without a pending resolution');
         }
@@ -520,7 +539,7 @@ export class DisputesService {
     }
 
     if (next === DisputeStatus.CLOSE_NO_ACTION) {
-      if (user.role !== 'admin' || !hasPermission) throw new ForbiddenException('Only administrators can close dispute');
+      if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException('Only administrators can close dispute');
 
       dispute.status = DisputeStatus.CLOSE_NO_ACTION;
       await this.disputeRepository.save(dispute);
@@ -536,7 +555,7 @@ export class DisputesService {
     }
 
     if (next === DisputeStatus.REJECTED) {
-      if (user.role !== 'admin' || !hasPermission) throw new ForbiddenException('Only administrators can reject');
+      if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException('Only administrators can reject');
       dispute.status = DisputeStatus.REJECTED;
       await this.disputeRepository.save(dispute);
 
@@ -729,7 +748,12 @@ export class DisputesService {
     const dispute = await this.disputeRepository.findOne({ where: { id: disputeId }, relations: ['order'] });
     if (!dispute) throw new NotFoundException('Dispute not found');
 
-    const user: any = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
     const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.ChangeStatus);
     const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user?.role === 'admin' || hasPermission;
     if (!involved) throw new ForbiddenException('Access denied');
@@ -769,11 +793,14 @@ export class DisputesService {
 
   // --- Admin: resolve and payout immediately (atomic)
   async resolveAndPayout(userId: string, userRole: string, disputeId: string, payload: { sellerAmount: number; buyerRefund: number; note?: string; closeAs: 'completed' | 'cancelled' }) {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
-
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
     const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.Propose);
 
-    if (user.role !== 'admin' || !hasPermission) throw new ForbiddenException('Only administrators can resolve & payout');
+    if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException('Only administrators can resolve & payout');
     const dispute = await this.disputeRepository.findOne({ where: { id: disputeId }, relations: ['order'] });
     if (!dispute) throw new NotFoundException('Dispute not found');
 

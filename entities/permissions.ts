@@ -20,15 +20,20 @@ export namespace Permissions {
     }
 
     export enum Services {
-        PopularToggle = 1 << 0, // 0001 (1)
-        View = 1 << 1, // 0010 (2)
-        ChangeStatus = 1 << 2  // 0100 (4)
+        Add = 1 << 0, // 000001 (1)
+        Edit = 1 << 1, // 000010 (2)
+        Delete = 1 << 2, // 000100 (4)
+        View = 1 << 3, // 001000 (8)
+        PopularToggle = 1 << 4,  // 010000 (16)
+        ChangeStatus = 1 << 5,  // 100000 (32)
     }
 
     export enum Jobs {
-        View = 1 << 0, // 0001 (1)
-        ChangeStatus = 1 << 1, // 0010 (2)
-        Delete = 1 << 2  // 0100 (4)
+        Add = 1 << 0, // 000001 (1)
+        Edit = 1 << 1, // 000010 (2)
+        Delete = 1 << 2, // 000100 (4)
+        View = 1 << 3, // 001000 (8)
+        ChangeStatus = 1 << 4,  // 010000 (16)
     }
 
     export enum Orders {

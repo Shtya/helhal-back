@@ -22,8 +22,9 @@ export class CRUD {
     sortOrder: 'ASC' | 'DESC' = 'DESC',
     relations?: string[],
     searchFields?: string[],
-    filters?: Record<string,
-      any>): Promise<CustomPaginatedResponse<T>> {
+    filters?: Record<string, any>,
+    extraSelects?: string[],
+  ): Promise<CustomPaginatedResponse<T>> {
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
 
@@ -37,6 +38,13 @@ export class CRUD {
 
     const skip = (pageNumber - 1) * limitNumber;
     const query = repository.createQueryBuilder(entityName).skip(skip).take(limitNumber);
+
+
+    if (extraSelects?.length) {
+      extraSelects.forEach(col => {
+        query.addSelect(`${entityName}.${col}`);
+      });
+    }
 
     function flatten(obj: any, prefix = ''): Record<string, any> {
       let result: Record<string, any> = {};

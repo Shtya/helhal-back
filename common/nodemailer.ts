@@ -37,6 +37,20 @@ export class MailService {
         }
     }
 
+
+    private async getSettings(): Promise<Setting | null> {
+        try {
+            let settings = await this.cacheManager.get<Setting>(this.settingsService.CACHE_KEY);
+            if (!settings) {
+                settings = await this.settingsService.getSettings();
+            }
+            return settings;
+        } catch (err) {
+            console.error('Error fetching settings:', err);
+            return null;
+        }
+    }
+
     async sendOTPEmail(to: string, otp: string, actionType: string) {
         if (!to) return;
         const htmlContent = `
@@ -925,6 +939,55 @@ export class MailService {
     </body>
   </html>
   `;
+
+        await this.transporter.sendMail({
+            from: await this.getFrom(),
+            to: email,
+            subject,
+            html,
+        });
+    }
+
+
+
+    async sendSellerFeePolicyEmail(email: string, username: string) {
+        if (!email) return;
+
+        const settings = await this.getSettings();
+        // Get the percent from settings, or default to 10
+        const feePercent = settings?.sellerServiceFee ?? 10;
+        const siteName = settings?.siteName ?? 'Our Platform';
+
+        const subject = `Important: Understanding our Seller Fee Structure at ${siteName}`;
+
+        const html = `
+    <html>
+        <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; background-color: #f5f7fb; padding: 20px;">
+            <div style="max-width: 600px; margin: auto; background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <h2 style="color: #2e7d32; text-align: center;">Transparent Pricing for Sellers</h2>
+                <p>Hello ${username},</p>
+                <p>Welcome to the community! To help you manage your business effectively, we want to provide clear information on how payments and fees work on <strong>${siteName}</strong>.</p>
+                
+                <div style="background-color: #e8f5e9; padding: 20px; border-left: 5px solid #2e7d32; margin: 20px 0;">
+                    <h3 style="margin-top: 0; color: #2e7d32;">Our Standard Service Fee: ${feePercent}%</h3>
+                    <p style="margin-bottom: 0;">For every order you complete, a service fee of <strong>${feePercent}%</strong> is deducted from the total order amount.</p>
+                </div>
+
+                <div style="text-align: center; margin-top: 30px;">
+                    <p><em>Example: If you sell a service for $100, you will receive $${100 - (100 * (feePercent / 100))} after the $${100 * (feePercent / 100)} platform fee.</em></p>
+                    <a href="${process.env.FRONTEND_URL}/create-gig" 
+                       style="display: inline-block; margin-top: 15px; padding: 12px 25px; background-color: #2e7d32; color: #fff; text-decoration: none; border-radius: 30px; font-weight: bold;">
+                       Start Listing Your Services
+                    </a>
+                </div>
+                
+                <p style="font-size: 12px; color: #888; margin-top: 40px; text-align: center; border-top: 1px solid #eee; padding-top: 20px;">
+                    &copy; ${new Date().getFullYear()} ${siteName}. All rights reserved.
+                </p>
+            </div>
+        </body>
+    </html>
+    `;
 
         await this.transporter.sendMail({
             from: await this.getFrom(),

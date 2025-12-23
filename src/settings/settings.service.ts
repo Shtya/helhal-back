@@ -27,6 +27,7 @@ export class SettingsService {
         contactEmail: 'support@example.com',
         supportPhone: '+1234567890',
         platformPercent: 10,
+        sellerServiceFee: 10,
         defaultCurrency: 1,
       });
       await this.settingsRepository.save(settings);

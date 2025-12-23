@@ -166,7 +166,22 @@ export class OAuthService {
     }
 
     const serializedUser = await this.authService.authenticateUser(user, res);
-    await this.emailService.sendWelcomeEmail(user.email, user.username, user.role);
+    const emailPromises = [
+      this.emailService.sendWelcomeEmail(user.email, user.username, user.role)
+    ];
+
+    if (user.role === 'seller') {
+      emailPromises.push(
+        this.emailService.sendSellerFeePolicyEmail(user.email, user.username)
+      );
+    }
+
+    try {
+      await Promise.all(emailPromises)
+    } catch (err) {
+      console.error('Failed to send onboarding emails:', err);
+    }
+
     return { redirectPath, user: serializedUser };
   }
 

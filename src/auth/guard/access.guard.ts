@@ -38,11 +38,19 @@ export class AccessGuard implements CanActivate {
         if (rule.permission) {
             const { domain, value } = rule.permission;
 
-            // Super admin shortcut
-            if (user.permissions === 1) return true;
 
             const domainMask = user.permissions?.[domain];
-            if (domainMask && PermissionBitmaskHelper.has(domainMask, value)) {
+
+
+            // Normalize to array
+            const requiredPermissions = Array.isArray(value) ? value : [value];
+
+            // OR condition → user must have at least ONE permission
+            const hasAnyPermission = requiredPermissions.some((perm) =>
+                PermissionBitmaskHelper.has(domainMask, perm),
+            );
+
+            if (hasAnyPermission) {
                 return true;
             }
         }
