@@ -7,6 +7,7 @@ import { promises as fsp } from 'fs';
 import { SessionService } from 'src/auth/session.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { PermissionDomains, Permissions } from 'entities/permissions';
+import { formatSearchTerm } from 'utils/search.helper';
 
 @Injectable()
 export class ServicesService {
@@ -392,10 +393,16 @@ export class ServicesService {
     }
 
     // Search filter
-    if (search) {
-      queryBuilder.andWhere('(service.title ILIKE :search OR service.brief ILIKE :search OR service.search_tags::text ILIKE :search)', {
-        search: `%${search}%`,
-      });
+    const { formattedSearch, rawSearch } = formatSearchTerm(search);
+
+    if (formattedSearch && rawSearch) {
+      queryBuilder.andWhere(
+        `(
+      service.search_vector @@ to_tsquery('english', :formattedSearch) OR 
+      service.search_vector @@ plainto_tsquery('arabic', normalize_arabic(:rawSearch))
+    )`,
+        { formattedSearch, rawSearch }
+      );
     }
 
     // Price range filter (from the simple select)

@@ -6,6 +6,7 @@ import { CreateJobDto } from 'dto/job.dto';
 import { PaymentsService } from 'src/payments/payments.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { Permissions } from 'entities/permissions';
+import { formatSearchTerm } from 'utils/search.helper';
 
 @Injectable()
 export class JobsService {
@@ -57,8 +58,17 @@ export class JobsService {
       .where('job.status = :status', { status: 'published' });
 
     // --- Search ---
-    if (search) {
-      qb.andWhere('(job.title ILIKE :search)', { search: `%${search}%` });
+    // Use your reusable helper function
+    const { formattedSearch, rawSearch } = formatSearchTerm(search);
+
+    if (formattedSearch && rawSearch) {
+      qb.andWhere(
+        `(
+      job.search_vector @@ to_tsquery('english', :formattedSearch) OR 
+      job.search_vector @@ plainto_tsquery('arabic', normalize_arabic(:rawSearch))
+    )`,
+        { formattedSearch, rawSearch }
+      );
     }
 
     // --- Category filter ---

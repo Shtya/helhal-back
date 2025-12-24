@@ -881,6 +881,16 @@ export class Service extends CoreEntity {
   @Column({ name: 'max_price', type: 'numeric', nullable: true })
   maxPrice: number | null;
 
+  @Column({
+    type: 'tsvector',
+    name: 'search_vector',
+    insert: false,  // Don't try to insert into this column
+    update: false,
+    select: false,
+  })
+  // We specify GIN index here, but note that the generation logic must be in the DB
+  @Index('idx_services_search_vector', { synchronize: false })
+  searchVector: any;
 
   @BeforeInsert()
   @BeforeUpdate()
@@ -1058,6 +1068,17 @@ export class Job extends CoreEntity {
 
   @OneToMany(() => Proposal, proposal => proposal.job)
   proposals: Proposal[];
+
+  @Column({
+    type: 'tsvector',
+    name: 'search_vector',
+    insert: false,
+    update: false,
+    select: false, // Don't pull the vector data into memory unless needed
+  })
+
+  @Index('idx_jobs_search_vector', { synchronize: false })
+  searchVector: any;
 }
 
 export enum ProposalStatus {
