@@ -927,7 +927,10 @@ async function seedSettings(dataSource: DataSource) {
       featuredCategories,
       recommendedServices,
       businessRecommendations,
-      faqs: [], // fill with FAQ IDs if you maintain a FAQ table
+      sellerFaqs_en: [], // fill with FAQ IDs if you maintain a FAQ table
+      sellerFaqs_ar: [], // fill with FAQ IDs if you maintain a FAQ table
+      inviteFaqs_en: [], // fill with FAQ IDs if you maintain a FAQ table
+      inviteFaqs_ar: [], // fill with FAQ IDs if you maintain a FAQ table
       buyerStories: [], // fill with story IDs if you maintain buyer stories
     },
   );

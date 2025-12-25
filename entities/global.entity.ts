@@ -612,8 +612,17 @@ export class Setting extends CoreEntity {
   @Column({ name: 'business_recommendations', type: 'int', array: true, default: [] })
   businessRecommendations: number[];
 
-  @Column({ name: 'faqs', type: 'jsonb', default: [] })
-  faqs: { question: string; answer: string }[];
+  @Column({ name: 'seller_faqs_en', type: 'jsonb', default: [] })
+  sellerFaqs_en: { question: string; answer: string }[];
+
+  @Column({ name: 'seller_faqs_ar', type: 'jsonb', default: [] })
+  sellerFaqs_ar: { question: string; answer: string }[];
+
+  @Column({ name: 'invite_faqs_en', type: 'jsonb', default: [] })
+  inviteFaqs_en: { question: string; answer: string }[];
+
+  @Column({ name: 'invite_faqs_ar', type: 'jsonb', default: [] })
+  inviteFaqs_ar: { question: string; answer: string }[];
 
   @Column({ name: 'buyer_stories', type: 'int', array: true, default: [] })
   buyerStories: number[];
