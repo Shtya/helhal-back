@@ -74,7 +74,7 @@ export class AccountingService {
       billingInfo = this.userBillingInfoRepository.create({
         ...billingInfoData,
         userId,
-        isSaudiResident: country.isoAlpha2 === 'SA',
+        isSaudiResident: country.iso2 === 'SA',
       });
     } else {
       Object.assign(billingInfo, billingInfoData);

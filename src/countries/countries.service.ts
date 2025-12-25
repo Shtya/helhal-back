@@ -13,4 +13,6 @@ export class CountriesService {
     async findAll(): Promise<Country[]> {
         return this.countriesRepository.find();
     }
+
+
 }

@@ -53,29 +53,56 @@ export class PortfolioFile {
   filename: string;
 }
 
-
 @Entity('countries')
 export class Country extends CoreEntity {
   @Column({ unique: true })
   name: string;
 
-  @Column({ name: 'iso_alpha2' })
-  isoAlpha2: string;
+  @Column({ name: 'name_ar', unique: true })
+  name_ar: string;
 
-  @Column({ name: 'iso_alpha3' })
-  isoAlpha3: string;
+  @Column({ name: 'iso2', unique: true })
+  iso2: string;
 
-  @Column({ name: 'iso_numeric' })
-  isoNumeric: number;
+  @Column({ name: 'iso3', })
+  iso3: string;
 
-  @Column({ name: 'currency_code' })
-  currencyCode: string;
+  @Column({ name: 'currency' })
+  currency: string;
+
+  @Column({ name: 'numeric_code' })
+  numericCode: string;
+
+  @Column({ name: 'emoji' })
+  emoji: string;
 
   @Column({ name: 'currency_name' })
   currencyName: string;
 
-  @Column({ name: 'currency_symbol', nullable: true })
+  @Column({ name: 'currency_symbol' })
   currencySymbol: string;
+
+  @Column({ name: 'native' })
+  native: string;
+}
+
+@Entity('states')
+export class State extends CoreEntity {
+  @Column()
+  name: string;
+
+  @Column({ name: 'name_ar' })
+  name_ar: string;
+
+  @Column()
+  native: string;
+
+  @ManyToOne(() => Country)
+  @JoinColumn({ name: 'country_id' })
+  country: Country;
+
+  @Column({ name: 'country_id' })
+  countryId: string;
 }
 
 @Entity('users')
@@ -881,16 +908,16 @@ export class Service extends CoreEntity {
   @Column({ name: 'max_price', type: 'numeric', nullable: true })
   maxPrice: number | null;
 
+  @Index('idx_jobs_search_vector', { synchronize: false })
   @Column({
     type: 'tsvector',
     name: 'search_vector',
-    insert: false,  // Don't try to insert into this column
+    insert: false,
     update: false,
     select: false,
+    nullable: true,
   })
-  // We specify GIN index here, but note that the generation logic must be in the DB
-  @Index('idx_services_search_vector', { synchronize: false })
-  searchVector: any;
+  searchVector: any; // Using 'any' or 'string' is fine here
 
   @BeforeInsert()
   @BeforeUpdate()
@@ -1069,16 +1096,32 @@ export class Job extends CoreEntity {
   @OneToMany(() => Proposal, proposal => proposal.job)
   proposals: Proposal[];
 
+  @ManyToOne(() => Country)
+  @JoinColumn({ name: 'country_id' })
+  country: Country | null;
+
+  @Column({ name: 'country_id', nullable: true })
+  countryId: string | null;
+
+  @ManyToOne(() => State)
+  @JoinColumn({ name: 'state_id' })
+  state: State | null;
+
+  @Column({ name: 'state_id', nullable: true })
+  stateId: string | null;
+
+
+  @Index('idx_services_search_vector', { synchronize: false })
   @Column({
     type: 'tsvector',
     name: 'search_vector',
     insert: false,
     update: false,
-    select: false, // Don't pull the vector data into memory unless needed
+    select: false,
+    nullable: true,
   })
+  searchVector: string;
 
-  @Index('idx_jobs_search_vector', { synchronize: false })
-  searchVector: any;
 }
 
 export enum ProposalStatus {

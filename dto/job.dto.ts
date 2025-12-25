@@ -34,6 +34,14 @@ export class CreateJobDto {
   @IsString()
   subcategoryId?: string;
 
+  @IsString()
+  countryId: string;
+
+  @IsString()
+  @IsOptional()
+  stateId?: string;
+
+
   @IsArray()
   @ArrayMinSize(1, { message: 'At least one skill is required' })
   @ArrayMaxSize(15, { message: `You can add up to ${15} skills` })

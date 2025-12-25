@@ -32,7 +32,6 @@ import { ReportsModule } from './reports/reports.module';
 import { JobsModule } from './jobs/jobs.module';
 import { BlogsModule } from './blogs/blogs.module';
 import { BlogCategoriesModule } from './blog-categories/blog-categories.module';
-import { CountriesModule } from './counties/countries.module';
 import { InviteModule } from './invite/invite.module';
 import { NotificationSubscriber } from './notification/NotificationSubscriber';
 import { Notification } from 'entities/global.entity';
@@ -41,6 +40,8 @@ import { ResponseTimeUpdaterService } from 'backgroundServices/response-time-upd
 import { OrderAutoUpdaterService } from 'backgroundServices/order-auto-udater-service';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CacheModule } from '@nestjs/cache-manager';
+import { StatesModule } from './states/states.module';
+import { CountriesModule } from './countries/countries.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { CacheModule } from '@nestjs/cache-manager';
       database: process.env.DATABASE_NAME,
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
       synchronize: false,
+
     }),
     PassportModule,
 
@@ -105,6 +107,7 @@ import { CacheModule } from '@nestjs/cache-manager';
     BlogsModule,
     BlogCategoriesModule,
     CountriesModule,
+    StatesModule,
     InviteModule,
     DashboardModule
   ],

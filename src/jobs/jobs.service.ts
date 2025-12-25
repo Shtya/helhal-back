@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In, Between, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
-import { Job, Proposal, User, Category, Order, Notification, JobStatus, ProposalStatus, UserRole, OrderStatus, Setting, PaymentStatus, PackageType, Invoice, UserRelatedAccount } from 'entities/global.entity';
+import { Job, Proposal, User, Category, Order, Notification, JobStatus, ProposalStatus, UserRole, OrderStatus, Setting, PaymentStatus, PackageType, Invoice, UserRelatedAccount, Country, State } from 'entities/global.entity';
 import { CreateJobDto } from 'dto/job.dto';
 import { PaymentsService } from 'src/payments/payments.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
@@ -19,6 +19,10 @@ export class JobsService {
     public userRepository: Repository<User>,
     @InjectRepository(Category)
     public categoryRepository: Repository<Category>,
+    @InjectRepository(Country)
+    public countryRepository: Repository<Country>,
+    @InjectRepository(State)
+    public stateRepository: Repository<State>,
     @InjectRepository(Order)
     public orderRepository: Repository<Order>,
     @InjectRepository(Notification)
@@ -46,6 +50,8 @@ export class JobsService {
       withAttachments,
       priceRange = '',
       customBudget,
+      country,
+      state,
       sortBy = 'created_at',
       sortOrder = 'DESC',
     } = query;
@@ -55,6 +61,8 @@ export class JobsService {
     const qb = this.jobRepository.createQueryBuilder('job')
       .leftJoinAndSelect('job.buyer', 'buyer')
       .leftJoinAndSelect('job.category', 'category')
+      .leftJoinAndSelect('job.country', 'country')
+      .leftJoinAndSelect('job.state', 'state')
       .where('job.status = :status', { status: 'published' });
 
     // --- Search ---
@@ -71,7 +79,15 @@ export class JobsService {
       );
     }
 
-    // --- Category filter ---
+    // ---  filter ---
+    if (country) {
+      qb.andWhere('job.countryId = :countryId', { countryId: country });
+    }
+
+    if (state) {
+      qb.andWhere('job.stateId = :stateId', { stateId: state });
+    }
+
     if (category) {
       qb.andWhere('job.categoryId = :categoryId', { categoryId: category });
     }
@@ -145,8 +161,11 @@ export class JobsService {
     const qb = this.jobRepository.createQueryBuilder('job')
       .leftJoinAndSelect('job.buyer', 'buyer')
       .leftJoinAndSelect('job.category', 'category')
+      .leftJoinAndSelect('job.country', 'country')
+      .leftJoinAndSelect('job.state', 'state')
       // Map the number of proposals
       .loadRelationCountAndMap('job.proposalsLength', 'job.proposals');
+
 
     if (status) {
       qb.where('job.status = :status', { status: status });
@@ -240,7 +259,7 @@ export class JobsService {
   async getJob(jobId: string, userId?: string) {
     const job = await this.jobRepository.findOne({
       where: { id: jobId, },
-      relations: ['buyer', 'category', 'subcategory', 'proposals', 'proposals.seller'],
+      relations: ['buyer', 'category', 'subcategory', 'proposals', 'proposals.seller', "country", "state"],
     });
 
     if (!job) {
@@ -258,10 +277,10 @@ export class JobsService {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    if (createJobDto.categoryId) {
-      const category = await this.categoryRepository.findOne({ where: { id: createJobDto.categoryId } } as any);
-      if (!category) throw new NotFoundException('Category not found');
-    }
+
+    const category = await this.categoryRepository.findOne({ where: { id: createJobDto.categoryId } } as any);
+    if (!category) throw new NotFoundException('Category not found');
+
 
     if (createJobDto.subcategoryId) {
       const subcategory = await this.categoryRepository.findOne({ where: { id: createJobDto.subcategoryId } } as any);
@@ -269,6 +288,20 @@ export class JobsService {
     } else {
       delete createJobDto.subcategoryId;
     }
+
+
+    const country = await this.countryRepository.findOne({ where: { id: createJobDto.countryId } } as any);
+    if (!country) throw new NotFoundException('Country not found');
+
+
+
+    if (createJobDto.stateId) {
+      const state = await this.stateRepository.findOne({ where: { id: createJobDto.stateId, countryId: createJobDto.countryId } } as any);
+      if (!state) throw new NotFoundException('State not found or does not belong to the selected country');
+    } else {
+      delete createJobDto.stateId;
+    }
+
 
     // Always read latest settings
     const settingsRows = await this.settingRepository.find({ take: 1, order: { created_at: 'DESC' } });

@@ -47,7 +47,7 @@ export class JobsController {
       query.limit,
       query.sortBy,
       query.sortOrder,
-      ['buyer', 'proposals'], // relation
+      ['buyer', 'proposals', 'country', 'state'], // relation
       ['status'], // search
       { buyer: { id: req.user.id } }, // filter
     );
