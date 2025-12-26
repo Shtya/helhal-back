@@ -147,4 +147,63 @@ export class CategoriesService {
       order: { name_en: 'ASC' }, // or other ordering logic
     });
   }
+
+
+  // async markAsFreelanceTop(categoryId: string, iconUrl: string) {
+  //   const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
+  //   if (!category) throw new NotFoundException('Category not found');
+
+  //   // limit max freelance top categories
+  //   const count = await this.categoryRepository.count({ where: { freelanceTop: true } });
+  //   if (count >= 12) {
+  //     throw new BadRequestException('Maximum 12 freelance top categories allowed.');
+  //   }
+
+  //   category.freelanceTop = true;
+  //   category.freelanceTopIconUrl = iconUrl;
+
+  //   return this.categoryRepository.save(category);
+  // }
+
+  // async updateFreelanceTopIcon(id: string, iconUrl: string) {
+  //   const category = await this.categoryRepository.findOne({ where: { id } });
+  //   if (!category) throw new NotFoundException('Category not found');
+
+  //   if (!category.freelanceTop) throw new NotFoundException('Category is not marked as freelance top');
+
+  //   category.freelanceTopIconUrl = iconUrl;
+  //   await this.categoryRepository.save(category);
+
+  //   return { message: 'Freelance top category icon updated', iconUrl };
+  // }
+
+  // async unmarkAsFreelanceTop(categoryId: string) {
+  //   const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
+  //   if (!category) throw new NotFoundException('Category not found');
+
+  //   // delete old icon if exists
+  //   if (category.freelanceTopIconUrl) {
+  //     const oldPath = join(process.cwd(), category.freelanceTopIconUrl);
+  //     try {
+  //       await fsp.unlink(oldPath);
+  //     } catch (err) {
+  //       if ((err as any).code !== 'ENOENT') {
+  //         console.error('Failed to delete old freelance top icon:', err);
+  //       }
+  //     }
+  //   }
+
+  //   category.freelanceTop = false;
+  //   category.freelanceTopIconUrl = null;
+
+  //   return this.categoryRepository.save(category);
+  // }
+
+  // async getFreelanceTopCategories() {
+  //   return this.categoryRepository.find({
+  //     where: { freelanceTop: true },
+  //     order: { name_en: 'ASC' }, // or other ordering logic
+  //   });
+  // }
+
 }

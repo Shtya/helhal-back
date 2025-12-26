@@ -30,6 +30,8 @@ export class SettingsController {
       sellerFaqs_ar: settings.sellerFaqs_ar,
       inviteFaqs_en: settings.inviteFaqs_en,
       inviteFaqs_ar: settings.inviteFaqs_ar,
+      becomeSellerFaqs_en: settings.becomeSellerFaqs_en,
+      becomeSellerFaqs_ar: settings.becomeSellerFaqs_ar,
       siteName: settings.siteName,
       siteLogo: settings.siteLogo,
       facebook: settings.facebook,

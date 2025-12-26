@@ -99,6 +99,8 @@ export class CategoriesController {
       value: Permissions.Categories.TopToggle
     }
   })
+
+
   @UseInterceptors(FileInterceptor('icon', categoryIconOptions))
   @Post(':id/top')
   async setTop(
@@ -150,4 +152,65 @@ export class CategoriesController {
   async getTop() {
     return this.categoriesService.getTopCategories();
   }
+
+  // @UseGuards(JwtAuthGuard, AccessGuard)
+  // @RequireAccess({
+  //   roles: [UserRole.ADMIN],
+  //   permission: {
+  //     domain: 'categories',
+  //     value: Permissions.Categories.TopToggle
+  //   }
+  // })
+  // @UseInterceptors(FileInterceptor('icon', categoryIconOptions))
+  // @Post(':id/freelance-top')
+  // async setFreelanceTop(
+  //   @Param('id') id: string,
+  //   @UploadedFile() file?: any,
+  // ) {
+  //   if (!file) {
+  //     throw new BadRequestException('Icon file is required to mark as freelance top');
+  //   }
+  //   const iconUrl = `uploads/category-icons/${file.filename}`;
+  //   return this.categoriesService.markAsFreelanceTop(id, iconUrl);
+  // }
+
+  // @UseGuards(JwtAuthGuard, AccessGuard)
+  // @RequireAccess({
+  //   roles: [UserRole.ADMIN],
+  //   permission: {
+  //     domain: 'categories',
+  //     value: Permissions.Categories.TopToggle
+  //   }
+  // })
+  // @UseInterceptors(FileInterceptor('icon', categoryIconOptions))
+  // @Post(':id/freelance-top/icon')
+  // async updateFreelanceTopIcon(
+  //   @Param('id') id: string,
+  //   @UploadedFile() file: any
+  // ) {
+  //   if (!file) {
+  //     throw new BadRequestException('Icon file is required to update freelance top category icon');
+  //   }
+  //   const iconUrl = `uploads/category-icons/${file.filename}`;
+  //   return this.categoriesService.updateFreelanceTopIcon(id, iconUrl);
+  // }
+
+  // @UseGuards(JwtAuthGuard, AccessGuard)
+  // @RequireAccess({
+  //   roles: [UserRole.ADMIN],
+  //   permission: {
+  //     domain: 'categories',
+  //     value: Permissions.Categories.TopToggle
+  //   }
+  // })
+  // @Delete(':id/freelance-untop')
+  // async unsetFreelanceTop(@Param('id') id: string) {
+  //   return this.categoriesService.unmarkAsFreelanceTop(id);
+  // }
+
+  // @Get('freelance-top/list')
+  // async getFreelanceTop() {
+  //   return this.categoriesService.getFreelanceTopCategories();
+  // }
+
 }

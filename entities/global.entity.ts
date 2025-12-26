@@ -624,6 +624,12 @@ export class Setting extends CoreEntity {
   @Column({ name: 'invite_faqs_ar', type: 'jsonb', default: [] })
   inviteFaqs_ar: { question: string; answer: string }[];
 
+  @Column({ name: 'becomeSellerFaqs_en', type: 'jsonb', default: [] })
+  becomeSellerFaqs_en: { question: string; answer: string }[];
+
+  @Column({ name: 'becomeSellerFaqs_ar', type: 'jsonb', default: [] })
+  becomeSellerFaqs_ar: { question: string; answer: string }[];
+
   @Column({ name: 'buyer_stories', type: 'int', array: true, default: [] })
   buyerStories: number[];
 
@@ -780,6 +786,12 @@ export class Category extends CoreEntity {
 
   @Column({ nullable: true })
   topIconUrl: string;
+
+  // @Column({ default: false })
+  // freelanceTop: boolean;
+
+  // @Column({ nullable: true })
+  // freelanceTopIconUrl: string;
 
   @BeforeInsert()
   @BeforeUpdate()
@@ -1118,7 +1130,6 @@ export class Job extends CoreEntity {
 
   @Column({ name: 'state_id', nullable: true })
   stateId: string | null;
-
 
   @Index('idx_services_search_vector', { synchronize: false })
   @Column({
