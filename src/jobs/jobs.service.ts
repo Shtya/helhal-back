@@ -484,7 +484,7 @@ export class JobsService {
     const job = await this.jobRepository.findOne({ where: { id: jobId } });
     if (!job) throw new NotFoundException('Job not found');
 
-    const user = req.user;
+    const user = req?.user;
 
     const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.jobs, Permissions.Jobs.Edit)
     // Only admin or job owner can see proposals

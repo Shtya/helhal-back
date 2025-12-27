@@ -578,11 +578,11 @@ export class ServicesService {
       throw new NotFoundException('Service not found');
     }
 
-    const user = req.user;
+    const user = req?.user;
 
     // Only allow inactive service preview for the owner or admin
     const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.services, Permissions.Services.View)
-    const isOwnerOrAdmin = service.sellerId === userId || user.role === 'admin' || hasPermission;
+    const isOwnerOrAdmin = service.sellerId === userId || user?.role === 'admin' || hasPermission;
     if (service.status !== ServiceStatus.ACTIVE && !isOwnerOrAdmin) {
       throw new NotFoundException('Service not found');
     }
@@ -730,10 +730,10 @@ export class ServicesService {
 
       service.slug = newSlug;
     }
-    const user = req.user;
+    const user = req?.user;
 
     const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.services, Permissions.Services.ChangeStatus)
-    if (user.role != 'admin' || !hasPermission)
+    if (user?.role != 'admin' || !hasPermission)
       if (service.sellerId !== userId) {
         throw new ForbiddenException('You can only update your own services');
       }
