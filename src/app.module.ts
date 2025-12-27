@@ -52,7 +52,7 @@ import { CountriesModule } from './countries/countries.module';
     TypeOrmModule.forFeature([Notification]),
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env', '.env.development', '.env.production'],
+      envFilePath: [`.env.${process.env.NODE_ENV}`, '.env'],
       expandVariables: true,
     }),
     TypeOrmModule.forRoot({
