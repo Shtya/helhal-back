@@ -18,6 +18,7 @@ async function bootstrap() {
 		// origin: configService.get('ALLOWED_ORIGINS')?.split(',') || '*',
 		origin: [
 			'https://www.helhal.com',
+			'https://helhal.com',
 			'http://localhost:3000', // للتجارب
 		],
 		methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
