@@ -402,12 +402,25 @@ export class AuthController {
       value: Permissions.Users.View
     }
   })
-  async getAllUsers(@Query('') query: any) {
+  async getAllUsers(@Query('') query: any, @Req() req: any) {
+    const role = req.user?.role;
+
     return CRUD.findAll(this.authService.userRepository, 'user', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['username', 'email'],
       {
         role: query.filter === 'all' ? '' : query.filter,
         status: query.status === 'all' ? '' : query.status === 'Deleted' ? '' : query.status,
-        deleted_at: query.status === 'Deleted' ? { isNull: false } : ''
+        deleted_at: query.status === 'Deleted' ? { isNull: false } : '',
+        permissions:
+          role === 'admin'
+            ? (
+              !query.hasPermissions || query.hasPermissions === 'all'
+                ? ''
+                : query.hasPermissions === 'true'
+                  ? { isNull: false }
+                  : { isNull: true }
+            )
+            : ''
+
       },
       ['permissions']);
   }

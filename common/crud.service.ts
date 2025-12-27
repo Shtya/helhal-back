@@ -183,6 +183,7 @@ export class CRUD {
 
     query.orderBy(`${entityName}.${sortField}`, sortDirection);
 
+    console.log('Generated Query:', query.getSql());
     const [data, total] = await query.getManyAndCount();
 
     return {
