@@ -55,12 +55,10 @@ export class OAuthService {
       .where('user.email = :email', { email: email })
       .getOne();
 
-
-
+    let newUserCreated = false;
     if (!user) {
       const baseName = profile.name || email.split('@')[0];
       const uniqueSuffix = randomBytes(6).toString('hex'); // 12-char hex string
-
 
       user = this.userRepository.create({
         username: `${baseName}_${uniqueSuffix}`,
@@ -70,6 +68,7 @@ export class OAuthService {
         type: 'Individual'
       });
       await this.userRepository.save(user);
+      newUserCreated = true;
     }
     else if (!user.googleId) {
       user.googleId = profile.id;
@@ -88,7 +87,7 @@ export class OAuthService {
       throw new UnauthorizedException('Please verify your email before logging in');
     }
 
-    return this.finalizeOAuthAuthentication(user, state, res);
+    return this.finalizeOAuthAuthentication(user, state, res, newUserCreated);
   }
 
   async handleAppleCallback(profile: any, state?: string, res?: Response) {
@@ -102,11 +101,10 @@ export class OAuthService {
       .where('user.email = :email', { email: email })
       .getOne();
 
-
+    let newUserCreated = false;
     if (!user) {
       const baseName = profile.name || email.split('@')[0];
       const uniqueSuffix = randomBytes(6).toString('hex'); // 12-char hex string
-
 
       user = this.userRepository.create({
         username: `${baseName}_${uniqueSuffix}`,
@@ -116,6 +114,7 @@ export class OAuthService {
         type: 'Individual'
       });
       await this.userRepository.save(user);
+      newUserCreated = true;
     } else if (!user.appleId) {
       user.appleId = profile.id;
       await this.userRepository.save(user);
@@ -133,10 +132,10 @@ export class OAuthService {
       throw new UnauthorizedException('Please verify your email before logging in');
     }
 
-    return this.finalizeOAuthAuthentication(user, state, res);
+    return this.finalizeOAuthAuthentication(user, state, res, newUserCreated);
   }
 
-  async finalizeOAuthAuthentication(user: User, state?: string, res?: Response) {
+  async finalizeOAuthAuthentication(user: User, state?: string, res?: Response, newUserCreated?: boolean) {
     let redirectPath = '/';
     let referralCodeUsed: string | undefined;
     let userType;
@@ -166,20 +165,24 @@ export class OAuthService {
     }
 
     const serializedUser = await this.authService.authenticateUser(user, res);
-    const emailPromises = [
-      this.emailService.sendWelcomeEmail(user.email, user.username, user.role)
-    ];
 
-    if (user.role === 'seller') {
-      emailPromises.push(
-        this.emailService.sendSellerFeePolicyEmail(user.email, user.username)
-      );
-    }
+    if (newUserCreated) {
 
-    try {
-      await Promise.all(emailPromises)
-    } catch (err) {
-      console.error('Failed to send onboarding emails:', err);
+      const emailPromises = [
+        this.emailService.sendWelcomeEmail(user.email, user.username, user.role)
+      ];
+
+      if (user.role === 'seller') {
+        emailPromises.push(
+          this.emailService.sendSellerFeePolicyEmail(user.email, user.username)
+        );
+      }
+
+      try {
+        await Promise.all(emailPromises)
+      } catch (err) {
+        console.error('Failed to send onboarding emails:', err);
+      }
     }
 
     return { redirectPath, user: serializedUser };

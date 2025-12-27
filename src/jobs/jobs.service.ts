@@ -612,6 +612,7 @@ export class JobsService {
 
       const s = await settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
       const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
+      const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);
       // ===============================
       // CASE 1: REJECT
       // ===============================
@@ -640,6 +641,7 @@ export class JobsService {
             title: job.title,
             quantity: 1,
             totalAmount: Number(proposal.bidAmount + platformPercent),
+            sellerServiceFee: sellerServiceFee,
             packageType: PackageType.BASIC,
             status: OrderStatus.PENDING,
             orderDate: new Date(),

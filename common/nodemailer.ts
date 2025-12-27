@@ -3,6 +3,7 @@ import { SettingsService } from 'src/settings/settings.service';
 import * as nodemailer from 'nodemailer';
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { Setting } from 'entities/global.entity';
+import { resolveUrl } from 'utils/url';
 
 @Injectable()
 export class MailService {
@@ -18,25 +19,29 @@ export class MailService {
         private readonly settingsService: SettingsService,
         @Inject(CACHE_MANAGER) private cacheManager: Cache) { }
 
-    private async getFrom(): Promise<string> {
-        try {
-            let settings;
-            settings = await this.cacheManager.get<Setting>(this.settingsService.CACHE_KEY);
-            if (!settings) {
-                settings = await this.settingsService.getSettings();
-            }
-            const siteName = settings?.siteName ?? process.env.PROJECT_NAME ?? 'No-Reply';
-            const contact = settings?.contactEmail ?? process.env.EMAIL_USER ?? process.env.EMAIL_FROM ?? '';
-            if (contact) return `"${siteName}" <${contact}>`;
-            return `${siteName} <no-reply@localhost>`;
-        } catch (err) {
-            const siteName = process.env.PROJECT_NAME ?? 'No-Reply';
-            const contact = process.env.EMAIL_USER ?? process.env.EMAIL_FROM ?? '';
-            if (contact) return `"${siteName}" <${contact}>`;
-            return `${siteName} <no-reply@localhost>`;
+    private buildFrom(settings?: Setting): string {
+        const siteName = settings?.siteName ?? process.env.PROJECT_NAME ?? 'No-Reply';
+        const contact =
+            settings?.contactEmail ??
+            process.env.EMAIL_USER ??
+            process.env.EMAIL_FROM ??
+            '';
+
+        if (contact) {
+            return `"${siteName}" <${contact}>`;
         }
+        return `${siteName} <no-reply@localhost>`;
     }
 
+    getSiteLogo(settings?: Setting): string | null {
+
+        const html = settings?.siteLogo ? `
+      <div style="margin-bottom:25px; display:flex; justify-content:center; align-items:center;gap:4px;">
+        <img src="${resolveUrl(settings.siteLogo)}" alt="Platform Logo" style="max-width:160px;width:42px;height:42px" />
+        <div>${settings.siteName || "Helhal"}</div>
+      </div> `: null;
+        return html;
+    }
 
     private async getSettings(): Promise<Setting | null> {
         try {
@@ -53,6 +58,9 @@ export class MailService {
 
     async sendOTPEmail(to: string, otp: string, actionType: string) {
         if (!to) return;
+
+        const settings = await this.getSettings();
+
         const htmlContent = `
     <!DOCTYPE html>
     <html lang="en">
@@ -76,13 +84,6 @@ export class MailService {
           border-radius: 8px;
           box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
           overflow: hidden;
-        }
-        .logo {
-          text-align: center;
-          margin-bottom: 30px;
-        }
-        .logo img {
-          max-width: 180px;
         }
         .content {
           text-align: center;
@@ -153,10 +154,8 @@ export class MailService {
       </style>
     </head>
     <body>
-      <div class="email-container">
-        <div class="logo">
-          <img src="https://yourlogo.com/logo.png" alt="Project Logo">
-        </div>
+    <div class="email-container">
+        ${this.getSiteLogo(settings) || ''}
         <div class="content">
           <h2>Your OTP Code</h2>
           <p>We received a request to ${actionType}. Use the OTP code below to proceed:</p>
@@ -171,10 +170,10 @@ export class MailService {
       </div>
     </body>
     </html>
-    `;
+        `;
 
         await this.transporter.sendMail({
-            from: await this.getFrom(),
+            from: this.buildFrom(settings),
             to,
             subject: actionType,
             html: htmlContent,
@@ -183,6 +182,7 @@ export class MailService {
 
     async sendVerificationEmail(email: string, code: string, username: string) {
         if (!email) return;
+        const settings = await this.getSettings();
         const subject = 'Verify Your Email Address';
 
         const html = `
@@ -279,6 +279,7 @@ export class MailService {
         <body>
             <div class="container">
                 <div class="email-content">
+                    ${this.getSiteLogo(settings) || ''}
                     <div class="email-header">
                         Welcome, ${username}!
                     </div>
@@ -293,7 +294,7 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: await this.getFrom(),
+            from: this.buildFrom(settings),
             to: email,
             subject,
             html,
@@ -303,11 +304,11 @@ export class MailService {
     async sendPasswordResetOtp(email: string, username: string, otp: string) {
         if (!email) return;
         const subject = 'Password Reset OTP';
+        const settings = await this.getSettings();
         // fetch support email from settings (cache) with env fallback
         const supportEmail = await (async () => {
             try {
-                const s = await this.cacheManager.get<Setting>(this.settingsService.CACHE_KEY);
-                const settings = s ?? await this.settingsService.getSettings();
+
                 return settings?.contactEmail ?? process.env.SUPPORT_EMAIL ?? process.env.EMAIL_FROM ?? 'support@example.com';
             } catch (err) {
                 return process.env.SUPPORT_EMAIL ?? process.env.EMAIL_FROM ?? 'support@example.com';
@@ -391,6 +392,7 @@ export class MailService {
       <body>
           <div class="container">
               <div class="email-content">
+                ${this.getSiteLogo(settings) || ''}
                   <div class="email-header">
                       Hello ${username},
                   </div>
@@ -410,7 +412,7 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: await this.getFrom(),
+            from: await this.buildFrom(settings),
             to: email,
             subject,
             html,
@@ -419,6 +421,7 @@ export class MailService {
 
     async sendPasswordChangeNotification(userEmail: string, username: string, adminEmail: string) {
         if (!userEmail) return;
+        const settings = await this.getSettings();
         const subject = 'Password Changed Successfully';
 
         const html = `
@@ -485,6 +488,7 @@ export class MailService {
       <body>
           <div class="container">
               <div class="email-content">
+              ${this.getSiteLogo(settings) || ''}
                   <div class="email-header">
                       Hello ${username},
                   </div>
@@ -502,16 +506,16 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: await this.getFrom(),
+            from: await this.buildFrom(settings),
             to: userEmail,
             subject,
             html,
         });
     }
 
-
     async sendEmailChangeNotification(userEmail: string, username: string, adminEmail: string) {
         if (!userEmail) return;
+        const settings = await this.getSettings();
         const subject = 'Email Address Updated Successfully';
 
         const html = `
@@ -578,6 +582,7 @@ export class MailService {
       <body>
           <div class="container">
               <div class="email-content">
+              ${this.getSiteLogo(settings) || ''}
                   <div class="email-header">
                       Hello ${username},
                   </div>
@@ -595,18 +600,17 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: await this.getFrom(),
+            from: await this.buildFrom(settings),
             to: userEmail,
             subject,
             html,
         });
     }
 
-
     async sendEmailChangeConfirmation(email: string, username: string, userId: string, code: string) {
         if (!email) return;
         const subject = 'Confirm Your New Email Address';
-
+        const settings = await this.getSettings();
         const confirmLink = `${process.env.BACKEND_URL}/api/v1/auth/confirm-email-change?userId=${userId}&pendingEmail=${encodeURIComponent(email)}&code=${code}`;
 
         const html = `
@@ -683,6 +687,7 @@ export class MailService {
       <body>
           <div class="container">
               <div class="email-content">
+              ${this.getSiteLogo(settings) || ''}
                   <div class="email-header">
                       Hello ${username},
                   </div>
@@ -699,7 +704,7 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: await this.getFrom(),
+            from: await this.buildFrom(settings),
             to: email,
             subject,
             html,
@@ -714,7 +719,7 @@ export class MailService {
     }) {
 
         if (!opts.to) return;
-
+        const settings = await this.getSettings();
         const htmlContent = `
   <!DOCTYPE html>
   <html lang="en">
@@ -765,7 +770,7 @@ export class MailService {
   </head>
   <body>
     <div class="email-container">
-
+    ${this.getSiteLogo(settings) || ''}
       <h2>You Have Been Invited!</h2>
 
       <p><strong>${opts.senderName}</strong> has invited you to join our platform.</p>
@@ -788,13 +793,12 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: await this.getFrom(),
+            from: await this.buildFrom(settings),
             to: opts.to,
             subject: opts.subject,
             html: htmlContent,
         });
     }
-
 
     async sendWelcomeEmail(
         email: string,
@@ -802,7 +806,7 @@ export class MailService {
         role: string
     ) {
         if (!email) return;
-
+        const settings = await this.getSettings();
         const isSeller = role === 'seller';
 
         const subject = isSeller
@@ -911,10 +915,7 @@ export class MailService {
     <body>
       <div class="container">
         <div class="email-content">
-          <div class="logo">
-            <img src="${process.env.FRONTEND_URL}" alt="Platform Logo" />
-          </div>
-
+        ${this.getSiteLogo(settings) || ''}
           <div class="email-header">
             ${mainTitle}
           </div>
@@ -941,14 +942,12 @@ export class MailService {
   `;
 
         await this.transporter.sendMail({
-            from: await this.getFrom(),
+            from: await this.buildFrom(settings),
             to: email,
             subject,
             html,
         });
     }
-
-
 
     async sendSellerFeePolicyEmail(email: string, username: string) {
         if (!email) return;
@@ -963,6 +962,7 @@ export class MailService {
         const html = `
     <html>
         <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; background-color: #f5f7fb; padding: 20px;">
+        ${this.getSiteLogo(settings) || ''}
             <div style="max-width: 600px; margin: auto; background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
                 <h2 style="color: #2e7d32; text-align: center;">Transparent Pricing for Sellers</h2>
                 <p>Hello ${username},</p>
@@ -1041,7 +1041,7 @@ export class MailService {
     `;
 
         await this.transporter.sendMail({
-            from: await this.getFrom(),
+            from: await this.buildFrom(settings),
             to: email,
             subject,
             html,

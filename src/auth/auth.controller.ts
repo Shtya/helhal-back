@@ -443,7 +443,7 @@ export class AuthController {
   @Get('google')
   googleAuth(@Query('redirect') redirect?: string, @Query('ref') ref?: string, @Query('type') type?: string) {
     const backendRedirectUri = `${process.env.BACKEND_URL}/api/v1/auth/google/callback`;
-    const state = this.oauthService.createOAuthState(redirect || 'http://localhost:3000', type);
+    const state = this.oauthService.createOAuthState(redirect || 'http://localhost:3000', ref, type);
     const url = `https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=${encodeURIComponent(backendRedirectUri)}&response_type=code&client_id=${process.env.GOOGLE_CLIENT_ID}&scope=email%20profile&state=${encodeURIComponent(state)}&access_type=offline`;
     return { redirectUrl: url.replace(/\s+/g, '') };
   }

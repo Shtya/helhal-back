@@ -50,7 +50,11 @@ import { CountriesModule } from './countries/countries.module';
     }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forFeature([Notification]),
-    ConfigModule.forRoot(),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env', '.env.development', '.env.production'],
+      expandVariables: true,
+    }),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DATABASE_HOST,

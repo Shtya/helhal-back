@@ -3,6 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { CoreEntity } from './core.entity';
 import { Asset } from './assets.entity';
+import { decimalToNumberTransformer } from 'utils/transformers';
 
 export type IUserRole = 'buyer' | 'seller' | 'admin';
 
@@ -236,7 +237,7 @@ export class User extends CoreEntity {
   @Column({ type: 'jsonb', default: [] })
   portfolioItems: any[];
 
-  @Column({ name: 'response_time', type: 'decimal', nullable: true })
+  @Column({ name: 'response_time', type: 'decimal', nullable: true, transformer: decimalToNumberTransformer })
   responseTime: number;
 
   @Column({ name: 'response_time_formatted', type: 'varchar', nullable: true })
@@ -267,13 +268,13 @@ export class User extends CoreEntity {
   @Column({ type: 'jsonb', default: {} })
   preferences: any;
 
-  @Column({ type: 'decimal', default: 0 })
+  @Column({ type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   balance: number;
 
-  @Column({ name: 'total_spent', type: 'decimal', default: 0 })
+  @Column({ name: 'total_spent', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   totalSpent: number;
 
-  @Column({ name: 'total_earned', type: 'decimal', default: 0 })
+  @Column({ name: 'total_earned', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   totalEarned: number;
 
   @Column({ name: 'reputation_points', default: 0 })
@@ -584,11 +585,10 @@ export class Setting extends CoreEntity {
   @Column({ name: 'support_phone' })
   supportPhone: string;
 
-  @Column({ name: 'platform_percent', type: 'decimal', default: 0 })
+  @Column({ name: 'platform_percent', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   platformPercent: number;
 
-
-  @Column({ name: 'seller_service_fee', type: 'decimal', default: 0 })
+  @Column({ name: 'seller_service_fee', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   sellerServiceFee: number;
 
   @Column({ name: 'default_currency' })
@@ -663,7 +663,7 @@ export class Wallet {
   userId: string | null;
 
   // Wallet balance in smallest currency unit (or just decimal if simpler)
-  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0, transformer: decimalToNumberTransformer })
   balance: number;
 
   @Column({ type: 'varchar', length: 3, default: 'USD' })
@@ -1082,7 +1082,7 @@ export class Job extends CoreEntity {
   @Column({ name: 'subcategory_id', nullable: true })
   subcategoryId: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2 })
+  @Column({ type: 'decimal', precision: 10, scale: 2, transformer: decimalToNumberTransformer })
   budget: number;
 
   @Column({ type: 'enum', enum: BudgetType, default: BudgetType.FIXED })
@@ -1170,8 +1170,13 @@ export class Proposal extends CoreEntity {
   @Column({ name: 'cover_letter', type: 'text' })
   coverLetter: string;
 
-  @Column({ name: 'bid_amount', type: 'decimal' })
+  @Column({
+    name: 'bid_amount',
+    type: 'decimal',
+    transformer: decimalToNumberTransformer
+  })
   bidAmount: number;
+
 
   @Column({ type: 'text', nullable: true })
   portfolio: string;
@@ -1272,10 +1277,10 @@ export class Order extends CoreEntity {
   @Column({ name: 'submission_date', type: 'timestamptz', nullable: true })
   submissionDate: Date;
 
-  @Column({ name: 'total_amount', type: 'decimal' })
+  @Column({ name: 'total_amount', type: 'decimal', transformer: decimalToNumberTransformer })
   totalAmount: number;
 
-  @Column({ name: 'seller_service_fee', type: 'decimal' })
+  @Column({ name: 'seller_service_fee', type: 'decimal', transformer: decimalToNumberTransformer })
   sellerServiceFee: number;
 
   @Column({ type: 'enum', enum: PackageType })
@@ -1379,16 +1384,16 @@ export class Invoice extends CoreEntity {
   @Column({ name: 'order_id', unique: true })
   orderId: string;
 
-  @Column({ type: 'decimal' })
+  @Column({ type: 'decimal', transformer: decimalToNumberTransformer })
   subtotal: number;
 
-  @Column({ name: 'service_fee', type: 'decimal' })
+  @Column({ name: 'service_fee', type: 'decimal', transformer: decimalToNumberTransformer })
   sellerServiceFee: number;
 
-  @Column({ name: 'platform_percent', type: 'decimal' })
+  @Column({ name: 'platform_percent', type: 'decimal', transformer: decimalToNumberTransformer })
   platformPercent: number;
 
-  @Column({ name: 'total_amount', type: 'decimal' })
+  @Column({ name: 'total_amount', type: 'decimal', transformer: decimalToNumberTransformer })
   totalAmount: number;
 
   // @Column({ name: 'currency_id' })
@@ -1441,7 +1446,7 @@ export class Payment extends CoreEntity {
   @Column({ name: 'user_id' })
   userId: string;
 
-  @Column({ type: 'decimal' })
+  @Column({ type: 'decimal', transformer: decimalToNumberTransformer })
   amount: number;
 
   @Column({ name: 'currency_id' })
@@ -1471,7 +1476,7 @@ export class Currency extends CoreEntity {
   @Column()
   symbol: string;
 
-  @Column({ name: 'exchange_rate', type: 'decimal' })
+  @Column({ name: 'exchange_rate', type: 'decimal', transformer: decimalToNumberTransformer })
   exchangeRate: number;
 }
 
@@ -1877,16 +1882,16 @@ export class UserBalance extends CoreEntity {
   @Column({ name: 'user_id', unique: true })
   userId: string;
 
-  @Column({ name: 'available_balance', type: 'decimal', default: 0 })
+  @Column({ name: 'available_balance', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   availableBalance: number;
 
-  @Column({ type: 'decimal', default: 0 })
+  @Column({ type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   credits: number;
 
-  @Column({ name: 'earnings_to_date', type: 'decimal', default: 0 })
+  @Column({ name: 'earnings_to_date', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   earningsToDate: number;
 
-  @Column({ name: 'cancelled_orders_credit', type: 'decimal', default: 0 })
+  @Column({ name: 'cancelled_orders_credit', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   cancelledOrdersCredit: number;
 }
 
@@ -1902,7 +1907,7 @@ export class Transaction extends CoreEntity {
   @Column()
   type: string;
 
-  @Column({ type: 'decimal' })
+  @Column({ type: 'decimal', transformer: decimalToNumberTransformer })
   amount: number;
 
   @Column({ name: 'currency_id' })
@@ -2058,7 +2063,7 @@ export class Referral extends CoreEntity {
   @Column({ name: 'referral_code' })
   referralCode: string;
 
-  @Column({ name: 'credit_earned', type: 'decimal', precision: 10, scale: 2, default: 0 })
+  @Column({ name: 'credit_earned', type: 'decimal', precision: 10, scale: 2, default: 0, transformer: decimalToNumberTransformer })
   creditEarned: number;
 
   @Column({ name: 'completed_at', type: 'timestamptz', nullable: true })
@@ -2080,7 +2085,7 @@ export class Affiliate extends CoreEntity {
   @Column({ name: 'referral_code', unique: true })
   referralCode: string;
 
-  @Column({ name: 'commission_percent', type: 'decimal', default: 10 })
+  @Column({ name: 'commission_percent', type: 'decimal', default: 10, transformer: decimalToNumberTransformer })
   commissionPercent: number;
 
   @Column({ default: 0 })
@@ -2092,7 +2097,7 @@ export class Affiliate extends CoreEntity {
   @Column({ default: 0 })
   conversions: number;
 
-  @Column({ type: 'decimal', default: 0 })
+  @Column({ type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   earnings: number;
 }
 
@@ -2127,7 +2132,7 @@ export class Report extends CoreEntity {
   @Column({ name: 'currency' })
   currency: string;
 
-  @Column({ name: 'total_amount', type: 'decimal' })
+  @Column({ name: 'total_amount', type: 'decimal', transformer: decimalToNumberTransformer })
   totalAmount: number;
 }
 
