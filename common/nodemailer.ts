@@ -3,7 +3,7 @@ import { SettingsService } from 'src/settings/settings.service';
 import * as nodemailer from 'nodemailer';
 import { CACHE_MANAGER, Cache } from '@nestjs/cache-manager';
 import { Setting } from 'entities/global.entity';
-import { resolveUrl } from 'utils/url';
+import * as path from 'path';
 
 @Injectable()
 export class MailService {
@@ -32,16 +32,23 @@ export class MailService {
         }
         return `${siteName} <no-reply@localhost>`;
     }
-
     getSiteLogo(settings?: Setting): string | null {
+        if (!settings?.siteLogo) return null;
 
-        const html = settings?.siteLogo ? `
-      <div style="margin-bottom:25px; display:flex; justify-content:center; align-items:center;gap:4px;">
-        <img src="${resolveUrl(settings.siteLogo)}" alt="Platform Logo" style="max-width:160px;width:42px;height:42px" />
-        <div>${settings.siteName || "Helhal"}</div>
-      </div> `: null;
-        return html;
+        return `
+    <table role="presentation" style="margin: 0 auto 25px auto;">
+      <tr>
+        <td style="padding-right: 8px;">
+          <img src="cid:logo" alt="Platform Logo" style="max-width:160px;width:42px;height:42px;vertical-align:middle;" />
+        </td>
+        <td style="font-family: Arial, sans-serif; font-size:16px; color:#333; vertical-align:middle;">
+          ${settings.siteName || "Helhal"}
+        </td>
+      </tr>
+    </table>
+  `;
     }
+
 
     private async getSettings(): Promise<Setting | null> {
         try {
@@ -177,6 +184,14 @@ export class MailService {
             to,
             subject: actionType,
             html: htmlContent,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: path.join(process.cwd(), settings.siteLogo.replace(/^\/+/, '')),
+                    cid: 'logo'
+                    // must match the src 
+                }
+            ]
         });
     }
 
@@ -298,6 +313,14 @@ export class MailService {
             to: email,
             subject,
             html,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: path.join(process.cwd(), settings.siteLogo.replace(/^\/+/, '')),
+                    cid: 'logo'
+                    // must match the src 
+                }
+            ]
         });
     }
 
@@ -416,6 +439,14 @@ export class MailService {
             to: email,
             subject,
             html,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: path.join(process.cwd(), settings.siteLogo.replace(/^\/+/, '')),
+                    cid: 'logo'
+                    // must match the src 
+                }
+            ]
         });
     }
 
@@ -510,6 +541,14 @@ export class MailService {
             to: userEmail,
             subject,
             html,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: path.join(process.cwd(), settings.siteLogo.replace(/^\/+/, '')),
+                    cid: 'logo'
+                    // must match the src 
+                }
+            ]
         });
     }
 
@@ -604,6 +643,14 @@ export class MailService {
             to: userEmail,
             subject,
             html,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: path.join(process.cwd(), settings.siteLogo.replace(/^\/+/, '')),
+                    cid: 'logo'
+                    // must match the src 
+                }
+            ]
         });
     }
 
@@ -708,6 +755,14 @@ export class MailService {
             to: email,
             subject,
             html,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: path.join(process.cwd(), settings.siteLogo.replace(/^\/+/, '')),
+                    cid: 'logo'
+                    // must match the src 
+                }
+            ]
         });
     }
 
@@ -797,6 +852,14 @@ export class MailService {
             to: opts.to,
             subject: opts.subject,
             html: htmlContent,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: path.join(process.cwd(), settings.siteLogo.replace(/^\/+/, '')),
+                    cid: 'logo'
+                    // must match the src 
+                }
+            ]
         });
     }
 
@@ -946,6 +1009,14 @@ export class MailService {
             to: email,
             subject,
             html,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: path.join(process.cwd(), settings.siteLogo.replace(/^\/+/, '')),
+                    cid: 'logo'
+                    // must match the src 
+                }
+            ]
         });
     }
 
@@ -1045,6 +1116,14 @@ export class MailService {
             to: email,
             subject,
             html,
+            attachments: [
+                {
+                    filename: 'logo.png',
+                    path: path.join(process.cwd(), settings.siteLogo.replace(/^\/+/, '')),
+                    cid: 'logo'
+                    // must match the src 
+                }
+            ]
         });
     }
 
