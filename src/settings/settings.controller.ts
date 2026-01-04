@@ -39,6 +39,8 @@ export class SettingsController {
       instagram: settings.instagram,
       linkedin: settings.linkedin,
       pinterest: settings.pinterest,
+      sellerServiceFee: settings.sellerServiceFee,
+
     };
   }
 
