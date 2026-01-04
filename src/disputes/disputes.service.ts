@@ -79,15 +79,17 @@ export class DisputesService {
       where: { id: disputeId },
       relations: ['order', 'raisedBy', 'order.buyer', 'order.seller'],
     });
-    if (!dispute) throw new NotFoundException('Dispute not found');
 
+    if (!dispute) throw new NotFoundException('Dispute not found');
     const user = await this.userRepository
       .createQueryBuilder('user')
       .addSelect('user.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
-    const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.Chat);
+    if (!user) throw new NotFoundException('User not found');
+
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.Chat);
 
     const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user.role === 'admin' || hasPermission;
     if (!involved) throw new ForbiddenException('Access denied');
@@ -166,7 +168,7 @@ export class DisputesService {
       .where('user.id = :id', { id: userId })
       .getOne();
 
-    const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.Chat);
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.Chat);
 
     const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user?.role === 'admin' || hasPermission;
     if (!involved) throw new ForbiddenException('Access denied');
@@ -312,7 +314,7 @@ export class DisputesService {
       .getOne();
 
     const isInvolved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId;
-    const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.View);
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.View);
 
     if (!(user.role === 'admin' || hasPermission || !isInvolved)) throw new ForbiddenException('Access denied');
 
@@ -328,7 +330,7 @@ export class DisputesService {
 
     const dispute = await this.getDispute(userId, user.role, disputeId);
 
-    const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.ChangeStatus);
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.ChangeStatus);
 
     // Only admins can change to in_review / resolved / rejected
     if (status === DisputeStatus.OPEN && !(user.role === 'admin' || hasPermission)) {
@@ -435,7 +437,7 @@ export class DisputesService {
       .where('user.id = :id', { id: userId })
       .getOne();
 
-    const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.ChangeStatus);
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.ChangeStatus);
 
     if (next !== DisputeStatus.OPEN && !(user.role === 'admin' || hasPermission)) {
       const isAccepting = next === DisputeStatus.RESOLVED && prev === DisputeStatus.IN_REVIEW && !!dispute.resolution && (order.buyerId === userId || order.sellerId === userId);
@@ -754,7 +756,7 @@ export class DisputesService {
       .where('user.id = :id', { id: userId })
       .getOne();
 
-    const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.ChangeStatus);
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.ChangeStatus);
     const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user?.role === 'admin' || hasPermission;
     if (!involved) throw new ForbiddenException('Access denied');
 
@@ -798,7 +800,7 @@ export class DisputesService {
       .addSelect('user.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
-    const hasPermission = PermissionBitmaskHelper.has(user.permissions.disputes, Permissions.Disputes.Propose);
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.Propose);
 
     if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException('Only administrators can resolve & payout');
     const dispute = await this.disputeRepository.findOne({ where: { id: disputeId }, relations: ['order'] });

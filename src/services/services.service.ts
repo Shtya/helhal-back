@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In, Between, LessThanOrEqual, MoreThanOrEqual, DataSource, MoreThan } from 'typeorm';
-import { Service, Category, User, ServiceStatus, ServiceRequirement, ServiceReview, Notification, ServiceClick } from 'entities/global.entity';
+import { Service, Category, User, ServiceStatus, ServiceRequirement, ServiceReview, Notification, ServiceClick, Country, State } from 'entities/global.entity';
 import { join } from 'path';
 import { promises as fsp } from 'fs';
 import { SessionService } from 'src/auth/session.service';
@@ -24,12 +24,16 @@ export class ServicesService {
     public serviceClickRepository: Repository<ServiceClick>,
     @InjectRepository(Notification) private notificationRepository: Repository<Notification>,
     @InjectRepository(ServiceReview) private reviewRepository: Repository<ServiceReview>,
+    @InjectRepository(Country)
+    public countryRepository: Repository<Country>,
+    @InjectRepository(State)
+    public stateRepository: Repository<State>,
     private readonly dataSource: DataSource,
     public sessionService: SessionService,
   ) { }
 
   async getServices(query: any) {
-    const { page = 1, limit = 20, category, subcategory, minPrice, maxPrice, sortBy = 'created_at', sortOrder = 'DESC', status } = query;
+    const { page = 1, limit = 20, category, subcategory, minPrice, maxPrice, sortBy = 'created_at', sortOrder = 'DESC', status, } = query;
 
     const skip = (page - 1) * limit;
     const whereClause: any = {};
@@ -197,6 +201,7 @@ export class ServicesService {
             WHERE s.status = 'Active'
               AND s.deleted_at IS NULL
               ${categoryId ? 'AND s.category_id = :categoryId' : ''}
+              AND u.seller_level IS NOT NULL
             GROUP BY u.seller_level
           ),
           seller_levels AS (
@@ -211,6 +216,7 @@ export class ServicesService {
             WHERE s.status = 'Active'
               AND s.deleted_at IS NULL
               ${categoryId ? 'AND s.category_id = :categoryId' : ''}
+              AND lang.value IS NOT NULL
             GROUP BY lang.value
           ),
           languages AS (
@@ -236,6 +242,7 @@ export class ServicesService {
             WHERE s.status = 'Active'
               AND s.deleted_at IS NULL
               ${categoryId ? 'AND s.category_id = :categoryId' : ''}
+              AND c.name IS NOT NULL
             GROUP BY c.name
           ),
           seller_countries AS (
@@ -335,7 +342,7 @@ export class ServicesService {
   }
 
   async getCategoryServices(categorySlug: string, query: any) {
-    const { page = 1, limit = 8, search = '', priceRange = '', rating = '', sortBy = '', sellerLevel = '', sellerAvailability = '', sellerSpeaks = '', sellerCountries = '', budget = '', deliveryTime = '', revisions = '', fastDelivery = '', additionalRevision = '', customBudget = '', customDeliveryTime = '' } = query;
+    const { page = 1, limit = 8, search = '', priceRange = '', rating = '', sortBy = '', sellerLevel = '', sellerAvailability = '', sellerSpeaks = '', sellerCountries = '', budget = '', deliveryTime = '', revisions = '', fastDelivery = '', additionalRevision = '', customBudget = '', customDeliveryTime = '', country = '', state = "" } = query;
 
     const skip = (page - 1) * limit;
 
@@ -404,6 +411,16 @@ export class ServicesService {
         { formattedSearch, rawSearch }
       );
     }
+
+    // ---  filter ---
+    if (country) {
+      queryBuilder.andWhere('service.countryId = :countryId', { countryId: country });
+    }
+
+    if (state) {
+      queryBuilder.andWhere('service.stateId = :stateId', { stateId: state });
+    }
+
 
     // Price range filter (from the simple select)
     if (priceRange) {
@@ -571,7 +588,7 @@ export class ServicesService {
   async getService(slug: string, userId: string, req: any) {
     const service = await this.serviceRepository.findOne({
       where: { slug },
-      relations: ['seller', 'category', 'subcategory', 'requirements', 'reviews'],
+      relations: ['seller', 'category', 'subcategory', 'requirements', 'reviews', 'country', 'state'],
     });
 
     if (!service) {
@@ -661,6 +678,23 @@ export class ServicesService {
         `Service with title "${createServiceDto.title}" already exists. Please choose a different title.`
       );
     }
+
+    if (createServiceDto.countryId) {
+      const country = await this.countryRepository.findOne({ where: { id: createServiceDto.countryId } } as any);
+      if (!country) throw new NotFoundException('Country not found');
+    }
+    else {
+      throw new NotFoundException('Country not found');
+    }
+
+
+    if (createServiceDto.stateId) {
+      const state = await this.stateRepository.findOne({ where: { id: createServiceDto.stateId, countryId: createServiceDto.countryId } } as any);
+      if (!state) throw new NotFoundException('State not found or does not belong to the selected country');
+    } else {
+      delete createServiceDto.stateId;
+    }
+
 
     // Create service with pending status
     const service = this.serviceRepository.create({

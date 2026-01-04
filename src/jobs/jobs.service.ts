@@ -79,6 +79,7 @@ export class JobsService {
       );
     }
 
+
     // ---  filter ---
     if (country) {
       qb.andWhere('job.countryId = :countryId', { countryId: country });
@@ -356,7 +357,7 @@ export class JobsService {
       relations: ['buyer'],
     });
     if (!job) throw new NotFoundException('Job not found');
-    const hasPermission = PermissionBitmaskHelper.has(actor.permissions.jobs, Permissions.Jobs.Edit)
+    const hasPermission = PermissionBitmaskHelper.has(actor.permissions?.jobs, Permissions.Jobs.Edit)
 
     if (!(actor?.role === UserRole.ADMIN || hasPermission)) {
       if (job.buyerId !== userId) throw new ForbiddenException('You can only update your own jobs');
@@ -411,7 +412,7 @@ export class JobsService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    const hasPermission = PermissionBitmaskHelper.has(user.permissions.jobs, Permissions.Jobs.Edit)
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.jobs, Permissions.Jobs.Edit)
 
     // Allow delete if the user is the owner or an admin
     if (!(job.buyerId === userId && user.role === 'admin' || hasPermission)) {

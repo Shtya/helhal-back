@@ -3,7 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { CoreEntity } from './core.entity';
 import { Asset } from './assets.entity';
-import { decimalToNumberTransformer } from 'utils/transformers';
+import { decimalToNumberTransformer } from '../utils/transformers';
 
 export type IUserRole = 'buyer' | 'seller' | 'admin';
 
@@ -908,6 +908,20 @@ export class Service extends CoreEntity {
   // {type<image | video | document> , fileName ,url}
   gallery: any[];
 
+  @ManyToOne(() => Country)
+  @JoinColumn({ name: 'country_id', })
+  country: Country;
+
+  @Column({ name: 'country_id' })
+  countryId: string;
+
+  @ManyToOne(() => State)
+  @JoinColumn({ name: 'state_id' })
+  state: State | null;
+
+  @Column({ name: 'state_id', nullable: true })
+  stateId: string | null;
+
   @OneToMany(() => ServiceRequirement, requirement => requirement.service)
   requirements: ServiceRequirement[];
 
@@ -1119,10 +1133,10 @@ export class Job extends CoreEntity {
 
   @ManyToOne(() => Country)
   @JoinColumn({ name: 'country_id' })
-  country: Country | null;
+  country: Country;
 
-  @Column({ name: 'country_id', nullable: true })
-  countryId: string | null;
+  @Column({ name: 'country_id' })
+  countryId: string;
 
   @ManyToOne(() => State)
   @JoinColumn({ name: 'state_id' })

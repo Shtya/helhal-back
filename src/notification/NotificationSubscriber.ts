@@ -2,7 +2,6 @@ import { Injectable, OnModuleInit } from "@nestjs/common";
 import { Notification } from "entities/global.entity";
 import { ChatGateway } from "src/chat/chat.gateway";
 import {
-    EventSubscriber,
     EntitySubscriberInterface,
     InsertEvent,
     DataSource,
