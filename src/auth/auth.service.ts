@@ -6,13 +6,13 @@ import { Response } from 'express';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
-import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount } from 'entities/global.entity';
-import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, UpdateUserPermissionsDto } from 'dto/user.dto';
+import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount, PendingPhoneRegistration } from 'entities/global.entity';
+import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, UpdateUserPermissionsDto, PhoneRegisterDto } from 'dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from 'common/nodemailer';
 import { SessionService } from './session.service';
-import { PermissionBitmaskHelper } from './permission-bitmask.helper';
-import { PermissionDomain, PermissionDomains } from 'entities/permissions';
+import { PermissionDomains } from 'entities/permissions';
+import { SmsService } from 'common/sms-service';
 
 @Injectable()
 export class AuthService {
@@ -25,6 +25,8 @@ export class AuthService {
 
     @InjectRepository(PendingUserRegistration)
     public pendingUserRepository: Repository<PendingUserRegistration>,
+    @InjectRepository(PendingPhoneRegistration)
+    public pendingPhoneRepository: Repository<PendingPhoneRegistration>,
     @InjectRepository(AccountDeactivation) public accountDeactivationRepository: Repository<AccountDeactivation>,
     @InjectRepository(Order) private orderRepository: Repository<Order>,
     @InjectRepository(ServiceReview) private reviewRepository: Repository<ServiceReview>,
@@ -35,6 +37,7 @@ export class AuthService {
     public jwtService: JwtService,
     public configService: ConfigService,
     public emailService: MailService,
+    public smsService: SmsService,
     public sessionService: SessionService,
   ) { }
 
@@ -145,7 +148,7 @@ export class AuthService {
       }
     }
 
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const verificationCode = this.generateOTP();
     const documentExpiresAt = new Date(currentTimestamp + this.DOCUMENT_EXPIRY_HOURS * 60 * 60 * 1000);
     const codeExpiresAt = new Date(currentTimestamp + this.CODE_EXPIRY_MINUTES * 60 * 1000);
 
@@ -307,7 +310,7 @@ export class AuthService {
       }
     }
 
-    const newVerificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const newVerificationCode = this.generateOTP();
     const newDocumentExpiresAt = new Date(currentTimestamp + this.DOCUMENT_EXPIRY_HOURS * 60 * 60 * 1000);
     const newCodeExpiresAt = new Date(currentTimestamp + this.CODE_EXPIRY_MINUTES * 60 * 1000);
 
@@ -343,6 +346,10 @@ export class AuthService {
       throw new UnauthorizedException('Please verify your email before logging in');
     }
 
+    return await this.generateTokens(user, res, req)
+  }
+
+  private async generateTokens(user, res: Response, req) {
 
     user.lastLogin = new Date();
     const deviceInfo = await this.sessionService.getDeviceInfoFromRequest(req);
@@ -503,7 +510,7 @@ export class AuthService {
 
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = this.generateOTP();
 
     user.lastResetPasswordSentAt = new Date();
     user.resetPasswordToken = otp;
@@ -641,6 +648,33 @@ export class AuthService {
 
       user.username = updateData.username;
     }
+
+    if (
+      updateData.phone &&
+      updateData.countryCode &&
+      (
+        updateData.phone !== user.phone ||
+        JSON.stringify(updateData.countryCode) !== JSON.stringify(user.countryCode)
+      )
+    ) {
+      const exists = await this.userRepository
+        .createQueryBuilder('u')
+        .where('u.phone = :phone', { phone: updateData.phone })
+        .andWhere("u.countryCode::jsonb @> :countryCode", {
+          countryCode: JSON.stringify(updateData.countryCode),
+        })
+        .andWhere('u.id != :id', { id: user.id })
+        .getOne();
+
+      if (exists) {
+        throw new ConflictException('Phone number with this country code already in use');
+      }
+
+      user.phone = updateData.phone;
+      user.countryCode = updateData.countryCode;
+      user.isPhoneVerified = false;
+    }
+
 
     for (const f of allowedFields) {
       if (f !== 'email' && typeof (updateData as any)[f] !== 'undefined') {
@@ -852,7 +886,7 @@ export class AuthService {
     }
 
     // Update last sent timestamp
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const code = this.generateOTP();
 
     user.lastEmailChangeSentAt = new Date();
     user.pendingEmail = newEmail;
@@ -1253,6 +1287,379 @@ export class AuthService {
     await qb.execute();
 
     return this.userRepository.save(user);
+  }
+
+
+  //for loged in users that want to send varification code to verify their phone 
+  async sendPhoneVerificationOTP(userId: string) {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.isPhoneVerified) {
+      throw new BadRequestException('Your phone is already verified.');
+    }
+
+    if (!user.phone || !user.countryCode?.dial_code || !user.countryCode?.code) {
+      throw new BadRequestException(
+        'To verify your phone, please complete your phone information: phone number and country code are required.'
+      );
+    }
+
+    if (user.countryCode.code !== 'SA' && user.countryCode.dial_code !== '+966') {
+      throw new BadRequestException(
+        'We currently only support phone numbers registered in Saudi Arabia (+966).'
+      );
+    }
+
+
+    // ✅ Enforce resend cooldown
+    const currentTimestamp = Date.now();
+    if (user.otpLastSentAt) {
+      const lastSentTime = user.otpLastSentAt.getTime();
+      const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
+
+      if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
+        const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+        const remainingMinutes = Math.ceil(remainingSeconds / 60);
+        throw new ForbiddenException(
+          `Please wait ${remainingMinutes} minutes before requesting another OTP`
+        );
+      }
+    }
+
+    // ✅ Decide whether to reuse or generate OTP
+    let otpCode: string;
+    if (user.otpCode && user.otpExpiresAt && new Date() < user.otpExpiresAt) {
+      otpCode = user.otpCode;
+    } else {
+      otpCode = this.generateOTP();
+      user.otpCode = otpCode;
+    }
+
+    user.otpExpiresAt = new Date(currentTimestamp + this.CODE_EXPIRY_MINUTES * 60 * 1000);
+    user.otpLastSentAt = new Date(currentTimestamp);
+    await this.userRepository.save(user);
+
+    // ✅ Send OTP via SMS provider
+    await this.smsService.send(
+      user.phone,
+      user.countryCode.dial_code,
+      `Your Helhal OTP is ${user.otpCode}. It expires in ${this.CODE_EXPIRY_MINUTES} minutes.`
+    );
+
+    return { message: 'OTP sent successfully to your phone number' };
+  }
+
+  //for loged in users that want to verify their phone
+  async verifyPhoneOTP(
+    userId,
+    otpCode: string,
+  ) {
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.isPhoneVerified) {
+      throw new BadRequestException(
+        'Your phone is already verified.'
+      );
+    }
+
+    if (!user.phone || !user.countryCode?.dial_code || user.countryCode?.code) {
+      throw new BadRequestException('To verify your phone, please complete your phone information: phone number and country code are required.');
+    }
+
+    if (!user.otpCode || user.otpCode !== otpCode) {
+      throw new BadRequestException('Invalid OTP code');
+    }
+    if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) {
+      throw new BadRequestException('OTP has expired');
+    }
+
+
+    user.isPhoneVerified = true;
+
+
+    user.otpCode = null;
+    user.otpExpiresAt = null;
+    user.otpLastSentAt = null;
+
+    await this.userRepository.save(user);
+
+    // 🔹 Return a simple success response (no login tokens)
+    return { message: 'Phone number successfully verified' };
+  }
+
+  //for login or register with phone
+  async phoneAuth(dto: PhoneRegisterDto) {
+    const { phone, countryCode, role, type, ref } = dto;
+    if (!phone || !countryCode?.code || !countryCode?.dial_code) {
+      throw new UnauthorizedException('Phone or country code missing');
+    }
+
+    if (dto.countryCode.code !== 'SA' && dto.countryCode.dial_code !== '+966') {
+      throw new BadRequestException(
+        'We currently only support phone numbers registered in Saudi Arabia (+966).'
+      );
+    }
+
+    // Check if user already exists
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .where('user.phone = :phone', { phone })
+      // Use ->> to extract the JSON value as text and '=' to compare
+      .andWhere("user.countryCode ->> 'dial_code' = :dialCode", {
+        dialCode: countryCode.dial_code
+      })
+      .getOne();
+
+    const currentTimestamp = Date.now();
+    if (user) {
+      if ([UserStatus.INACTIVE, UserStatus.DELETED].includes(user.status)) {
+        throw new UnauthorizedException('Your account is inactive. Please contact support.');
+      }
+      if (user.status === UserStatus.SUSPENDED) {
+        throw new UnauthorizedException('Your account has been suspended. Please contact support.');
+      }
+      if (user.status === UserStatus.PENDING_VERIFICATION) {
+        throw new UnauthorizedException('Please verify your email before logging in');
+      }
+
+      if (!user.isPhoneVerified) {
+        throw new UnauthorizedException('Your phone number is not verified. Please verify with OTP before logging in.');
+      }
+
+      if (!user.phone || !user.countryCode?.dial_code || !user.countryCode?.code) {
+        throw new BadRequestException(
+          'To log in with your phone, please complete your phone information: a valid phone number and country code are required.'
+        );
+      }
+
+
+      if (user.otpLastSentAt) {
+        const lastSentTime = user.otpLastSentAt.getTime();
+        const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
+
+        if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
+          const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+          const remainingMinutes = Math.ceil(remainingSeconds / 60);
+          throw new ForbiddenException(
+            `Please wait ${remainingMinutes} minutes before requesting another OTP`
+          );
+        }
+      }
+    }
+
+
+    const otpExpiresAt = new Date(currentTimestamp + this.CODE_EXPIRY_MINUTES * 60 * 1000);
+    const otpLastSentAt = new Date(currentTimestamp);
+
+    let finalOTP;
+    // 🔹 If user exists → update OTP fields on user
+    if (user) {
+      // ✅ Decide whether to reuse or generate OTP
+      let otpCode: string;
+      if (user.otpCode && user.otpExpiresAt && new Date() < user.otpExpiresAt) {
+        otpCode = user.otpCode;
+      } else {
+        otpCode = this.generateOTP();
+        user.otpCode = otpCode;
+      }
+
+      finalOTP = user.otpCode;
+      user.otpCode = otpCode;
+      user.otpExpiresAt = otpExpiresAt;
+      user.otpLastSentAt = otpLastSentAt;
+      await this.userRepository.save(user);
+    } else {
+      // 🔹 Otherwise → create or update pending phone registration
+      let pendingPhone = await this.pendingPhoneRepository.findOne({
+        where: { phone, countryCode },
+      });
+
+      if (pendingPhone && pendingPhone.otpLastSentAt) {
+        const lastSentTime = pendingPhone.otpLastSentAt.getTime();
+        const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
+
+        if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
+          const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+          const remainingMinutes = Math.ceil(remainingSeconds / 60);
+          throw new ForbiddenException(
+            `Please wait ${remainingMinutes} minutes before resending OTP`
+          );
+        }
+      }
+
+      if (role === UserRole.ADMIN) {
+        throw new ForbiddenException('You cannot assign yourself as admin');
+      }
+
+      if (pendingPhone) {
+        // ✅ Decide whether to reuse or generate OTP
+        let otpCode: string;
+        if (pendingPhone.otpCode && pendingPhone.otpExpiresAt && new Date() < pendingPhone.otpExpiresAt) {
+          otpCode = pendingPhone.otpCode;
+        } else {
+          otpCode = this.generateOTP();
+          pendingPhone.otpCode = otpCode;
+        }
+        finalOTP = otpCode;
+        pendingPhone.otpCode = otpCode;
+        pendingPhone.otpExpiresAt = otpExpiresAt;
+        pendingPhone.otpLastSentAt = otpLastSentAt;
+        await this.pendingPhoneRepository.save(pendingPhone);
+      } else {
+        finalOTP = this.generateOTP();
+        const newPendingPhone = this.pendingPhoneRepository.create({
+          phone,
+          countryCode,
+          otpCode: finalOTP,
+          otpExpiresAt,
+          otpLastSentAt,
+          role: role || UserRole.BUYER, // default role
+          type: type || 'Individual',     // default type
+          referralCodeUsed: ref || null
+        });
+        await this.pendingPhoneRepository.save(newPendingPhone);
+      }
+    }
+
+    // 🔹 Send OTP via SMS provider
+    await this.smsService.send(phone, countryCode.dial_code, `Your Helhal OTP is ${finalOTP}. It expires in ${this.CODE_EXPIRY_MINUTES} minutes.`);
+  }
+
+  //for verify otp to login or register with phone
+  async verifyOTP(
+    otpCode: string,
+    phone: string,
+    countryCode: { code: string; dial_code: string },
+    req: any,
+    res: any
+  ) {
+
+    let user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.country', 'country')
+      .where('user.phone = :phone', { phone })
+      .andWhere("user.countryCode::jsonb @> :countryCode", {
+        countryCode: JSON.stringify(countryCode),
+      })
+      .getOne();
+
+
+    if (user) {
+      if (user.isPhoneVerified) {
+        throw new BadRequestException(
+          'Your phone is already verified.'
+        );
+      }
+
+      if (!user.phone || !user.countryCode?.dial_code || !user.countryCode?.code) {
+        throw new BadRequestException('To log in with your phone, please complete your phone information: phone number and country code are required.');
+      }
+
+      // Validate OTP
+      if (!user.otpCode || user.otpCode !== otpCode) {
+        throw new BadRequestException('Invalid OTP code');
+      }
+      if (new Date() > user.otpExpiresAt) {
+        throw new BadRequestException('OTP has expired');
+      }
+
+      // Clear OTP fields after successful verification
+      user.otpCode = null;
+      user.otpExpiresAt = null;
+      user.otpLastSentAt = null;
+      await this.userRepository.save(user);
+
+      // 🔹 Issue tokens for login
+      return await this.generateTokens(user, res, req);
+    }
+
+    // 🔹 Otherwise check pending phone registration
+    const pendingPhone = await this.pendingPhoneRepository.findOne({
+      where: { phone, countryCode },
+    });
+
+    if (!pendingPhone) {
+      throw new NotFoundException('No active registration found for this phone number');
+    }
+
+    // Validate OTP
+    if (pendingPhone.otpCode !== otpCode) {
+      throw new BadRequestException('Invalid OTP code');
+    }
+    if (new Date() > pendingPhone.otpExpiresAt) {
+      throw new BadRequestException('OTP has expired');
+    }
+
+    const { role, referralCodeUsed, type } = pendingPhone;
+    const referralCode = crypto.randomBytes(8).toString('hex').toUpperCase();
+    const finalRole = role === UserRole.ADMIN ? UserRole.BUYER : role;
+    const baseName = phone; // use phone number as prefix 
+    const uniqueSuffix = crypto.randomBytes(6).toString('hex'); // 12-char hex string
+    // 🔹 Create new user record
+    user = this.userRepository.create({
+      username: `${baseName}_${uniqueSuffix}`,
+      phone,
+      countryCode,
+      email: null,
+      password: null,
+      type,
+      role: finalRole,
+      referralCode: referralCode,
+      isPhoneVerified: true,
+    });
+
+    await this.userRepository.save(user);
+
+    // Process referral if used
+    if (referralCodeUsed) {
+      await this.processReferral(user, referralCodeUsed);
+    }
+
+    // Remove pending record
+    await this.pendingPhoneRepository.delete(pendingPhone.id);
+
+    // 🔹 Send onboarding messages
+    // const onboardingPromises = [
+    //   this.smsService.send(
+    //     phone,
+    //     `Welcome to Helhal, ${user.username}! Your account has been verified successfully.`
+    //   ),
+    // ];
+
+    // if (user.role === 'seller') {
+    //   onboardingPromises.push(
+    //     this.smsService.send(
+    //       phone,
+    //       `Dear ${user.username}, please review our seller fee policy in your dashboard.`
+    //     )
+    //   );
+    // }
+
+    // try {
+    //   await Promise.all(onboardingPromises);
+    // } catch (err) {
+    //   console.error('Failed to send onboarding messages:', err);
+    // }
+
+    // 🔹 Issue tokens for login immediately after registration
+    return await this.generateTokens(user, res, req);
+  }
+
+  private generateOTP() {
+    return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
 }

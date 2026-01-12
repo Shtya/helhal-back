@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import axios from 'axios';
 import { AuthService } from './auth.service';
 import { OAuthService } from './oauth.service';
-import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto, UpdateUserPermissionsDto } from 'dto/user.dto';
+import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto, UpdateUserPermissionsDto, PhoneRegisterDto } from 'dto/user.dto';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { AccessGuard } from './guard/access.guard';
 import { RequireAccess } from 'decorators/access.decorator';
@@ -500,6 +500,32 @@ export class AuthController {
     } catch (e) {
       return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${e.message}`);
     }
+  }
+  //🔹 loged in users phone verification flow
+  @Post('send-phone-verification-otp')
+  @UseGuards(JwtAuthGuard)
+  async sendPhoneVerification(@Req() req: any) {
+    const userId = req.user.id;
+    return await this.authService.sendPhoneVerificationOTP(userId);
+  }
+
+  @Post('verify-phone-otp')
+  @UseGuards(JwtAuthGuard)
+  async verifyPhoneOtp(@Req() req: any) {
+    const { otpCode } = req.body as any;
+    const userId = req.user.id;
+    return await this.authService.verifyPhoneOTP(userId, otpCode);
+  }
+
+  // 🔹 Login/Register with phone
+  @Post('phone')
+  async phone(@Body() dto: PhoneRegisterDto) {
+    await this.authService.phoneAuth(dto);
+  }
+  @Post('verify-phone')
+  async verifyPhone(@Req() req: any, @Res() res: any) {
+    const { code: otpCode, phone, countryCode: { code, dial_code } } = req.body as any;
+    return await this.authService.verifyOTP(otpCode, phone, { code, dial_code }, req, res);
   }
 
   @Get('verify-oauth-token')

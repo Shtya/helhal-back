@@ -107,6 +107,7 @@ export class State extends CoreEntity {
 }
 
 @Entity('users')
+@Index(['phone', 'countryCode'], { unique: true, where: `"phone" IS NOT NULL AND "phone" != '' AND "countryCode" IS NOT NULL AND "countryCode" != '{}'` })
 export class User extends CoreEntity {
   // ---- core account ----
   @Column({ unique: true })
@@ -134,8 +135,14 @@ export class User extends CoreEntity {
   phone: string;
 
   // Add this for storing phone country code info
-  @Column({ type: 'jsonb', nullable: true })
-  countryCode: { code: string; dial_code: string } | null;
+  @Column({
+    type: 'jsonb',
+    default: () => `'{"code":"SA","dial_code":"+966"}'`
+  })
+  countryCode: { code: string; dial_code: string };
+
+  @Column({ type: 'boolean', default: false })
+  isPhoneVerified: boolean;
 
   @Column({ name: 'profile_image', nullable: true })
   profileImage: string;
@@ -175,6 +182,15 @@ export class User extends CoreEntity {
 
   @Column({ nullable: true, select: false })
   resetPasswordExpires: Date;
+
+  @Column({ nullable: true, select: false })
+  otpCode: string;
+
+  @Column({ nullable: true })
+  otpLastSentAt: Date;
+
+  @Column({ nullable: true, select: false })
+  otpExpiresAt: Date;
 
   // referrals
   @Column({ nullable: true, unique: true })
@@ -481,7 +497,6 @@ export class PendingUserRegistration extends CoreEntity {
   @Column()
   email: string;
 
-
   @Column()
   passwordHash: string;
 
@@ -506,6 +521,35 @@ export class PendingUserRegistration extends CoreEntity {
   @Column({ default: 'Business' })
   type: 'Business' | 'Individual';
 }
+
+@Entity('pending_phone_registrations')
+@Index(['phone', 'countryCode'], { unique: true, where: `"phone" IS NOT NULL AND "phone" != '' AND "countryCode" IS NOT NULL AND "countryCode" != '{}'` })
+export class PendingPhoneRegistration extends CoreEntity {
+  @Column()
+  phone: string;
+
+  @Column({ type: 'jsonb' })
+  countryCode: { code: string; dial_code: string };
+
+  @Column()
+  otpCode: string;
+
+  @Column()
+  otpExpiresAt: Date;
+
+  @Column()
+  otpLastSentAt: Date;
+
+  @Column({ nullable: true })
+  referralCodeUsed: string;
+
+  @Column({ type: 'enum', enum: ['buyer', 'seller', 'admin'], default: 'buyer' })
+  role: string;
+
+  @Column({ default: 'Business' })
+  type: 'Business' | 'Individual';
+}
+
 
 @Entity('user_sessions')
 export class UserSession {
@@ -828,6 +872,7 @@ export interface Package {
 
 @Entity('services')
 @Index(['popular', 'status', 'ordersCount'])//this index used to get popular services
+@Index('idx_services_search_vector', (service: Service) => [service.searchVector])
 export class Service extends CoreEntity {
   @ManyToOne(() => User, user => user.services)
   @JoinColumn({ name: 'seller_id' })
@@ -1068,6 +1113,7 @@ export enum JobStatus {
 }
 
 @Entity('jobs')
+@Index('idx_jobs_search_vector', (job: Job) => [job.searchVector])
 export class Job extends CoreEntity {
   @ManyToOne(() => User, user => user.jobs)
   @JoinColumn({ name: 'buyer_id' })
@@ -1145,7 +1191,7 @@ export class Job extends CoreEntity {
   @Column({ name: 'state_id', nullable: true })
   stateId: string | null;
 
-  @Index('idx_services_search_vector', { synchronize: false })
+  @Index('idx_jobs_search_vector', { synchronize: false })
   @Column({
     type: 'tsvector',
     name: 'search_vector',

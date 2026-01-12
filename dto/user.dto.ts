@@ -105,3 +105,32 @@ export class UpdateUserPermissionsDto {
   @IsOptional() @IsNumber() settings?: number;
   @IsOptional() @IsNumber() statistics?: number;
 }
+
+class CountryCodeDto {
+  @IsString()
+  code: string;
+
+  @IsString()
+  dial_code: string;
+}
+
+export class PhoneRegisterDto {
+  @IsString()
+  phone: string;
+
+  @ValidateNested()
+  @Type(() => CountryCodeDto)
+  countryCode: CountryCodeDto;
+
+  @IsOptional()
+  @IsEnum(['Business', 'Individual'])
+  type?: 'Business' | 'Individual';
+
+  @IsOptional()
+  @IsString()
+  ref?: string;
+
+  @IsOptional()
+  @IsEnum(UserRole)
+  role?: UserRole;
+}

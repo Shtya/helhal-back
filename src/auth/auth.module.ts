@@ -21,6 +21,7 @@ import {
   Notification,
   Setting,
   UserRelatedAccount,
+  PendingPhoneRegistration,
 } from 'entities/global.entity';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { AccessGuard } from './guard/access.guard';
@@ -28,6 +29,7 @@ import { MailService } from 'common/nodemailer';
 import { ReferralModule } from 'src/referral/referral.module';
 import { SessionService } from './session.service';
 import { SettingsService } from 'src/settings/settings.service';
+import { SmsService } from 'common/sms-service';
 
 @Module({
   imports: [
@@ -36,6 +38,7 @@ import { SettingsService } from 'src/settings/settings.service';
       User,
       UserRelatedAccount,
       PendingUserRegistration,
+      PendingPhoneRegistration,
       AccountDeactivation,
       Order,
       ServiceReview,
@@ -64,7 +67,8 @@ import { SettingsService } from 'src/settings/settings.service';
     JwtAuthGuard,
     AccessGuard,
     SettingsService,
-    MailService
+    MailService,
+    SmsService,
   ],
   controllers: [AuthController],
   exports: [AuthService, JwtAuthGuard, AccessGuard],
