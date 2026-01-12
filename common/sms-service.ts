@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import axios from 'axios';
+import qs from 'querystring';
 
 @Injectable()
 export class SmsService {
@@ -32,6 +33,8 @@ export class SmsService {
         this.logger.debug(`Sending OTP to ${fullNumber}`);
 
         try {
+            const finalUrl = `${this.smsApiUrl}?${qs.stringify(params)}`;
+            this.logger.debug(`Final SMS API URL: ${finalUrl}`);
             // Using axios.get to append params to the URL query string
             const response = await axios.get(this.smsApiUrl, { params });
 
