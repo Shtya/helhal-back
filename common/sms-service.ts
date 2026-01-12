@@ -10,7 +10,6 @@ export class SmsService {
     private readonly smsUser = process.env.SMS_API_USER;
     private readonly smsPassword = process.env.SMS_API_PASSWORD;
     private readonly smsKey = process.env.SMS_API_KEY;
-    private readonly senderId = 'SMSAlert';
 
     async sendOTP(phone: string, dialCode: string, otp: string, expire: number) {
         // Clean the dialCode and phone to ensure no '+' or spaces remain
@@ -25,9 +24,11 @@ export class SmsService {
             user: this.smsUser,
             pwd: this.smsPassword,
             apiKey: this.smsKey,
-            numbers: fullNumber,
-            sender: this.senderId,
-            msg: message,
+            mobileno: fullNumber,
+            msgtext: message,
+            senderid: "SMSAlert",
+            ShowError: "C",
+            CountryCode: "ALL",
             lang: "3" // 3 usually indicates UTF-8 or dynamic content
         };
 
