@@ -660,7 +660,7 @@ export class AuthService {
       const exists = await this.userRepository
         .createQueryBuilder('u')
         .where('u.phone = :phone', { phone: updateData.phone })
-        .andWhere("u.countryCode::jsonb @> :countryCode", {
+        .andWhere('u."countryCode" @> :countryCode', {
           countryCode: JSON.stringify(updateData.countryCode),
         })
         .andWhere('u.id != :id', { id: user.id })
@@ -1551,9 +1551,10 @@ export class AuthService {
       .addSelect('user.permissions')
       .leftJoinAndSelect('user.country', 'country')
       .where('user.phone = :phone', { phone })
-      .andWhere("user.countryCode::jsonb @> :countryCode", {
+      .andWhere('u."countryCode" @> :countryCode', {
         countryCode: JSON.stringify(countryCode),
       })
+
       .getOne();
 
 
