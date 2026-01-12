@@ -3,52 +3,50 @@ import axios from 'axios';
 
 @Injectable()
 export class SmsService {
-    // Using NestJS Logger for better formatting and context
     private readonly logger = new Logger(SmsService.name);
 
     private readonly smsApiUrl = 'https://sms.connectsaudi.com/sendurl.aspx';
     private readonly smsUser = process.env.SMS_API_USER;
     private readonly smsPassword = process.env.SMS_API_PASSWORD;
     private readonly smsKey = process.env.SMS_API_KEY;
-
     async sendOTP(phone: string, dialCode: string, otp: string, expire: number) {
-        // Clean the dialCode and phone to ensure no '+' or spaces remain
+        // Clean the dialCode and phone (removing + and spaces)
         const cleanDialCode = dialCode.replace('+', '').trim();
         const cleanPhone = phone.trim();
         const fullNumber = `${cleanDialCode}${cleanPhone}`;
 
         const message = `Your Helhal OTP is ${otp}. It expires in ${expire} minutes.`;
 
-        // Exact payload structure from your documentation
-        const payload = {
+        // Parameters as per the URL structure: .../sendurl.aspx?user=xxx&pwd=xxx...
+        const params = {
             user: this.smsUser,
             pwd: this.smsPassword,
-            apiKey: this.smsKey,
+            senderid: "SMSAlert", // Ensure no space if the provider is strict, or use "SMS Alert"
             mobileno: fullNumber,
             msgtext: message,
-            senderid: "SMSAlert",
-            ShowError: "C",
-            CountryCode: "ALL",
-            lang: "3" // 3 usually indicates UTF-8 or dynamic content
+            priority: 'High',
+            CountryCode: 'ALL',
+            key: this.smsKey
         };
 
         this.logger.debug(`Sending OTP to ${fullNumber}`);
 
         try {
-            // Using POST as the provided structure is a JSON object
-            const response = await axios.post(this.smsApiUrl, payload);
+            // Using axios.get to append params to the URL query string
+            const response = await axios.get(this.smsApiUrl, { params });
 
             this.logger.log(`SMS Response: ${JSON.stringify(response.data)}`);
 
-            // Assuming the success response format remains similar to your previous check
-            if (response.data && (response.data[0]?.response === 'send success' || response.data.status === 'success')) {
-                return { success: true };
+            // The provider returns an array: [{"msg_id":"...","number":"...","response":"send success"}]
+            const result = response.data;
+            if (Array.isArray(result) && result[0]?.response === 'send success') {
+                return { success: true, msgId: result[0].msg_id };
             } else {
-                this.logger.warn(`SMS Failed: ${JSON.stringify(response.data)}`);
+                this.logger.warn(`SMS Provider rejected: ${JSON.stringify(result)}`);
                 throw new BadRequestException('Failed to send OTP');
             }
         } catch (err) {
-            this.logger.error(`SMS Error: ${err.message}`);
+            this.logger.error(`SMS API Error: ${err.message}`);
             throw new BadRequestException('SMS gateway unreachable');
         }
     }
