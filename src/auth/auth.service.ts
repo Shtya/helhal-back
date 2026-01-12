@@ -1344,12 +1344,7 @@ export class AuthService {
     await this.userRepository.save(user);
 
     // ✅ Send OTP via SMS provider
-    await this.smsService.send(
-      user.phone,
-      user.countryCode.dial_code,
-      `Your Helhal OTP is ${user.otpCode}. It expires in ${this.CODE_EXPIRY_MINUTES} minutes.`
-    );
-
+    await this.smsService.sendOTP(user.phone, user.countryCode.dial_code, user.otpCode, this.CODE_EXPIRY_MINUTES);
     return { message: 'OTP sent successfully to your phone number' };
   }
 
@@ -1534,7 +1529,7 @@ export class AuthService {
     }
 
     // 🔹 Send OTP via SMS provider
-    await this.smsService.send(phone, countryCode.dial_code, `Your Helhal OTP is ${finalOTP}. It expires in ${this.CODE_EXPIRY_MINUTES} minutes.`);
+    await this.smsService.sendOTP(phone, countryCode.dial_code, finalOTP, this.CODE_EXPIRY_MINUTES);
   }
 
   //for verify otp to login or register with phone

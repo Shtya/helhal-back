@@ -12,53 +12,43 @@ export class SmsService {
     private readonly smsKey = process.env.SMS_API_KEY;
     private readonly senderId = 'SMSAlert';
 
-    async send(phoneNumber: string, countryCode: string, message: string) {
-        const params = {
+    async sendOTP(phone: string, dialCode: string, otp: string, expire: number) {
+        // Clean the dialCode and phone to ensure no '+' or spaces remain
+        const cleanDialCode = dialCode.replace('+', '').trim();
+        const cleanPhone = phone.trim();
+        const fullNumber = `${cleanDialCode}${cleanPhone}`;
+
+        const message = `Your Helhal OTP is ${otp}. It expires in ${expire} minutes.`;
+
+        // Exact payload structure from your documentation
+        const payload = {
             user: this.smsUser,
             pwd: this.smsPassword,
-            senderid: this.senderId,
-            mobileno: phoneNumber,
-            msgtext: message,
-            priority: 'High',
-            CountryCode: countryCode,
-            key: this.smsKey,
+            apiKey: this.smsKey,
+            numbers: fullNumber,
+            sender: this.senderId,
+            msg: message,
+            lang: "3" // 3 usually indicates UTF-8 or dynamic content
         };
 
-        // Log the outgoing request details (masking password for security)
-        this.logger.debug(`Sending SMS to ${countryCode}${phoneNumber} via ${this.smsApiUrl}`);
-        this.logger.verbose(`Request Params: ${JSON.stringify({ ...params, pwd: '****' })}`);
+        this.logger.debug(`Sending OTP to ${fullNumber}`);
 
         try {
-            const response = await axios.get(this.smsApiUrl, { params });
-            const result = response.data;
+            // Using POST as the provided structure is a JSON object
+            const response = await axios.post(this.smsApiUrl, payload);
 
-            this.logger.log(`SMS Provider Response: ${JSON.stringify(result)}`);
+            this.logger.log(`SMS Response: ${JSON.stringify(response.data)}`);
 
-            // Check if result exists and follows the expected format
-            if (Array.isArray(result) && result.length > 0) {
-                const mainResponse = result[0];
-
-                if (mainResponse.response === 'send success') {
-                    return { success: true, msgId: mainResponse.msg_id };
-                }
-
-                // Log specific failure reason from provider
-                this.logger.warn(`SMS Provider rejected message: ${mainResponse.response}`);
-                throw new BadRequestException(`Provider error: ${mainResponse.response}`);
+            // Assuming the success response format remains similar to your previous check
+            if (response.data && (response.data[0]?.response === 'send success' || response.data.status === 'success')) {
+                return { success: true };
+            } else {
+                this.logger.warn(`SMS Failed: ${JSON.stringify(response.data)}`);
+                throw new BadRequestException('Failed to send OTP');
             }
-
-            throw new BadRequestException('Invalid response format from SMS provider');
-
         } catch (err) {
-            // Log full error details for debugging
-            this.logger.error(
-                `Failed to send SMS to ${phoneNumber}. Error: ${err.message}`,
-                err.response?.data || 'No response data'
-            );
-
-            throw new BadRequestException(
-                err.response?.data?.message || 'Error sending SMS via provider'
-            );
+            this.logger.error(`SMS Error: ${err.message}`);
+            throw new BadRequestException('SMS gateway unreachable');
         }
     }
 }
