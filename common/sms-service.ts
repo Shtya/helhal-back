@@ -1,28 +1,30 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import axios from 'axios';
-import qs from 'querystring';
 
 @Injectable()
 export class SmsService {
     private readonly logger = new Logger(SmsService.name);
 
     private readonly smsApiUrl = 'https://sms.connectsaudi.com/sendurl.aspx';
+    private readonly smsParamUrl = 'http://sms.connectsaudi.com/sendsms_param.aspx';
+
     private readonly smsUser = process.env.SMS_API_USER;
     private readonly smsPassword = process.env.SMS_API_PASSWORD;
     private readonly smsKey = process.env.SMS_API_KEY;
+
     async sendOTP(phone: string, dialCode: string, otp: string, expire: number) {
-        // Clean the dialCode and phone (removing + and spaces)
+        // Clean the dialCode and phone per your trimming preference
         const cleanDialCode = dialCode.replace('+', '').trim();
         const cleanPhone = phone.trim();
         const fullNumber = `${cleanDialCode}${cleanPhone}`;
-
         const message = `Your Helhal OTP is ${otp}. It expires in ${expire} minutes.`;
+        const message2 = `Your Helhal OTP is (1). It expires in (2) minutes.`;
 
-        // Parameters as per the URL structure: .../sendurl.aspx?user=xxx&pwd=xxx...
-        const params = {
+        // --- STRUCTURE 1: GET (sendurl.aspx) ---
+        const getParams = {
             user: this.smsUser,
             pwd: this.smsPassword,
-            senderid: "SMSAlert", // Ensure no space if the provider is strict, or use "SMS Alert"
+            senderid: "SMSAlert",
             mobileno: fullNumber,
             msgtext: message,
             priority: 'High',
@@ -30,27 +32,51 @@ export class SmsService {
             key: this.smsKey
         };
 
-        this.logger.debug(`Sending OTP to ${fullNumber}`);
+        // --- STRUCTURE 2: POST JSON (sendsms_param.aspx) ---
+        const postPayload = {
+            user: this.smsUser,
+            pwd: this.smsPassword,
+            apiKey: this.smsKey,
+            numbers: fullNumber,
+            sender: "MOBSMS",
+            msg: message2,
+            lang: "3",
+            // msgkey is included as per your provided structure for testing
+            msgkey: `(1),*,${otp},@,(2),*,${expire}`
+        };
 
         try {
-            const finalUrl = `${this.smsApiUrl}?${qs.stringify(params)}`;
-            this.logger.debug(`Final SMS API URL: ${finalUrl}`);
-            // Using axios.get to append params to the URL query string
-            const response = await axios.get(this.smsApiUrl, { params });
+            // Log and Test Structure 1 (GET)
+            const fullGetUrl = axios.getUri({ url: this.smsApiUrl, params: getParams });
+            this.logger.debug(`Testing Structure 1 (GET) URL: ${fullGetUrl}`);
+            const resp1 = await axios.get(this.smsApiUrl, { params: getParams });
+            this.logger.log(`Structure 1 Response: ${JSON.stringify(resp1.data)}`);
 
-            this.logger.log(`SMS Response: ${JSON.stringify(response.data)}`);
+            // Log and Test Structure 2 (POST JSON)
+            this.logger.debug(`Testing Structure 2 (POST) Payload: ${JSON.stringify({ ...postPayload })}`);
+            const resp2 = await axios.post(this.smsParamUrl, postPayload);
+            this.logger.log(`Structure 2 Response: ${JSON.stringify(resp2.data)}`);
 
-            // The provider returns an array: [{"msg_id":"...","number":"...","response":"send success"}]
-            const result = response.data;
-            if (Array.isArray(result) && result[0]?.response === 'send success') {
-                return { success: true, msgId: result[0].msg_id };
+            // Validation Logic (Checks both for a 'send success' indicator)
+            const success1 = Array.isArray(resp1.data) && resp1.data[0]?.response === 'send success';
+            const success2 = resp2.data?.status === 'success' || (Array.isArray(resp2.data) && resp2.data[0]?.response === 'send success');
+
+            if (success1 || success2) {
+                return {
+                    success: true,
+                    struct1: resp1.data,
+                    struct2: resp2.data
+                };
             } else {
-                this.logger.warn(`SMS Provider rejected: ${JSON.stringify(result)}`);
-                throw new BadRequestException('Failed to send OTP');
+                throw new Error('Both API structures failed to confirm success');
             }
+
         } catch (err) {
-            this.logger.error(`SMS API Error: ${err.message}`);
-            throw new BadRequestException('SMS gateway unreachable');
+            this.logger.error(`SMS Multi-Structure Test Error: ${err.message}`);
+            if (err.response) {
+                this.logger.error(`Provider Error Data: ${JSON.stringify(err.response.data)}`);
+            }
+            throw new BadRequestException('SMS gateway unreachable or configuration error');
         }
     }
 }
