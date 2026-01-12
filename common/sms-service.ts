@@ -1,14 +1,16 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import axios from 'axios';
 
 @Injectable()
 export class SmsService {
-    private readonly smsApiUrl = 'https://sms.connectsaudi.com/sendurl.aspx';
-    private readonly smsUser = process.env.SMS_API_USER;       // e.g. "4865555"
-    private readonly smsPassword = process.env.SMS_API_PASSWORD; // e.g. "dff556s66d566"
-    private readonly smsKey = process.env.SMS_API_KEY;         // optional key if required
-    private readonly senderId = 'SMSAlert';
+    // Using NestJS Logger for better formatting and context
+    private readonly logger = new Logger(SmsService.name);
 
+    private readonly smsApiUrl = 'https://sms.connectsaudi.com/sendurl.aspx';
+    private readonly smsUser = process.env.SMS_API_USER;
+    private readonly smsPassword = process.env.SMS_API_PASSWORD;
+    private readonly smsKey = process.env.SMS_API_KEY;
+    private readonly senderId = 'SMSAlert';
 
     async send(phoneNumber: string, countryCode: string, message: string) {
         const params = {
@@ -22,19 +24,41 @@ export class SmsService {
             key: this.smsKey,
         };
 
+        // Log the outgoing request details (masking password for security)
+        this.logger.debug(`Sending SMS to ${countryCode}${phoneNumber} via ${this.smsApiUrl}`);
+        this.logger.verbose(`Request Params: ${JSON.stringify({ ...params, pwd: '****' })}`);
+
         try {
             const response = await axios.get(this.smsApiUrl, { params });
             const result = response.data;
-            console.log("response.data: ", response.data)
-            // API returns JSON like: [{"msg_id":"12345678","number":"966XXXXXXXXX","response":"send success"}]
-            if (Array.isArray(result) && result[0]?.response === 'send success') {
-                return { success: true, msgId: result[0].msg_id };
-            } else {
-                throw new BadRequestException('Failed to send SMS');
+
+            this.logger.log(`SMS Provider Response: ${JSON.stringify(result)}`);
+
+            // Check if result exists and follows the expected format
+            if (Array.isArray(result) && result.length > 0) {
+                const mainResponse = result[0];
+
+                if (mainResponse.response === 'send success') {
+                    return { success: true, msgId: mainResponse.msg_id };
+                }
+
+                // Log specific failure reason from provider
+                this.logger.warn(`SMS Provider rejected message: ${mainResponse.response}`);
+                throw new BadRequestException(`Provider error: ${mainResponse.response}`);
             }
+
+            throw new BadRequestException('Invalid response format from SMS provider');
+
         } catch (err) {
-            console.error('SMS API error:', err);
-            throw new BadRequestException('Error sending SMS via provider');
+            // Log full error details for debugging
+            this.logger.error(
+                `Failed to send SMS to ${phoneNumber}. Error: ${err.message}`,
+                err.response?.data || 'No response data'
+            );
+
+            throw new BadRequestException(
+                err.response?.data?.message || 'Error sending SMS via provider'
+            );
         }
     }
 }
