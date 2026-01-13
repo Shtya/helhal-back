@@ -7,7 +7,7 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
 import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount, PendingPhoneRegistration } from 'entities/global.entity';
-import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, UpdateUserPermissionsDto, PhoneRegisterDto } from 'dto/user.dto';
+import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, UpdateUserPermissionsDto, PhoneRegisterDto, PhoneVerifyDto } from 'dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from 'common/nodemailer';
 import { SessionService } from './session.service';
@@ -144,7 +144,7 @@ export class AuthService {
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
         const remainingMinutes = Math.ceil(remainingSeconds / 60);
-        throw new ForbiddenException(`Please wait ${remainingMinutes} minutes before resending email`);
+        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
       }
     }
 
@@ -306,7 +306,8 @@ export class AuthService {
 
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-        throw new ForbiddenException(`Please wait ${remainingSeconds} minutes before resending email`);
+        const remainingMinutes = Math.ceil(remainingSeconds / 60);
+        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
       }
     }
 
@@ -505,7 +506,8 @@ export class AuthService {
 
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-        throw new ForbiddenException(`Please wait ${remainingSeconds} minutes before resending email`);
+        const remainingMinutes = Math.ceil(remainingSeconds / 60);
+        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
       }
 
     }
@@ -660,9 +662,9 @@ export class AuthService {
       const exists = await this.userRepository
         .createQueryBuilder('u')
         .where('u.phone = :phone', { phone: updateData.phone })
-        .andWhere('u."countryCode" @> :countryCode', {
-          countryCode: JSON.stringify(updateData.countryCode),
-        })
+        .andWhere(`u.countryCode @> :countryCode`,
+          { countryCode: JSON.stringify(updateData.countryCode), }
+        )
         .andWhere('u.id != :id', { id: user.id })
         .getOne();
 
@@ -673,6 +675,15 @@ export class AuthService {
       user.phone = updateData.phone;
       user.countryCode = updateData.countryCode;
       user.isPhoneVerified = false;
+      user.otpCode = null;
+      user.otpLastSentAt = null;
+      user.otpExpiresAt = null;
+    }
+    if (!updateData.phone || !updateData.countryCode) {
+
+      user.otpCode = null;
+      user.otpLastSentAt = null;
+      user.otpExpiresAt = null;
     }
 
 
@@ -881,6 +892,7 @@ export class AuthService {
 
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+        const remainingMinutes = Math.ceil(remainingSeconds / 60);
         throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
       }
     }
@@ -923,6 +935,7 @@ export class AuthService {
 
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+        const remainingMinutes = Math.ceil(remainingSeconds / 60);
         throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
       }
     }
@@ -1292,7 +1305,11 @@ export class AuthService {
 
   //for loged in users that want to send varification code to verify their phone 
   async sendPhoneVerificationOTP(userId: string) {
-    const user = await this.userRepository.findOne({ where: { id: userId } });
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .addSelect(['user.otpCode', 'user.otpExpiresAt'])
+      .where('user.id = :id', { id: userId })
+      .getOne();
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -1325,7 +1342,7 @@ export class AuthService {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
         const remainingMinutes = Math.ceil(remainingSeconds / 60);
         throw new ForbiddenException(
-          `Please wait ${remainingMinutes} minutes before requesting another OTP`
+          `Please wait ${remainingSeconds} seconds before requesting another OTP`
         );
       }
     }
@@ -1355,6 +1372,7 @@ export class AuthService {
   ) {
     const user = await this.userRepository
       .createQueryBuilder('user')
+      .addSelect(['user.otpCode', 'user.otpExpiresAt'])
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -1362,13 +1380,13 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    if (user.isPhoneVerified) {
+    if (!user.isPhoneVerified) {
       throw new BadRequestException(
         'Your phone is already verified.'
       );
     }
 
-    if (!user.phone || !user.countryCode?.dial_code || user.countryCode?.code) {
+    if (!user.phone || !user.countryCode?.dial_code || !user.countryCode?.code) {
       throw new BadRequestException('To verify your phone, please complete your phone information: phone number and country code are required.');
     }
 
@@ -1409,7 +1427,7 @@ export class AuthService {
     // Check if user already exists
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .addSelect(['user.permissions', 'user.otpCode', 'user.otpExpiresAt'])
       .where('user.phone = :phone', { phone })
       // Use ->> to extract the JSON value as text and '=' to compare
       .andWhere("user.countryCode ->> 'dial_code' = :dialCode", {
@@ -1448,7 +1466,7 @@ export class AuthService {
           const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
           const remainingMinutes = Math.ceil(remainingSeconds / 60);
           throw new ForbiddenException(
-            `Please wait ${remainingMinutes} minutes before requesting another OTP`
+            `Please wait ${remainingSeconds} seconds before requesting another OTP`
           );
         }
       }
@@ -1489,7 +1507,7 @@ export class AuthService {
           const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
           const remainingMinutes = Math.ceil(remainingSeconds / 60);
           throw new ForbiddenException(
-            `Please wait ${remainingMinutes} minutes before resending OTP`
+            `Please wait ${remainingSeconds} seconds before resending OTP`
           );
         }
       }
@@ -1534,30 +1552,26 @@ export class AuthService {
 
   //for verify otp to login or register with phone
   async verifyOTP(
-    otpCode: string,
-    phone: string,
-    countryCode: { code: string; dial_code: string },
+    dto: PhoneVerifyDto,
     req: any,
     res: any
   ) {
 
+    const { code: otpCode, countryCode, phone } = dto;
     let user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .addSelect(['user.permissions', 'user.otpCode', 'user.otpExpiresAt'])
       .leftJoinAndSelect('user.country', 'country')
       .where('user.phone = :phone', { phone })
-      .andWhere('u."countryCode" @> :countryCode', {
-        countryCode: JSON.stringify(countryCode),
-      })
-
+      .andWhere(`user.countryCode @> :countryCode`,
+        { countryCode: JSON.stringify(countryCode), }
+      )
       .getOne();
 
 
     if (user) {
-      if (user.isPhoneVerified) {
-        throw new BadRequestException(
-          'Your phone is already verified.'
-        );
+      if (!user.isPhoneVerified) {
+        throw new UnauthorizedException('Your phone number is not verified. Please verify with OTP before logging in.');
       }
 
       if (!user.phone || !user.countryCode?.dial_code || !user.countryCode?.code) {
@@ -1579,7 +1593,9 @@ export class AuthService {
       await this.userRepository.save(user);
 
       // 🔹 Issue tokens for login
-      return await this.generateTokens(user, res, req);
+      const result = await this.generateTokens(user, res, req);
+      console.log("result: ", result)
+      return result;
     }
 
     // 🔹 Otherwise check pending phone registration

@@ -134,3 +134,16 @@ export class PhoneRegisterDto {
   @IsEnum(UserRole)
   role?: UserRole;
 }
+
+
+export class PhoneVerifyDto {
+  @IsString()
+  phone: string;
+
+  @ValidateNested()
+  @Type(() => CountryCodeDto)
+  countryCode: CountryCodeDto;
+
+  @IsString()
+  code: string;
+}

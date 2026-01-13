@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import axios from 'axios';
 import { AuthService } from './auth.service';
 import { OAuthService } from './oauth.service';
-import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto, UpdateUserPermissionsDto, PhoneRegisterDto } from 'dto/user.dto';
+import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto, UpdateUserPermissionsDto, PhoneRegisterDto, PhoneVerifyDto } from 'dto/user.dto';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { AccessGuard } from './guard/access.guard';
 import { RequireAccess } from 'decorators/access.decorator';
@@ -506,7 +506,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   async sendPhoneVerification(@Req() req: any) {
     const userId = req.user.id;
-    return await this.authService.sendPhoneVerificationOTP(userId);
+    return this.authService.sendPhoneVerificationOTP(userId);
   }
 
   @Post('verify-phone-otp')
@@ -514,18 +514,19 @@ export class AuthController {
   async verifyPhoneOtp(@Req() req: any) {
     const { otpCode } = req.body as any;
     const userId = req.user.id;
-    return await this.authService.verifyPhoneOTP(userId, otpCode);
+    return this.authService.verifyPhoneOTP(userId, otpCode);
   }
 
   // 🔹 Login/Register with phone
   @Post('phone')
   async phone(@Body() dto: PhoneRegisterDto) {
-    await this.authService.phoneAuth(dto);
+    return this.authService.phoneAuth(dto);
   }
   @Post('verify-phone')
-  async verifyPhone(@Req() req: any, @Res() res: any) {
-    const { code: otpCode, phone, countryCode: { code, dial_code } } = req.body as any;
-    return await this.authService.verifyOTP(otpCode, phone, { code, dial_code }, req, res);
+  async verifyPhone(@Body() dto: PhoneVerifyDto, @Res() res: Response, @Req() req: any) {
+    const result = await this.authService.verifyOTP(dto, req, res);
+
+    return res.json(result);
   }
 
   @Get('verify-oauth-token')
