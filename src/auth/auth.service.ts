@@ -1375,6 +1375,10 @@ export class AuthService {
       otpCode = this.generateOTP();
     }
 
+    const { success, details } = await this.smsService.sendOTP(user.phone, user.countryCode.dial_code, user.otpCode, this.CODE_EXPIRY_MINUTES);
+    if (!success) {
+      throw new BadRequestException('Failed to send OTP')
+    }
 
     await this.userRepository.update(user.id, {
       otpCode: otpCode,
@@ -1385,7 +1389,7 @@ export class AuthService {
     // await this.userRepository.save(user);
 
     // ✅ Send OTP via SMS provider
-    await this.smsService.sendOTP(user.phone, user.countryCode.dial_code, user.otpCode, this.CODE_EXPIRY_MINUTES);
+
     return { message: 'OTP sent successfully to your phone number' };
   }
 
@@ -1511,6 +1515,11 @@ export class AuthService {
       }
 
       finalOTP = user.otpCode;
+      const { success, details } = await this.smsService.sendOTP(phone, countryCode.dial_code, finalOTP, this.CODE_EXPIRY_MINUTES);
+      if (!success) {
+        throw new BadRequestException('Failed to send OTP')
+      }
+
       await this.userRepository.update(user.id, {
         otpCode: otpCode,
         otpExpiresAt: otpExpiresAt,
@@ -1549,13 +1558,22 @@ export class AuthService {
           otpCode = this.generateOTP();
           pendingPhone.otpCode = otpCode;
         }
-        finalOTP = otpCode;
-        pendingPhone.otpCode = otpCode;
+      } else {
+        finalOTP = this.generateOTP();
+      }
+
+      const { success, details } = await this.smsService.sendOTP(phone, countryCode.dial_code, finalOTP, this.CODE_EXPIRY_MINUTES);
+      if (!success) {
+        throw new BadRequestException('Failed to send OTP')
+      }
+
+
+      if (pendingPhone) {
+        pendingPhone.otpCode = finalOTP;
         pendingPhone.otpExpiresAt = otpExpiresAt;
         pendingPhone.otpLastSentAt = otpLastSentAt;
         await this.pendingPhoneRepository.save(pendingPhone);
       } else {
-        finalOTP = this.generateOTP();
         const newPendingPhone = this.pendingPhoneRepository.create({
           phone,
           countryCode,
@@ -1571,7 +1589,8 @@ export class AuthService {
     }
 
     // 🔹 Send OTP via SMS provider
-    await this.smsService.sendOTP(phone, countryCode.dial_code, finalOTP, this.CODE_EXPIRY_MINUTES);
+
+    return { message: 'OTP sent successfully to your phone number' };
   }
 
   //for verify otp to login or register with phone

@@ -17,67 +17,43 @@ export class SmsService {
         const cleanDialCode = dialCode.replace('+', '').trim();
         const cleanPhone = phone.trim();
         const fullNumber = `${cleanDialCode}${cleanPhone}`;
-        // const message = `Your Helhal OTP is ${otp}. It expires in ${expire} minutes.`;
-        const message2 = `Your Helhal OTP is (1).It expires in (2) minutes.`;
+        const message = `Your Helhal OTP is (1).It expires in (2) minutes.`;
 
-        // --- STRUCTURE 1: GET (sendurl.aspx) ---
-        // const getParams = {
-        //     user: this.smsUser,
-        //     pwd: this.smsPassword,
-        //     senderid: "SMSAlert",
-        //     mobileno: fullNumber,
-        //     msgtext: message,
-        //     priority: 'High',
-        //     CountryCode: 'ALL',
-        //     key: this.smsKey
-        // };
-
-        // --- STRUCTURE 2: POST JSON (sendsms_param.aspx) ---
         const postPayload = {
             user: this.smsUser,
             pwd: this.smsPassword,
             apiKey: this.smsKey,
             numbers: fullNumber,
-            sender: "MOBSMS",
-            msg: message2,
+            sender: "Helhal",
+            msg: message,
             lang: "3",
-            // msgkey is included as per your provided structure for testing
             msgkey: `(1),*,${otp},@,(2),*,${expire}`,
+            priority: "High",
             showerror: "C"
         };
 
         try {
-            // Log and Test Structure 1 (GET)
-            // const fullGetUrl = axios.getUri({ url: this.smsApiUrl, params: getParams });
-            // this.logger.debug(`Testing Structure 1 (GET) URL: ${fullGetUrl}`);
-            // const resp1 = await axios.get(this.smsApiUrl, { params: getParams });
-            // this.logger.log(`Structure 1 Response: ${JSON.stringify(resp1.data)}`);
+            // Log and Test Structure(POST JSON)
+            this.logger.debug(`Structure (POST) url :${this.smsParamUrl},  Payload: ${JSON.stringify({ ...postPayload })}`);
+            const resp = await axios.post(this.smsParamUrl, postPayload);
+            this.logger.log(`Structure  Response: ${JSON.stringify(resp.data)}`);
+            const responseData = resp.data;
+            const success = typeof responseData === 'string' && responseData.includes('Send Successful');
 
-            // Log and Test Structure 2 (POST JSON)
-            this.logger.debug(`Testing Structure 2 (POST) url :${this.smsParamUrl},  Payload: ${JSON.stringify({ ...postPayload })}`);
-            const resp2 = await axios.post(this.smsParamUrl, postPayload);
-            this.logger.log(`Structure 2 Response: ${JSON.stringify(resp2.data)}`);
-
-            // Validation Logic (Checks both for a 'send success' indicator)
-            // const success1 = Array.isArray(resp1.data) && resp1.data[0]?.response === 'send success';
-            const success2 = resp2.data?.status === 'success' || (Array.isArray(resp2.data) && resp2.data[0]?.response === 'send success');
-
-            if (success2) {
-                return {
-                    success: true,
-                    struct1: resp2.data,
-                    // struct2: resp2.data
-                };
+            if (success) {
+                this.logger.log('SMS Sent Successfully via Structure');
+                return { success: true, details: responseData };
             } else {
-                throw new Error('Both API structures failed to confirm success');
+                this.logger.warn(`Structure Failed. Raw Response: ${responseData}`);
+                throw new BadRequestException('Failed to send OTP via provider');
             }
 
         } catch (err) {
-            this.logger.error(`SMS Multi-Structure Test Error: ${err.message}`);
+            this.logger.error(`SMS Multi-Structure Error: ${err.message}`);
             if (err.response) {
                 this.logger.error(`Provider Error Data: ${JSON.stringify(err.response.data)}`);
             }
-            throw new BadRequestException('SMS gateway unreachable or configuration error');
+            return { success: false };
         }
     }
 
