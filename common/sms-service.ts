@@ -17,8 +17,10 @@ export class SmsService {
         const cleanDialCode = dialCode.replace('+', '').trim();
         const cleanPhone = phone.trim();
         const fullNumber = `${cleanDialCode}${cleanPhone}`;
-        const message = `Your Helhal OTP is ${otp}. It expires in ${expire} minutes.`;
-        const message2 = `Your Helhal OTP is (1). It expires in (2) minutes.`;
+        // const message = `Your Helhal OTP is ${otp}. It expires in ${expire} minutes.`;
+        // const message2 = `Your Helhal OTP is (1). It expires in (2) minutes.`;
+        const message = `Test Message`;
+        const message2 = `Test Message`;
 
         // --- STRUCTURE 1: GET (sendurl.aspx) ---
         const getParams = {
@@ -29,7 +31,8 @@ export class SmsService {
             msgtext: message,
             priority: 'High',
             CountryCode: 'ALL',
-            key: this.smsKey
+            key: this.smsKey,
+            showerror: "C"
         };
 
         // --- STRUCTURE 2: POST JSON (sendsms_param.aspx) ---
@@ -42,7 +45,8 @@ export class SmsService {
             msg: message2,
             lang: "3",
             // msgkey is included as per your provided structure for testing
-            msgkey: `(1),*,${otp},@,(2),*,${expire}`
+            // msgkey: `(1),*,${otp},@,(2),*,${expire}`,
+            showerror: "C"
         };
 
         try {
