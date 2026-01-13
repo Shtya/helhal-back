@@ -31,8 +31,7 @@ export class SmsService {
             msgtext: message,
             priority: 'High',
             CountryCode: 'ALL',
-            key: this.smsKey,
-            showerror: "C"
+            key: this.smsKey
         };
 
         // --- STRUCTURE 2: POST JSON (sendsms_param.aspx) ---
@@ -43,10 +42,10 @@ export class SmsService {
             numbers: fullNumber,
             sender: "MOBSMS",
             msg: message2,
-            lang: "3",
+            lang: "3"
             // msgkey is included as per your provided structure for testing
             // msgkey: `(1),*,${otp},@,(2),*,${expire}`,
-            showerror: "C"
+            // showerror: "C"
         };
 
         try {
@@ -58,18 +57,18 @@ export class SmsService {
 
             // Log and Test Structure 2 (POST JSON)
             this.logger.debug(`Testing Structure 2 (POST) Payload: ${JSON.stringify({ ...postPayload })}`);
-            const resp2 = await axios.post(this.smsParamUrl, postPayload);
-            this.logger.log(`Structure 2 Response: ${JSON.stringify(resp2.data)}`);
+            // const resp2 = await axios.post(this.smsParamUrl, postPayload);
+            // this.logger.log(`Structure 2 Response: ${JSON.stringify(resp2.data)}`);
 
             // Validation Logic (Checks both for a 'send success' indicator)
             const success1 = Array.isArray(resp1.data) && resp1.data[0]?.response === 'send success';
-            const success2 = resp2.data?.status === 'success' || (Array.isArray(resp2.data) && resp2.data[0]?.response === 'send success');
+            // const success2 = resp2.data?.status === 'success' || (Array.isArray(resp2.data) && resp2.data[0]?.response === 'send success');
 
-            if (success1 || success2) {
+            if (success1) {
                 return {
                     success: true,
                     struct1: resp1.data,
-                    struct2: resp2.data
+                    // struct2: resp2.data
                 };
             } else {
                 throw new Error('Both API structures failed to confirm success');
