@@ -1314,7 +1314,6 @@ export class AuthService {
       permissions: Object.keys(updatedPermissions).length > 0 ? updatedPermissions : null
     });
 
-    return this.userRepository.save(user);
   }
 
 
