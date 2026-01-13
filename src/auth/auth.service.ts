@@ -355,7 +355,9 @@ export class AuthService {
     user.lastLogin = new Date();
     const deviceInfo = await this.sessionService.getDeviceInfoFromRequest(req);
     await this.sessionService.trackDevice(user.id, deviceInfo);
-    await this.userRepository.save(user);
+    await this.userRepository.update(user.id, {
+      lastLogin: new Date()
+    });
 
     // 1) create a new DB session
     const session = await this.createSession(user, {
@@ -535,11 +537,16 @@ export class AuthService {
     }
 
 
-    user.password = newPassword;
-    user.resetPasswordToken = null;
-    user.resetPasswordExpires = null;
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    await this.userRepository.save(user);
+    await this.userRepository.update(user.id, {
+      password: hashedPassword,
+      resetPasswordToken: null,
+      resetPasswordExpires: null,
+    });
+
+
 
     // Get admin/contact email from settings
     const settings = await this.settingsRepo.findOne({ where: {} });
@@ -792,7 +799,13 @@ export class AuthService {
     const ok = await user.comparePassword(currentPassword);
     if (!ok) throw new UnauthorizedException('Current password is incorrect');
     user.password = newPassword; // your entity hook hashes on save (existing logic)
-    await this.userRepository.save(user);
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+
+    await this.userRepository.update(user.id, {
+      password: hashedPassword
+    });
 
     // Get admin/contact email from settings
     const settings = await this.settingsRepo.findOne({ where: {} });
@@ -1213,10 +1226,11 @@ export class AuthService {
     }
 
 
-    targetUser.lastLogin = new Date();
     const deviceInfo = await this.sessionService.getDeviceInfoFromRequest(req);
     await this.sessionService.trackDevice(targetUser.id, deviceInfo);
-    await this.userRepository.save(targetUser);
+    await this.userRepository.update(targetUser.id, {
+      lastLogin: new Date()
+    });
 
     // 1) create a new DB session
     const session = await this.createSession(targetUser, {
@@ -1287,9 +1301,6 @@ export class AuthService {
       }
     }
 
-    user.permissions =
-      Object.keys(updatedPermissions).length > 0 ? updatedPermissions : null;
-
 
     const qb = this.sessionsRepo
       .createQueryBuilder()
@@ -1298,6 +1309,10 @@ export class AuthService {
       .where('"user_id" = :uid', { uid: userId });
 
     await qb.execute();
+
+    await this.userRepository.update(user.id, {
+      permissions: Object.keys(updatedPermissions).length > 0 ? updatedPermissions : null
+    });
 
     return this.userRepository.save(user);
   }
@@ -1353,12 +1368,16 @@ export class AuthService {
       otpCode = user.otpCode;
     } else {
       otpCode = this.generateOTP();
-      user.otpCode = otpCode;
     }
 
-    user.otpExpiresAt = new Date(currentTimestamp + this.CODE_EXPIRY_MINUTES * 60 * 1000);
-    user.otpLastSentAt = new Date(currentTimestamp);
-    await this.userRepository.save(user);
+
+    await this.userRepository.update(user.id, {
+      otpCode: otpCode,
+      otpExpiresAt: new Date(currentTimestamp + this.CODE_EXPIRY_MINUTES * 60 * 1000),
+      otpLastSentAt: new Date(currentTimestamp)
+    });
+
+    // await this.userRepository.save(user);
 
     // ✅ Send OTP via SMS provider
     await this.smsService.sendOTP(user.phone, user.countryCode.dial_code, user.otpCode, this.CODE_EXPIRY_MINUTES);
@@ -1380,7 +1399,7 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    if (!user.isPhoneVerified) {
+    if (user.isPhoneVerified) {
       throw new BadRequestException(
         'Your phone is already verified.'
       );
@@ -1398,14 +1417,12 @@ export class AuthService {
     }
 
 
-    user.isPhoneVerified = true;
-
-
-    user.otpCode = null;
-    user.otpExpiresAt = null;
-    user.otpLastSentAt = null;
-
-    await this.userRepository.save(user);
+    await this.userRepository.update(user.id, {
+      isPhoneVerified: true,
+      otpCode: null,
+      otpExpiresAt: null,
+      otpLastSentAt: null,
+    });
 
     // 🔹 Return a simple success response (no login tokens)
     return { message: 'Phone number successfully verified' };
@@ -1489,10 +1506,12 @@ export class AuthService {
       }
 
       finalOTP = user.otpCode;
-      user.otpCode = otpCode;
-      user.otpExpiresAt = otpExpiresAt;
-      user.otpLastSentAt = otpLastSentAt;
-      await this.userRepository.save(user);
+      await this.userRepository.update(user.id, {
+        otpCode: otpCode,
+        otpExpiresAt: otpExpiresAt,
+        otpLastSentAt: otpLastSentAt,
+      });
+
     } else {
       // 🔹 Otherwise → create or update pending phone registration
       let pendingPhone = await this.pendingPhoneRepository.findOne({
@@ -1587,14 +1606,15 @@ export class AuthService {
       }
 
       // Clear OTP fields after successful verification
-      user.otpCode = null;
-      user.otpExpiresAt = null;
-      user.otpLastSentAt = null;
-      await this.userRepository.save(user);
+      await this.userRepository.update(user.id, {
+        otpCode: null,
+        otpExpiresAt: null,
+        otpLastSentAt: null,
+      });
+
 
       // 🔹 Issue tokens for login
       const result = await this.generateTokens(user, res, req);
-      console.log("result: ", result)
       return result;
     }
 

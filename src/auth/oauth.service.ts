@@ -72,7 +72,9 @@ export class OAuthService {
     }
     else if (!user.googleId) {
       user.googleId = profile.id;
-      await this.userRepository.save(user);
+      await this.userRepository.update(user.id, {
+        googleId: profile.id
+      });
     }
 
     if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
@@ -117,7 +119,9 @@ export class OAuthService {
       newUserCreated = true;
     } else if (!user.appleId) {
       user.appleId = profile.id;
-      await this.userRepository.save(user);
+      await this.userRepository.update(user.id, {
+        appleId: profile.id
+      })
     }
 
     if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
