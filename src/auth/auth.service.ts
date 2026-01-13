@@ -1375,7 +1375,7 @@ export class AuthService {
       otpCode = this.generateOTP();
     }
 
-    const { success, details } = await this.smsService.sendOTP(user.phone, user.countryCode.dial_code, user.otpCode, this.CODE_EXPIRY_MINUTES);
+    const { success, details } = await this.smsService.sendOTP(user.phone, user.countryCode.dial_code, otpCode, this.CODE_EXPIRY_MINUTES);
     if (!success) {
       throw new BadRequestException('Failed to send OTP')
     }
@@ -1506,12 +1506,10 @@ export class AuthService {
     // 🔹 If user exists → update OTP fields on user
     if (user) {
       // ✅ Decide whether to reuse or generate OTP
-      let otpCode: string;
       if (user.otpCode && user.otpExpiresAt && new Date() < user.otpExpiresAt) {
-        otpCode = user.otpCode;
+        finalOTP = user.otpCode;
       } else {
-        otpCode = this.generateOTP();
-        user.otpCode = otpCode;
+        finalOTP = this.generateOTP();
       }
 
       finalOTP = user.otpCode;
@@ -1521,7 +1519,7 @@ export class AuthService {
       }
 
       await this.userRepository.update(user.id, {
-        otpCode: otpCode,
+        otpCode: finalOTP,
         otpExpiresAt: otpExpiresAt,
         otpLastSentAt: otpLastSentAt,
       });
@@ -1551,12 +1549,11 @@ export class AuthService {
 
       if (pendingPhone) {
         // ✅ Decide whether to reuse or generate OTP
-        let otpCode: string;
         if (pendingPhone.otpCode && pendingPhone.otpExpiresAt && new Date() < pendingPhone.otpExpiresAt) {
-          otpCode = pendingPhone.otpCode;
+          finalOTP = pendingPhone.otpCode;
         } else {
-          otpCode = this.generateOTP();
-          pendingPhone.otpCode = otpCode;
+          finalOTP = this.generateOTP();
+          pendingPhone.otpCode = finalOTP;
         }
       } else {
         finalOTP = this.generateOTP();

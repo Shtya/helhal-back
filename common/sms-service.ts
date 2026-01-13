@@ -19,6 +19,11 @@ export class SmsService {
         const fullNumber = `${cleanDialCode}${cleanPhone}`;
         const message = `Your Helhal OTP is (1).It expires in (2) minutes.`;
 
+        if (!otp || !expire) {
+            this.logger.error(`Validation failed: otp=${otp}, expire=${expire}`);
+            throw new BadRequestException('Failed to send OTP');
+        }
+
         const postPayload = {
             user: this.smsUser,
             pwd: this.smsPassword,
