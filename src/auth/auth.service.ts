@@ -347,7 +347,13 @@ export class AuthService {
       throw new UnauthorizedException('Please verify your email before logging in');
     }
 
-    return await this.generateTokens(user, res, req)
+    const result = await this.generateTokens(user, res, req)
+
+    const { password: _, ...userSafe } = result.user;
+    return {
+      ...result,
+      user: userSafe
+    };
   }
 
   private async generateTokens(user, res: Response, req) {
