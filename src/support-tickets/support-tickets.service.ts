@@ -12,7 +12,7 @@ export class SupportTicketsService {
     private userRepository: Repository<User>,
     @InjectRepository(Notification)
     private notificationRepository: Repository<Notification>,
-  ) {}
+  ) { }
 
   async createTicket(userId: string, createTicketDto: any) {
     const { subject, message, priority = SupportTicketPriority.LOW } = createTicketDto;
@@ -29,7 +29,7 @@ export class SupportTicketsService {
 
     // Notify admins about new ticket
     const admins = await this.userRepository.find({ where: { role: 'admin' } });
-    
+
     for (const admin of admins) {
       const notification = this.notificationRepository.create({
         userId: admin.id,
@@ -38,7 +38,7 @@ export class SupportTicketsService {
         message: `A new support ticket has been created: ${subject}`,
         relatedEntityType: 'support_ticket',
         relatedEntityId: savedTicket.id,
-      }as any);
+      } as any);
 
       await this.notificationRepository.save(notification);
     }
@@ -60,7 +60,11 @@ export class SupportTicketsService {
 
     const [tickets, total] = await this.supportTicketRepository.findAndCount({
       where: whereClause,
-      relations: ['user'],
+      relations: {
+        user: {
+          person: true // Ensures the author's profile data is loaded
+        }
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
@@ -102,7 +106,11 @@ export class SupportTicketsService {
   async getTicket(userId: string, userRole: string, ticketId: string) {
     const ticket = await this.supportTicketRepository.findOne({
       where: { id: ticketId },
-      relations: ['user'],
+      relations: {
+        user: {
+          person: true // Ensures the author's profile data is loaded
+        }
+      },
     });
 
     if (!ticket) {
@@ -137,7 +145,7 @@ export class SupportTicketsService {
         message: `Your support ticket "${ticket.subject}" has been ${status}`,
         relatedEntityType: 'support_ticket',
         relatedEntityId: ticketId,
-      }as any);
+      } as any);
 
       await this.notificationRepository.save(notification);
     }
@@ -169,7 +177,7 @@ export class SupportTicketsService {
     // Append response to the ticket message
     const responsePrefix = isInternal ? '\n\n[INTERNAL] ' : '\n\n';
     const userIdentifier = userRole === 'admin' ? 'Admin' : 'User';
-    
+
     ticket.message += `${responsePrefix}${userIdentifier} Response: ${message}`;
 
     const savedTicket = await this.supportTicketRepository.save(ticket);
@@ -177,7 +185,7 @@ export class SupportTicketsService {
     // Notify the other party
     if (!isInternal) {
       const otherUserId = userRole === 'admin' ? ticket.userId : null; // Notify admins if user responded
-      
+
       if (otherUserId) {
         const notification = this.notificationRepository.create({
           userId: otherUserId,
@@ -186,13 +194,13 @@ export class SupportTicketsService {
           message: `A new response has been added to ticket: ${ticket.subject}`,
           relatedEntityType: 'support_ticket',
           relatedEntityId: ticketId,
-        }as any);
+        } as any);
 
         await this.notificationRepository.save(notification);
       } else if (userRole !== 'admin') {
         // Notify all admins when a user responds
         const admins = await this.userRepository.find({ where: { role: 'admin' } });
-        
+
         for (const admin of admins) {
           const notification = this.notificationRepository.create({
             userId: admin.id,
@@ -201,7 +209,7 @@ export class SupportTicketsService {
             message: `A user has responded to ticket: ${ticket.subject}`,
             relatedEntityType: 'support_ticket',
             relatedEntityId: ticketId,
-          }as any);
+          } as any);
 
           await this.notificationRepository.save(notification);
         }
@@ -239,7 +247,7 @@ export class SupportTicketsService {
     }
 
     let totalHours = 0;
-    
+
     for (const ticket of resolvedTickets) {
       const created = new Date(ticket.created_at);
       const resolved = new Date(ticket.updated_at); // Assuming updated_at is when it was resolved

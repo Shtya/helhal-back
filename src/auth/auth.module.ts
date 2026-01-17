@@ -22,6 +22,7 @@ import {
   Setting,
   UserRelatedAccount,
   PendingPhoneRegistration,
+  Person,
 } from 'entities/global.entity';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { AccessGuard } from './guard/access.guard';
@@ -30,12 +31,12 @@ import { ReferralModule } from 'src/referral/referral.module';
 import { SessionService } from './session.service';
 import { SettingsService } from 'src/settings/settings.service';
 import { SmsService } from 'common/sms-service';
-
 @Module({
   imports: [
     ConfigModule.forRoot(),
     TypeOrmModule.forFeature([
       User,
+      Person,
       UserRelatedAccount,
       PendingUserRegistration,
       PendingPhoneRegistration,

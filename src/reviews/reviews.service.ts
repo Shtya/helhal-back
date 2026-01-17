@@ -14,7 +14,7 @@ export class ReviewsService {
     private userRepository: Repository<User>,
     @InjectRepository(Order)
     private orderRepository: Repository<Order>,
-  ) {}
+  ) { }
 
   async getServiceReviews(serviceId: string, page: number = 1) {
     const limit = 10;
@@ -22,7 +22,12 @@ export class ReviewsService {
 
     const [reviews, total] = await this.reviewRepository.findAndCount({
       where: { serviceId },
-      relations: ['reviewer', 'seller'],
+      relations: {
+        seller: {
+          person: true, // Fetches profile details for the seller
+        },
+        reviewer: true,
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
@@ -56,7 +61,12 @@ export class ReviewsService {
 
     const [reviews, total] = await this.reviewRepository.findAndCount({
       where: { sellerId },
-      relations: ['reviewer', 'service'],
+      relations: {
+        service: true,
+        reviewer: {
+          person: true // Joins the Person table to get the reviewer's name and avatar
+        }
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,

@@ -2,17 +2,18 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User, DeviceInfo } from 'entities/global.entity';
+import { User, DeviceInfo, Person } from 'entities/global.entity';
 import { Request } from 'express';
 import * as crypto from 'crypto'; // add this
 
 @Injectable()
 export class SessionService {
-  constructor(@InjectRepository(User) private userRepository: Repository<User>) {}
+  constructor(
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>
+  ) { }
 
-  async updateLastLogin(userId: string): Promise<void> {
-    await this.userRepository.update(userId, { lastLogin: new Date() });
-  }
+
 
   // auth/session.service.ts
 
@@ -21,7 +22,7 @@ export class SessionService {
     if (!user) return null;
 
     // normalize devices array
-    user.devices = Array.isArray(user.devices) ? user.devices : [];
+    user.person.devices = Array.isArray(user.devices) ? user.devices : [];
 
     // normalize helpers (important if seeders used "Desktop" and runtime uses "desktop")
     const norm = (s?: string) => (s || 'unknown').toLowerCase();
@@ -32,7 +33,7 @@ export class SessionService {
       os: deviceInfo.os || 'Unknown',
       ip_address: deviceInfo.ip_address || 'unknown',
     };
- 
+
     const idx = user.devices.findIndex((d: any) => norm(d.device_type) === incoming.device_type && (d.browser || 'Unknown') === incoming.browser && (d.os || 'Unknown') === incoming.os);
 
     const now = new Date();
@@ -63,7 +64,7 @@ export class SessionService {
 
       // keep only last 5 devices (oldest out)
       if (user.devices.length > 5) {
-        user.devices = user.devices.slice(-5);
+        user.person.devices = user.devices.slice(-5);
       }
     }
 

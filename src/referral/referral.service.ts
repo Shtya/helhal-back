@@ -17,12 +17,21 @@ export class ReferralService {
     private userBalanceRepository: Repository<UserBalance>,
     @InjectRepository(Transaction)
     private transactionRepository: Repository<Transaction>,
-  ) {}
+  ) { }
 
   async getUserReferralInfo(userId: string) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'username', 'referralCode', 'referralCount', 'referralRewardsCount'],
+      // 2. Select specific fields from both tables
+      select: {
+        id: true,
+        person: {
+          username: true,
+          referralCode: true,
+          referralCount: true,
+          referralRewardsCount: true,
+        },
+      },
     });
 
     if (!user) {
@@ -31,7 +40,7 @@ export class ReferralService {
 
     // Generate referral code if it doesn't exist
     if (!user.referralCode) {
-      user.referralCode = this.generateReferralCode(user.username);
+      user.person.referralCode = this.generateReferralCode(user.username);
       await this.userRepository.save(user);
     }
 
@@ -40,7 +49,7 @@ export class ReferralService {
 
   async getUserReferralStats(userId: string) {
     const referrals = await this.referralRepository.count({ where: { referrerId: userId } });
-    const completedReferrals = await this.referralRepository.count({ where: { referrerId: userId, status: 'completed' } } as any );
+    const completedReferrals = await this.referralRepository.count({ where: { referrerId: userId, status: 'completed' } } as any);
     const pendingReferrals = await this.referralRepository.count({ where: { referrerId: userId, status: 'pending' } } as any);
 
     const totalEarnings = await this.referralRepository
@@ -64,7 +73,11 @@ export class ReferralService {
 
     const [referrals, total] = await this.referralRepository.findAndCount({
       where: { referrerId: userId },
-      relations: ['referrer'],
+      relations: {
+        referrer: {
+          person: true
+        }
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
@@ -82,7 +95,7 @@ export class ReferralService {
   }
 
   async getUserAffiliateInfo(userId: string) {
-    let affiliate:any = await this.affiliateRepository.findOne({ where: { userId } });
+    let affiliate: any = await this.affiliateRepository.findOne({ where: { userId } });
 
     if (!affiliate) {
       // Create affiliate record if it doesn't exist
@@ -108,11 +121,11 @@ export class ReferralService {
   }
 
   async generateAffiliateCode(userId: string) {
-    const affiliate:any = await this.getUserAffiliateInfo(userId);
-    
+    const affiliate: any = await this.getUserAffiliateInfo(userId);
+
     // Generate a new affiliate code
     affiliate.referralCode = this.generateAffiliateCodeInternal(userId); // Fix recursion by using userId directly
-    
+
     return this.affiliateRepository.save(affiliate);
   }
 
@@ -201,7 +214,7 @@ export class ReferralService {
   }
 
   async processReferralConversion(userId: string, orderAmount: number) {
-    const user = await this.userRepository.findOne({ where: { id: userId }, relations: ['referredBy'] });
+    const user = await this.userRepository.findOne({ where: { id: userId }, relations: ['person', 'person.referredBy'] });
 
     if (user && user.referredBy) {
       const referrer = user.referredBy;
@@ -209,7 +222,7 @@ export class ReferralService {
 
       if (affiliate) {
         affiliate.conversions += 1;
-        
+
         // Calculate commission
         const commission = (orderAmount * affiliate.commissionPercent) / 100;
         affiliate.earnings += commission;
@@ -217,7 +230,7 @@ export class ReferralService {
         await this.affiliateRepository.save(affiliate);
 
         // Update referral record
-        const referral:any = await this.referralRepository.findOne({
+        const referral: any = await this.referralRepository.findOne({
           where: { referrerId: referrer.id, referredEmail: user.email },
         });
 
@@ -263,13 +276,18 @@ export class ReferralService {
     return { success: false, commission: 0 };
   }
 
-	 async processReferral(newUser: User, referralCodeUsed?: string): Promise<void> {
+  async processReferral(newUser: User, referralCodeUsed?: string): Promise<void> {
     if (!referralCodeUsed) return;
 
-    const referrerUser = await this.userRepository.findOne({ 
-      where: { referralCode: referralCodeUsed } 
+    const referrerUser = await this.userRepository.findOne({
+      where: {
+        person: {
+          // Remember to trim the input to match your cleaned database
+          referralCode: referralCodeUsed.trim()
+        }
+      },
     });
-    
+
     if (referrerUser) {
       // Create referral record
       const referral = this.referralRepository.create({
@@ -285,9 +303,9 @@ export class ReferralService {
       await this.referralRepository.save(referral);
 
       // Update user references
-      newUser.referredBy = referrerUser;
-      newUser.referredById = referrerUser.id;
-      referrerUser.referralCount = (referrerUser.referralCount || 0) + 1;
+      newUser.person.referredBy = referrerUser;
+      newUser.person.referredById = referrerUser.id;
+      referrerUser.person.referralCount = (referrerUser.referralCount || 0) + 1;
 
       await this.userRepository.save([newUser, referrerUser]);
     }
@@ -296,14 +314,14 @@ export class ReferralService {
   async completeReferral(userId: string, orderAmount: number): Promise<void> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['referredBy'],
+      relations: ['person', 'person.referredBy']
     });
 
     if (user && user.referredBy) {
       const referral = await this.referralRepository.findOne({
-        where: { 
-          referredUserId: userId, 
-          status: ReferralStatus.PENDING 
+        where: {
+          referredUserId: userId,
+          status: ReferralStatus.PENDING
         },
       });
 
@@ -318,7 +336,7 @@ export class ReferralService {
         await this.referralRepository.save(referral);
 
         // Update referrer's rewards count
-        user.referredBy.referralRewardsCount = (user.referredBy.referralRewardsCount || 0) + 1;
+        user.referredBy.person.referralRewardsCount = (user.referredBy.referralRewardsCount || 0) + 1;
         await this.userRepository.save(user.referredBy);
 
         // Add credit to referrer's balance
@@ -328,8 +346,8 @@ export class ReferralService {
   }
 
   private async addReferralCredit(userId: string, amount: number): Promise<void> {
-    let userBalance = await this.userBalanceRepository.findOne({ 
-      where: { userId } 
+    let userBalance = await this.userBalanceRepository.findOne({
+      where: { userId }
     });
 
     if (!userBalance) {

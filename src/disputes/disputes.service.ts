@@ -22,7 +22,16 @@ export class DisputesService {
   async createDispute(userId: string, createDisputeDto: any) {
     const { orderId, reason, type, subject } = createDisputeDto;
 
-    const order = await this.orderRepository.findOne({ where: { id: orderId }, relations: ['buyer', 'seller'] });
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId }, relations: {
+        buyer: {
+          person: true // Fetches person details for the buyer
+        },
+        seller: {
+          person: true // Fetches person details for the seller
+        }
+      }
+    });
 
     if (!order) throw new NotFoundException('Order not found');
 
@@ -77,13 +86,26 @@ export class DisputesService {
   async getActivity(userId: string, userRole: string, disputeId: string) {
     const dispute = await this.disputeRepository.findOne({
       where: { id: disputeId },
-      relations: ['order', 'raisedBy', 'order.buyer', 'order.seller'],
+      relations: {
+        raisedBy: {
+          person: true // Profile of the person who opened the dispute
+        },
+        order: {
+          buyer: {
+            person: true // Profile of the buyer
+          },
+          seller: {
+            person: true // Profile of the seller
+          }
+        }
+      },
     });
 
     if (!dispute) throw new NotFoundException('Dispute not found');
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -97,14 +119,26 @@ export class DisputesService {
     // order + invoice
     const order = await this.orderRepository.findOne({
       where: { id: dispute.orderId },
-      relations: ['buyer', 'seller', 'invoices'],
+      relations: {
+        buyer: {
+          person: true // Fetches person details for the buyer
+        },
+        seller: {
+          person: true // Fetches person details for the seller
+        },
+        invoices: true
+      }
     });
     const invoice = order?.invoices?.[0] || null;
 
     // messages (threaded) - limit to 50 for activity view
     const [messages, total] = await this.dmRepo.findAndCount({
       where: { disputeId },
-      relations: ['sender'],
+      relations: {
+        sender: {
+          person: true
+        }
+      },
       order: { created_at: 'ASC' },
       take: 50,
     });
@@ -164,7 +198,8 @@ export class DisputesService {
 
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -231,8 +266,13 @@ export class DisputesService {
       .createQueryBuilder('dispute')
       .leftJoinAndSelect('dispute.order', 'order')
       .leftJoinAndSelect('dispute.raisedBy', 'raisedBy')
+      .leftJoinAndSelect('raisedBy.person', 'rbp')
+
       .leftJoinAndSelect('order.buyer', 'buyer')
-      .leftJoinAndSelect('order.seller', 'seller');
+      .leftJoinAndSelect('buyer.person', 'bp')
+
+      .leftJoinAndSelect('order.seller', 'seller')
+      .leftJoinAndSelect('seller.person', 'sp')
 
     // --- Filter by status ---
     if (query.status && query.status !== 'all') {
@@ -277,8 +317,13 @@ export class DisputesService {
       .createQueryBuilder('dispute')
       .leftJoinAndSelect('dispute.order', 'order')
       .leftJoinAndSelect('order.buyer', 'buyer')
+      .leftJoinAndSelect('buyer.person', 'bp')      // Join Buyer's Person details
+
       .leftJoinAndSelect('order.seller', 'seller')
+      .leftJoinAndSelect('seller.person', 'sp')     // Join Seller's Person details
+
       .leftJoinAndSelect('dispute.raisedBy', 'raisedBy')
+      .leftJoinAndSelect('raisedBy.person', 'rp')
       .where(
         '(dispute.raisedById = :userId OR order.buyerId = :userId OR order.sellerId = :userId)',
         { userId }
@@ -304,12 +349,25 @@ export class DisputesService {
   async getDispute(userId: string, userRole: string, disputeId: string) {
     const dispute = await this.disputeRepository.findOne({
       where: { id: disputeId },
-      relations: ['order', 'raisedBy', 'order.buyer', 'order.seller'],
+      relations: {
+        raisedBy: {
+          person: true // Profile of the person who opened the dispute
+        },
+        order: {
+          buyer: {
+            person: true // Profile of the buyer
+          },
+          seller: {
+            person: true // Profile of the seller
+          }
+        }
+      },
     });
     if (!dispute) throw new NotFoundException('Dispute not found');
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -324,7 +382,8 @@ export class DisputesService {
   async updateDisputeStatus(userId: string, userRole: string, disputeId: string, status: string) {
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -422,7 +481,16 @@ export class DisputesService {
 
     const dispute = await this.disputeRepository.findOne({
       where: { id: disputeId },
-      relations: ['order', 'order.buyer', 'order.seller'],
+      relations: {
+        order: {
+          buyer: {
+            person: true // Buyer profile data
+          },
+          seller: {
+            person: true // Seller profile data
+          }
+        }
+      },
     });
     if (!dispute) throw new NotFoundException('Dispute not found');
 
@@ -433,7 +501,8 @@ export class DisputesService {
     // Guard: only admin can set non-open statuses
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -577,7 +646,19 @@ export class DisputesService {
   async proposeResolution(disputeId: string, body: any) {
     const dispute = await this.disputeRepository.findOne({
       where: { id: disputeId },
-      relations: ['order', 'raisedBy', 'order.buyer', 'order.seller'],
+      relations: {
+        raisedBy: {
+          person: true // Profile of the user who initiated the dispute
+        },
+        order: {
+          buyer: {
+            person: true // Buyer's profile data
+          },
+          seller: {
+            person: true // Seller's profile data
+          }
+        }
+      },
     });
     if (!dispute) throw new NotFoundException('Dispute not found');
 
@@ -752,7 +833,8 @@ export class DisputesService {
 
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -766,7 +848,11 @@ export class DisputesService {
 
     const [messages, total] = await this.dmRepo.findAndCount({
       where: { disputeId },
-      relations: ['sender'],
+      relations: {
+        sender: {
+          person: true
+        }
+      },
       order: { created_at: 'ASC' },
       skip,
       take: limitNumber,
@@ -797,7 +883,8 @@ export class DisputesService {
   async resolveAndPayout(userId: string, userRole: string, disputeId: string, payload: { sellerAmount: number; buyerRefund: number; note?: string; closeAs: 'completed' | 'cancelled' }) {
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.Propose);

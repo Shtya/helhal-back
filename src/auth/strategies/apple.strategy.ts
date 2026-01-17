@@ -33,13 +33,13 @@ export class AppleStrategy extends PassportStrategy(Strategy, 'apple') {
     const email = decodedToken.email || (req.body.user ? JSON.parse(req.body.user).email : null);
     if (!email) throw new Error('Email is required for Apple Sign-In');
 
-    let user = await this.userRepository.findOne({ where: { email } });
+    let user = await this.userRepository.findOne({ where: { person: { email } } });
     if (!user) {
       const username = req.body.user ? `${req.body.user.firstName} ${req.body.user.lastName}`.trim() : email.split('@')[0];
       user = this.userRepository.create({ username, email, appleId: decodedToken.sub, role: 'buyer' });
       await this.userRepository.save(user);
     } else if (!user.appleId) {
-      user.appleId = decodedToken.sub;
+      user.person.appleId = decodedToken.sub;
       await this.userRepository.save(user);
     }
 

@@ -8,6 +8,7 @@ import { SessionService } from 'src/auth/session.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { PermissionDomains, Permissions } from 'entities/permissions';
 import { formatSearchTerm } from 'utils/search.helper';
+import { instanceToPlain } from 'class-transformer';
 
 @Injectable()
 export class ServicesService {
@@ -48,7 +49,13 @@ export class ServicesService {
 
     const [services, total] = await this.serviceRepository.findAndCount({
       where: whereClause,
-      relations: ['seller', 'category', 'subcategory'],
+      relations: {
+        seller: {
+          person: true, // Fetches profile details for the seller
+        },
+        category: true,
+        subcategory: true
+      },
       order: { [sortBy]: sortOrder },
       skip,
       take: limit,
@@ -74,7 +81,12 @@ export class ServicesService {
 
     const [services, total] = await this.serviceRepository.findAndCount({
       where: whereClause,
-      relations: ['seller', 'category'],
+      relations: {
+        seller: {
+          person: true, // Fetches profile details for the seller
+        },
+        category: true,
+      },
       order: { [sortBy]: sortOrder },
       skip,
       take: limit,
@@ -104,7 +116,13 @@ export class ServicesService {
 
     const [services, total] = await this.serviceRepository.findAndCount({
       where: whereClause,
-      relations: ['seller', 'category', 'subcategory'],
+      relations: {
+        seller: {
+          person: true, // Fetches profile details for the seller
+        },
+        category: true,
+        subcategory: true
+      },
       order: {
         ordersCount: 'DESC', // Primary: Most orders first
         clicks: 'DESC', // Secondary: Most clicks
@@ -366,17 +384,18 @@ export class ServicesService {
         'service.minPrice',
       ])
       .leftJoin('service.seller', 'seller')
+      .leftJoin('seller.person', 'person')
       // select only specific seller fields
       .addSelect([
         'seller.id',
         'seller.profileImage',
-        'seller.username',
         'seller.sellerLevel',
         'seller.lastActivity',
-        'seller.languages',
-        'seller.countryId',
+        'person.username',
+        'person.languages',
+        'person.countryId',
       ])
-      .leftJoin('seller.country', 'country')
+      .leftJoin('person.country', 'country')
       .addSelect([
         'country.id',
         'country.name'
@@ -529,7 +548,7 @@ export class ServicesService {
     // Seller languages filter
     if (sellerSpeaks) {
       const languages = Array.isArray(sellerSpeaks) ? sellerSpeaks : sellerSpeaks.split(',');
-      queryBuilder.andWhere('seller.languages::jsonb ?| array[:...languages]', { languages });
+      queryBuilder.andWhere('person.languages::jsonb ?| array[:...languages]', { languages });
     }
 
     // Seller countries filter (case-insensitive)
@@ -588,7 +607,17 @@ export class ServicesService {
   async getService(slug: string, userId: string, req: any) {
     const service = await this.serviceRepository.findOne({
       where: { slug },
-      relations: ['seller', 'category', 'subcategory', 'requirements', 'reviews', 'country', 'state'],
+      relations: {
+        seller: {
+          person: true, // Crucial: Fetches the seller's username, email, etc.
+        },
+        category: true,
+        subcategory: true,
+        requirements: true,
+        reviews: true,
+        country: true,
+        state: true,
+      }
     });
 
     if (!service) {
@@ -608,13 +637,21 @@ export class ServicesService {
     const relatedServices = await this.serviceRepository.find({
       where: service.subcategoryId ? { subcategoryId: service.subcategoryId } : { categoryId: service.categoryId },
       take: 4,
-      relations: ['seller', 'category', 'subcategory'],
+      relations: {
+        seller: {
+          person: true, // Fetches profile details for the seller
+        },
+        category: true,
+        subcategory: true
+      },
       order: { created_at: 'DESC' },
     });
     const filteredRelated = relatedServices.filter(s => s.id !== service.id).slice(0, 4);
-
+    const plainService = instanceToPlain(service, {
+      enableCircularCheck: true
+    })
     return {
-      ...service,
+      ...plainService,
       relatedServices: filteredRelated,
     };
   }
@@ -744,7 +781,11 @@ export class ServicesService {
   async updateService(userId: string, serviceId: string, updateServiceDto: any, req: any) {
     const service = await this.serviceRepository.findOne({
       where: { id: serviceId },
-      relations: ['seller'],
+      relations: {
+        seller: {
+          person: true, // Fetches profile details for the seller
+        },
+      }
     });
 
     if (!service) {
@@ -833,7 +874,11 @@ export class ServicesService {
   async deleteService(userId: string, serviceId: string) {
     const service = await this.serviceRepository.findOne({
       where: { id: serviceId },
-      relations: ['seller'],
+      relations: {
+        seller: {
+          person: true, // Fetches profile details for the seller
+        },
+      }
     });
 
     if (!service) {
@@ -858,9 +903,11 @@ export class ServicesService {
 
     // Calculate conversion rate
     const conversionRate = service.impressions > 0 ? (service.ordersCount / service.impressions) * 100 : 0;
-
+    const plainService = instanceToPlain(service, {
+      enableCircularCheck: true
+    })
     return {
-      ...service,
+      ...plainService,
       conversionRate: parseFloat(conversionRate.toFixed(2)),
     };
   }

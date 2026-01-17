@@ -12,7 +12,7 @@ export class ServiceRequirementsService {
     private serviceRepository: Repository<Service>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
-  ) {}
+  ) { }
 
   async getServiceRequirements(serviceId: string) {
     return this.requirementRepository.find({
@@ -20,25 +20,29 @@ export class ServiceRequirementsService {
       order: { created_at: 'ASC' },
     });
   }
-async createRequirements(userId: string, serviceId: string, dtos: any[]) {
-  const service = await this.serviceRepository.findOne({
-    where: { id: serviceId },
-    relations: ['seller'],
-  });
+  async createRequirements(userId: string, serviceId: string, dtos: any[]) {
+    const service = await this.serviceRepository.findOne({
+      where: { id: serviceId },
+      relations: {
+        seller: {
+          person: true, // Fetches profile details for the seller
+        },
+      }
+    });
 
-  if (!service) throw new NotFoundException('Service not found');
-  if (service.sellerId !== userId)
-    throw new ForbiddenException('You can only add requirements to your own services');
+    if (!service) throw new NotFoundException('Service not found');
+    if (service.sellerId !== userId)
+      throw new ForbiddenException('You can only add requirements to your own services');
 
-  const requirements = dtos.map(dto =>
-    this.requirementRepository.create({
-      ...dto,
-      serviceId,
-    }),
-  );
+    const requirements = dtos.map(dto =>
+      this.requirementRepository.create({
+        ...dto,
+        serviceId,
+      }),
+    );
 
-  return this.requirementRepository.save(requirements as any);
-}
+    return this.requirementRepository.save(requirements as any);
+  }
 
 
   async updateRequirement(userId: string, requirementId: string, updateRequirementDto: any) {

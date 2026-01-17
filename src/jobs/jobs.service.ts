@@ -60,6 +60,7 @@ export class JobsService {
 
     const qb = this.jobRepository.createQueryBuilder('job')
       .leftJoinAndSelect('job.buyer', 'buyer')
+      .leftJoinAndSelect('buyer.person', 'person')
       .leftJoinAndSelect('job.category', 'category')
       .leftJoinAndSelect('job.country', 'country')
       .leftJoinAndSelect('job.state', 'state')
@@ -161,6 +162,7 @@ export class JobsService {
 
     const qb = this.jobRepository.createQueryBuilder('job')
       .leftJoinAndSelect('job.buyer', 'buyer')
+      .leftJoinAndSelect('buyer.person', 'person')
       .leftJoinAndSelect('job.category', 'category')
       .leftJoinAndSelect('job.country', 'country')
       .leftJoinAndSelect('job.state', 'state')
@@ -240,7 +242,12 @@ export class JobsService {
         { description: Like(`%${q}%`), status: 'published' },
         { skillsRequired: In([q]), status: 'published' },
       ],
-      relations: ['buyer', 'category'],
+      relations: {
+        buyer: {
+          person: true
+        },
+        category: true
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
@@ -260,7 +267,20 @@ export class JobsService {
   async getJob(jobId: string, userId?: string) {
     const job = await this.jobRepository.findOne({
       where: { id: jobId, },
-      relations: ['buyer', 'category', 'subcategory', 'proposals', 'proposals.seller', "country", "state"],
+      relations: {
+        buyer: {
+          person: true, // Loads the buyer's profile (name, email, etc.)
+        },
+        category: true,
+        subcategory: true,
+        country: true,
+        state: true,
+        proposals: {
+          seller: {
+            person: true, // Loads the profile for every seller who sent a proposal
+          },
+        },
+      },
     });
 
     if (!job) {
@@ -348,13 +368,18 @@ export class JobsService {
   async updateJob(userId: string, jobId: string, status: any) {
     const actor = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
     const job = await this.jobRepository.findOne({
       where: { id: jobId },
-      relations: ['buyer'],
+      relations: {
+        buyer: {
+          person: true
+        },
+      },
     });
     if (!job) throw new NotFoundException('Job not found');
     const hasPermission = PermissionBitmaskHelper.has(actor.permissions?.jobs, Permissions.Jobs.Edit)
@@ -395,7 +420,11 @@ export class JobsService {
   async deleteJob(userId: string, jobId: string) {
     const job = await this.jobRepository.findOne({
       where: { id: jobId },
-      relations: ['buyer'],
+      relations: {
+        buyer: {
+          person: true // Fetches person details for the buyer
+        },
+      },
     });
 
     if (!job) {
@@ -405,7 +434,8 @@ export class JobsService {
     // Fetch the user to check their role
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -498,6 +528,7 @@ export class JobsService {
 
     const qb = this.proposalRepository.createQueryBuilder('proposal')
       .leftJoinAndSelect('proposal.seller', 'seller')
+      .leftJoinAndSelect('seller.person', 'person')
       .leftJoinAndSelect('proposal.job', 'job')
       .where('proposal.jobId = :jobId', { jobId });
 
@@ -508,7 +539,7 @@ export class JobsService {
 
     // --- Search ---
     if (search) {
-      qb.andWhere('(seller.username ILIKE :search OR seller.email ILIKE :search OR proposal.coverLetter ILIKE :search)', { search: `%${search}%` });
+      qb.andWhere('(person.username ILIKE :search OR person.email ILIKE :search OR proposal.coverLetter ILIKE :search)', { search: `%${search}%` });
     }
 
     // --- Sorting ---
@@ -536,7 +567,12 @@ export class JobsService {
   // async updateProposalStatus(userId: string, userRole: string, proposalId: string, status: string) {
   //   const proposal = await this.proposalRepository.findOne({
   //     where: { id: proposalId },
-  //     relations: ['job', 'seller'],
+  //     relations: {
+  //   job: true,
+  //   seller: {
+  //     person: true // Joins the Person table to get username, email, etc.
+  //   }
+  // }
   //   });
 
   //   if (!proposal) {
@@ -717,7 +753,13 @@ export class JobsService {
 
     const [proposals, total] = await this.proposalRepository.findAndCount({
       where: whereClause,
-      relations: ['job', 'job.buyer'],
+      relations: {
+        job: {
+          buyer: {
+            person: true // Fetches the profile details (name, avatar, etc.)
+          }
+        }
+      },
       order: { submittedAt: 'DESC' },
       skip,
       take: limit,

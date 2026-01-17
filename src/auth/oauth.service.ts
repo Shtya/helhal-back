@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { User, UserRole, UserStatus } from 'entities/global.entity';
+import { Person, User, UserRole, UserStatus } from 'entities/global.entity';
 import { AuthService } from './auth.service';
 import { randomBytes } from 'crypto';
 import { MailService } from 'common/nodemailer';
@@ -14,6 +14,8 @@ export class OAuthService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Person)
+    public personRepository: Repository<Person>,
     private authService: AuthService,
     private jwtService: JwtService,
     private configService: ConfigService,
@@ -23,12 +25,12 @@ export class OAuthService {
   async processReferral(newUser: User, referralCodeUsed?: string): Promise<void> {
     if (!referralCodeUsed) return;
 
-    const referrerUser = await this.userRepository.findOne({ where: { referralCode: referralCodeUsed } });
+    const referrerUser = await this.userRepository.findOne({ where: { person: { referralCode: referralCodeUsed } } });
     if (referrerUser) {
-      newUser.referredBy = referrerUser;
-      newUser.referredById = referrerUser.id;
-      referrerUser.referralCount = (referrerUser.referralCount || 0) + 1;
-      referrerUser.referralRewardsCount = (referrerUser.referralRewardsCount || 0) + 1;
+      newUser.person.referredBy = referrerUser;
+      newUser.person.referredById = referrerUser.id;
+      referrerUser.person.referralCount = (referrerUser.referralCount || 0) + 1;
+      referrerUser.person.referralRewardsCount = (referrerUser.referralRewardsCount || 0) + 1;
       await this.userRepository.save([newUser, referrerUser]);
     }
   }
@@ -51,8 +53,10 @@ export class OAuthService {
 
     let user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
-      .where('user.email = :email', { email: email })
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
+      .where('person.email = :email', { email: email })
+      .orderBy('user.role', 'ASC')
       .getOne();
 
     let newUserCreated = false;
@@ -71,8 +75,8 @@ export class OAuthService {
       newUserCreated = true;
     }
     else if (!user.googleId) {
-      user.googleId = profile.id;
-      await this.userRepository.update(user.id, {
+      user.person.googleId = profile.id;
+      await this.personRepository.update(user.personId, {
         googleId: profile.id
       });
     }
@@ -99,8 +103,10 @@ export class OAuthService {
 
     let user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
-      .where('user.email = :email', { email: email })
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
+      .where('person.email = :email', { email: email })
+      .orderBy('user.role', 'ASC')
       .getOne();
 
     let newUserCreated = false;
@@ -118,8 +124,8 @@ export class OAuthService {
       await this.userRepository.save(user);
       newUserCreated = true;
     } else if (!user.appleId) {
-      user.appleId = profile.id;
-      await this.userRepository.update(user.id, {
+      user.person.appleId = profile.id;
+      await this.personRepository.update(user.personId, {
         appleId: profile.id
       })
     }

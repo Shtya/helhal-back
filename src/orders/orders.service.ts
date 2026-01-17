@@ -7,6 +7,7 @@ import { randomBytes } from 'crypto';
 import { CRUD } from 'common/crud.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { PermissionDomains, Permissions } from 'entities/permissions';
+import { instanceToPlain } from 'class-transformer';
 
 
 @Injectable()
@@ -56,11 +57,13 @@ export class OrdersService {
 
       // 2. Join and select specific fields for Buyer
       .leftJoin('order.buyer', 'buyer')
-      .addSelect(['buyer.id', 'buyer.username', 'buyer.email', 'buyer.profileImage'])
+      .leftJoin('buyer.person', 'buyerPerson')
+      .addSelect(['buyer.id', 'buyer.profileImage', 'buyerPerson.username', 'buyerPerson.email', 'seller.profileImage'])
 
       // 3. Join and select specific fields for Seller
       .leftJoin('order.seller', 'seller')
-      .addSelect(['seller.id', 'seller.username', 'seller.email', 'seller.profileImage'])
+      .leftJoin('seller.person', 'sellerPerson')
+      .addSelect(['seller.id', 'seller.profileImage', 'sellerPerson.username', 'sellerPerson.email', 'seller.profileImage'])
 
       // 4. Join and select Disputes (all fields or specific ones)
       .leftJoinAndSelect('order.disputes', 'disputes')
@@ -110,9 +113,11 @@ export class OrdersService {
       const activeDispute = order.disputes?.find(d =>
         [DisputeStatus.OPEN, DisputeStatus.IN_REVIEW].includes(d.status)
       );
-
+      const plainOrd = instanceToPlain(order, {
+        enableCircularCheck: true
+      }) as any;
       return {
-        ...order,
+        ...plainOrd,
         disputeId: activeDispute?.id ?? null
       };
     });
@@ -230,7 +235,16 @@ export class OrdersService {
 
     const [orders, total] = await this.orderRepository.findAndCount({
       where: whereClause,
-      relations: ['service', 'buyer', 'seller'],
+      relations: {
+        service: true,
+        buyer: {
+          person: true // Fetches person details for the buyer
+        },
+        seller: {
+          person: true // Fetches person details for the seller
+        },
+        invoices: true
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
@@ -250,7 +264,20 @@ export class OrdersService {
   async getOrder(userId: string, userRole: string, orderId: string, req: any) {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
-      relations: ['service', 'buyer', 'seller', 'invoices', 'invoices.payments'],
+      relations: {
+        service: {
+          seller: { person: true } // If the service object also needs the seller's profile
+        },
+        buyer: {
+          person: true            // Essential for buyer's name/email
+        },
+        seller: {
+          person: true            // Essential for seller's name/email
+        },
+        invoices: {
+          payments: true          // Keeps your invoice and payment history
+        }
+      }
     });
 
     const permissions = req.user.permissions;
@@ -729,7 +756,20 @@ export class OrdersService {
   async autoCancel(orderId: string) {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
-      relations: ['service', 'buyer', 'seller', 'invoices', 'invoices.payments'],
+      relations: {
+        service: {
+          seller: { person: true } // If the service object also needs the seller's profile
+        },
+        buyer: {
+          person: true            // Essential for buyer's name/email
+        },
+        seller: {
+          person: true            // Essential for seller's name/email
+        },
+        invoices: {
+          payments: true          // Keeps your invoice and payment history
+        }
+      }
     });
 
     if (![OrderStatus.ChangeRequested].includes(order.status)) {
@@ -766,7 +806,20 @@ export class OrdersService {
   async autoComplete(orderId: string) {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
-      relations: ['service', 'buyer', 'seller', 'invoices', 'invoices.payments'],
+      relations: {
+        service: {
+          seller: { person: true } // If the service object also needs the seller's profile
+        },
+        buyer: {
+          person: true            // Essential for buyer's name/email
+        },
+        seller: {
+          person: true            // Essential for seller's name/email
+        },
+        invoices: {
+          payments: true          // Keeps your invoice and payment history
+        }
+      }
     });
     if (order.status !== OrderStatus.DELIVERED) {
       throw new BadRequestException('Order must be delivered before completion');
@@ -985,6 +1038,7 @@ export class OrdersService {
       // Join order and buyer
       .leftJoinAndSelect('invoice.order', 'order')
       .leftJoinAndSelect('order.buyer', 'buyer')
+      .leftJoinAndSelect('buyer.person', 'person')
       // Exclude transactionId from selection
       .select([
         'invoice.id',
@@ -1001,8 +1055,8 @@ export class OrdersService {
         'order.totalAmount',
         'order.status',
         'buyer.id',
-        'buyer.username',
-        'buyer.email',
+        'person.username',
+        'person.email',
       ]);
 
     // Filter by paymentStatus if provided
@@ -1027,7 +1081,11 @@ export class OrdersService {
 
     // Map result to move buyer out of order
     const records = data.map(inv => {
-      const { order, ...invoice } = inv as any;
+      const plainInv = instanceToPlain(inv, {
+        enableCircularCheck: true
+      }) as any;
+      const { order, ...invoice } = plainInv as any;
+
       const buyer = order?.buyer || null;
       const orderData = { ...order };
       delete orderData.buyer;

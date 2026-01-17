@@ -1,9 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn, BeforeInsert, BeforeUpdate, Index, BaseEntity, DeleteDateColumn, ManyToMany, JoinTable, Unique } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn, BeforeInsert, BeforeUpdate, Index, BaseEntity, DeleteDateColumn, ManyToMany, JoinTable, Unique, AfterLoad, Relation } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { CoreEntity } from './core.entity';
 import { Asset } from './assets.entity';
 import { decimalToNumberTransformer } from '../utils/transformers';
+import { Exclude, Expose } from 'class-transformer';
 
 export type IUserRole = 'buyer' | 'seller' | 'admin';
 
@@ -21,13 +22,13 @@ export enum UserStatus {
   INACTIVE = 'inactive',
 }
 
-interface Education {
+export interface Education {
   degree: string;
   institution: string;
   year: number;
 }
 
-interface Certification {
+export interface Certification {
   name: string;
   issuingOrganization: string;
   year: number;
@@ -106,10 +107,9 @@ export class State extends CoreEntity {
   countryId: string;
 }
 
-@Entity('users')
+@Entity('persons')
 @Index(['phone', 'countryCode'], { unique: true, where: `"phone" IS NOT NULL AND "phone" != '' AND "countryCode" IS NOT NULL AND "countryCode" != '{}'` })
-export class User extends CoreEntity {
-  // ---- core account ----
+export class Person extends CoreEntity {
   @Column({ unique: true })
   username: string;
 
@@ -144,32 +144,15 @@ export class User extends CoreEntity {
   @Column({ type: 'boolean', default: false })
   isPhoneVerified: boolean;
 
-  @Column({ name: 'profile_image', nullable: true })
-  profileImage: string;
-
-  @Column({ type: 'enum', enum: ['buyer', 'seller', 'admin'], default: 'buyer' })
-  role: string;
-
-  @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
-  status: UserStatus;
-
   @Column({ name: 'last_login', type: 'timestamptz', nullable: true })
   lastLogin: Date;
 
   @Column({ type: 'jsonb', default: [] })
   devices: DeviceInfo[];
 
-  @Column({ name: 'member_since', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
-  memberSince: Date;
-
-  @Column({ name: 'deactivated_at', type: 'timestamptz', nullable: true })
-  deactivatedAt: Date;
-
   @Column({ nullable: true, unique: true })
   googleId: string;
 
-  @Column({ type: 'varchar', nullable: true })
-  ownerType: string; // e.g. 'admin' | 'platform' | 'user'
 
   @Column({ nullable: true, unique: true })
   appleId: string;
@@ -192,13 +175,12 @@ export class User extends CoreEntity {
   @Column({ nullable: true, select: false })
   otpExpiresAt: Date;
 
-  // referrals
   @Column({ nullable: true, unique: true })
   referralCode: string;
 
-  @ManyToOne(() => User, { nullable: true })
+  @ManyToOne("User", { nullable: true })
   @JoinColumn({ name: 'referred_by_id' })
-  referredBy: User;
+  referredBy: Relation<User>;
 
   @Column({ name: 'referred_by_id', nullable: true })
   referredById: string;
@@ -208,9 +190,6 @@ export class User extends CoreEntity {
 
   @Column({ default: 0 })
   referralRewardsCount: number;
-
-  @Column({ type: 'text', nullable: true })
-  description: string;
 
   @Column({ type: 'jsonb', default: [] })
   languages: string[];
@@ -222,6 +201,143 @@ export class User extends CoreEntity {
   @Column({ name: 'country_id', nullable: true })
   countryId: string;
 
+
+  @Column({ type: 'jsonb', nullable: true, select: false })
+  permissions: {
+    users?: number;
+    services?: number;
+    categories?: number;
+    jobs?: number;
+    orders?: number;
+    invoices?: number;
+    disputes?: number;
+    finance?: number;
+    settings?: number;
+    statistics?: number;
+  } | null;
+
+  @Column({ type: 'enum', enum: UserStatus, default: UserStatus.ACTIVE })
+  status: UserStatus;
+
+  @Column({ name: 'deactivated_at', type: 'timestamptz', nullable: true })
+  deactivatedAt: Date;
+
+  createPasswordResetToken(): string {
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    this.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    this.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000);
+    return resetToken;
+  }
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  async hashPassword() {
+    if (this.password && !this.password.startsWith('$2a$') && !this.password.startsWith('$2b$')) {
+      const salt = await bcrypt.genSalt(12);
+      this.password = await bcrypt.hash(this.password, salt);
+    }
+  }
+}
+
+@Entity('users')
+export class User extends CoreEntity {
+  // ---- core account ----
+  @Exclude({ toPlainOnly: true })
+  @ManyToOne(() => Person, { eager: true, cascade: true })
+  @JoinColumn({ name: 'person_id' })
+  person: Person;
+
+  @Column({ name: 'person_id', nullable: true })
+  personId: string;
+
+  //mapped properties from person table to prevent break logic at front and backend;
+  @Expose()
+  get username(): string { return this.person?.username }
+  @Expose()
+  get email(): string { return this.person?.email }
+  @Expose()
+  get pendingEmail(): string | null { return this.person?.pendingEmail }
+  @Expose()
+  get pendingEmailCode(): string | null { return this.person?.pendingEmailCode }
+  @Expose()
+  get lastEmailChangeSentAt(): Date { return this.person?.lastEmailChangeSentAt }
+  get password(): string { return this.person?.password }
+  @Expose()
+  get type(): 'Business' | 'Individual' { return this.person?.type }
+  @Expose()
+  get phone(): string { return this.person?.phone }
+  @Expose()
+  get countryCode(): { code: string; dial_code: string } { return this.person?.countryCode }
+  @Expose()
+  get isPhoneVerified(): boolean { return this.person?.isPhoneVerified }
+  @Expose()
+  get lastLogin(): Date { return this.person?.lastLogin }
+  @Expose()
+  get devices(): DeviceInfo[] { return this.person?.devices }
+  @Expose()
+  get googleId(): string { return this.person?.googleId }
+  @Expose()
+  get appleId(): string { return this.person?.appleId }
+  @Expose()
+  get resetPasswordToken(): string { return this.person?.resetPasswordToken }
+  @Expose()
+  get lastResetPasswordSentAt(): Date { return this.person?.lastResetPasswordSentAt }
+  @Expose()
+  get resetPasswordExpires(): Date { return this.person?.resetPasswordExpires }
+  @Expose()
+  get otpCode(): string { return this.person?.otpCode }
+  @Expose()
+  get otpLastSentAt(): Date { return this.person?.otpLastSentAt }
+  @Expose()
+  get otpExpiresAt(): Date { return this.person?.otpExpiresAt }
+  @Expose()
+  get referralCode(): string { return this.person?.referralCode }
+  @Expose()
+  get referredBy(): User { return this.person?.referredBy }
+  @Expose()
+  get referredById(): string { return this.person?.referredById }
+  @Expose()
+  get referralCount(): number { return this.person?.referralCount }
+  @Expose()
+  get referralRewardsCount(): number { return this.person?.referralRewardsCount }
+  @Expose()
+  get languages(): string[] { return this.person?.languages }
+  @Expose()
+  get country(): Country { return this.person?.country }
+  @Expose()
+  get countryId(): string { return this.person?.countryId }
+  @Expose()
+  get permissions(): {
+    users?: number;
+    services?: number;
+    categories?: number;
+    jobs?: number;
+    orders?: number;
+    invoices?: number;
+    disputes?: number;
+    finance?: number;
+    settings?: number;
+    statistics?: number;
+  } | null { return this.person?.permissions }
+  @Expose()
+  get status(): UserStatus { return this.person?.status }
+  @Expose()
+  get deactivatedAt(): Date { return this.person?.deactivatedAt }
+
+  @Column({ name: 'profile_image', nullable: true })
+  profileImage: string;
+
+  @Column({ type: 'enum', enum: ['buyer', 'seller', 'admin'], default: 'buyer' })
+  role: string;
+
+  @Column({ name: 'member_since', type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
+  memberSince: Date;
+
+  @Column({ type: 'varchar', nullable: true })
+  ownerType: string; // e.g. 'admin' | 'platform' | 'user'
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
 
   @Column({ type: 'jsonb', default: [] })
   skills: string[]; // unified to string[]
@@ -259,7 +375,6 @@ export class User extends CoreEntity {
   @Column({ name: 'response_time_formatted', type: 'varchar', nullable: true })
   responseTimeFormatted: string;
 
-
   @Column({ name: 'orders_completed', default: 0 })
   ordersCompleted: number;
 
@@ -295,21 +410,6 @@ export class User extends CoreEntity {
 
   @Column({ name: 'reputation_points', default: 0 })
   reputationPoints: number;
-
-  @Column({ type: 'jsonb', nullable: true, select: false })
-  permissions: {
-    users?: number;
-    services?: number;
-    categories?: number;
-    jobs?: number;
-    orders?: number;
-    invoices?: number;
-    disputes?: number;
-    finance?: number;
-    settings?: number;
-    statistics?: number;
-  } | null;
-
 
   // ---- relations (unchanged) ----
   @OneToMany(() => Asset, upload => upload.user)
@@ -415,21 +515,7 @@ export class User extends CoreEntity {
     return bcrypt.compare(candidatePassword, this.password);
   }
 
-  createPasswordResetToken(): string {
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    this.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
-    this.resetPasswordExpires = new Date(Date.now() + 10 * 60 * 1000);
-    return resetToken;
-  }
 
-  @BeforeInsert()
-  @BeforeUpdate()
-  async hashPassword() {
-    if (this.password && !this.password.startsWith('$2a$') && !this.password.startsWith('$2b$')) {
-      const salt = await bcrypt.genSalt(12);
-      this.password = await bcrypt.hash(this.password, salt);
-    }
-  }
 }
 
 

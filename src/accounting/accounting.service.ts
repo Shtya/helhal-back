@@ -723,7 +723,16 @@ export class AccountingService {
   }
 
   async processOrderPayment(orderId: string) {
-    const order = await this.orderRepository.findOne({ where: { id: orderId }, relations: ['buyer', 'seller'] });
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId }, relations: {
+        buyer: {
+          person: true // Fetches person details for the buyer
+        },
+        seller: {
+          person: true // Fetches person details for the seller
+        }
+      }
+    });
     if (!order) throw new NotFoundException('Order not found');
 
     let sellerBalance = await this.userBalanceRepository.findOne({ where: { userId: order.sellerId } });
@@ -755,7 +764,16 @@ export class AccountingService {
   }
 
   async processRefund(orderId: string, refundAmount: number) {
-    const order = await this.orderRepository.findOne({ where: { id: orderId }, relations: ['buyer', 'seller'] });
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId }, relations: {
+        buyer: {
+          person: true // Fetches person details for the buyer
+        },
+        seller: {
+          person: true // Fetches person details for the seller
+        }
+      }
+    });
     if (!order) throw new NotFoundException('Order not found');
 
     const sellerBalance = await this.getUserBalance(order.sellerId);
@@ -815,7 +833,12 @@ export class AccountingService {
 
     const [transactions, total] = await this.transactionRepository.findAndCount({
       where,
-      relations: ['order', 'user'],
+      relations: {
+        order: true,
+        user: {
+          person: true // Fetches the profile details linked to this user
+        }
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,

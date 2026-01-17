@@ -6,19 +6,22 @@ import { Response } from 'express';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
-import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount, PendingPhoneRegistration } from 'entities/global.entity';
+import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount, PendingPhoneRegistration, Person } from 'entities/global.entity';
 import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, UpdateUserPermissionsDto, PhoneRegisterDto, PhoneVerifyDto } from 'dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from 'common/nodemailer';
 import { SessionService } from './session.service';
 import { PermissionDomains } from 'entities/permissions';
 import { SmsService } from 'common/sms-service';
-
+import { instanceToPlain } from 'class-transformer';
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User)
     public userRepository: Repository<User>,
+
+    @InjectRepository(Person)
+    public personRepository: Repository<Person>,
 
     @InjectRepository(UserRelatedAccount)
     public userAccountsRepo: Repository<UserRelatedAccount>,
@@ -59,10 +62,10 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    user.status = status;
+    user.person.status = status;
 
     if (status === UserStatus.DELETED) {
-      user.deactivatedAt = new Date();
+      user.person.deactivatedAt = new Date();
 
       // Record deactivation reason
       const deactivation = this.accountDeactivationRepository.create({
@@ -72,7 +75,7 @@ export class AuthService {
       });
       await this.accountDeactivationRepository.save(deactivation);
     } else if (status === UserStatus.ACTIVE) {
-      user.deactivatedAt = null;
+      user.person.deactivatedAt = null;
     }
 
     return this.userRepository.save(user);
@@ -81,7 +84,7 @@ export class AuthService {
   async getAllUsers(page: number = 1, limit: number = 10) {
     const skip = (page - 1) * limit;
     const [users, total] = await this.userRepository.findAndCount({
-      where: { status: Not(UserStatus.DELETED) },
+      where: { person: { status: Not(UserStatus.DELETED) } },
       skip,
       take: limit,
       order: { created_at: 'DESC' },
@@ -102,8 +105,8 @@ export class AuthService {
       throw new NotFoundException('User not found');
     }
 
-    user.status = UserStatus.DELETED;
-    user.deactivatedAt = new Date();
+    user.person.status = UserStatus.DELETED;
+    user.person.deactivatedAt = new Date();
 
     // Record deactivation reason
     const deactivation = this.accountDeactivationRepository.create({
@@ -119,12 +122,14 @@ export class AuthService {
   async register(registerDto: RegisterDto) {
     const { username, email, password, role, type, ref: referralCode } = registerDto;
 
-    const existingUser = await this.userRepository.findOne({
-      where: [
-        { email },
-        { username },
-      ],
-    });
+
+
+    const existingUser = await this.userRepository.createQueryBuilder('user')
+      .innerJoinAndSelect('user.person', 'person')
+      // We use the person alias to access the moved columns
+      .where('person.email = :email', { email: email })
+      .orWhere('person.username = :username', { username })
+      .getOne();
 
     if (existingUser) {
       if (existingUser.email === email) {
@@ -233,7 +238,8 @@ export class AuthService {
 
     await this.pendingUserRepository.delete(pendingUser.id);
 
-    const serializedUser = await this.authenticateUser({ ...user, permissions: null } as User, res);
+    user.person.permissions = null;
+    const serializedUser = await this.authenticateUser(user, res);
 
 
     const emailPromises = [
@@ -263,13 +269,13 @@ export class AuthService {
   async processReferral(newUser: User, referralCodeUsed: string): Promise<void> {
     if (!referralCodeUsed) return;
 
-    const referrerUser = await this.userRepository.findOne({ where: { referralCode: referralCodeUsed } });
+    const referrerUser = await this.userRepository.findOne({ where: { person: { referralCode: referralCodeUsed } } });
     if (!referrerUser) return;
 
-    newUser.referredBy = referrerUser;
-    newUser.referredById = referrerUser.id;
-    referrerUser.referralCount = (referrerUser.referralCount || 0) + 1;
-    referrerUser.referralRewardsCount = (referrerUser.referralRewardsCount || 0) + 1;
+    newUser.person.referredBy = referrerUser;
+    newUser.person.referredById = referrerUser.id;
+    referrerUser.person.referralCount = (referrerUser.referralCount || 0) + 1;
+    referrerUser.person.referralRewardsCount = (referrerUser.referralRewardsCount || 0) + 1;
     await this.userRepository.save([newUser, referrerUser]);
 
     // 🔔 Notify referral owner
@@ -287,7 +293,7 @@ export class AuthService {
   }
 
   async resendVerificationEmail(email: string) {
-    const existingUser = await this.userRepository.findOne({ where: { email } });
+    const existingUser = await this.userRepository.findOne({ where: { person: { email } } });
     if (existingUser) {
       throw new ConflictException('Email already registered');
     }
@@ -328,7 +334,15 @@ export class AuthService {
   async login(loginDto: LoginDto, res: Response, req) {
     const { email, password } = loginDto;
 
-    const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').addSelect('user.permissions').leftJoinAndSelect('user.country', 'country').where('user.email = :email', { email }).getOne();
+    const user = await this.userRepository.createQueryBuilder('user')
+      .innerJoinAndSelect('user.person', 'person')
+      .addSelect('person.password')
+      .addSelect('person.permissions')
+      .leftJoinAndSelect('person.country', 'country')
+      .where('person.email = :email', { email })
+      .orderBy('user.role', 'ASC')
+      .getOne();
+
     if (!user || !(await user.comparePassword(password))) {
       throw new UnauthorizedException('Incorrect email or password');
     }
@@ -346,22 +360,17 @@ export class AuthService {
     if (user.status === UserStatus.PENDING_VERIFICATION) {
       throw new UnauthorizedException('Please verify your email before logging in');
     }
+    const result = await this.generateTokens(user, res, req);
 
-    const result = await this.generateTokens(user, res, req)
-
-    const { password: _, ...userSafe } = result.user;
-    return {
-      ...result,
-      user: userSafe
-    };
+    return result;
   }
 
-  private async generateTokens(user, res: Response, req) {
+  private async generateTokens(user: User, res: Response, req) {
 
-    user.lastLogin = new Date();
+    user.person.lastLogin = new Date();
     const deviceInfo = await this.sessionService.getDeviceInfoFromRequest(req);
     await this.sessionService.trackDevice(user.id, deviceInfo);
-    await this.userRepository.update(user.id, {
+    await this.userRepository.manager.getRepository('Person').update(user.personId, {
       lastLogin: new Date()
     });
 
@@ -386,18 +395,23 @@ export class AuthService {
     res.locals.refreshToken = refreshToken;
     const relatedUsers = await this.getRelatedUsers(user.id);
 
-    // return serialized user + current session id (optional for UI)
-    const serialized = this.serializeUser({ ...user, relatedUsers, accessToken, refreshToken, currentDeviceId: session.id });
+    const plainUser = instanceToPlain(user, {
+      enableCircularCheck: true,
+    }
+    )
+    const serialized = this.serializeUser({ ...plainUser, relatedUsers, currentDeviceId: session.id });
     return { accessToken, refreshToken, user: serialized };
   }
 
 
   async getCurrentUser(userId: string) {
+
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .leftJoinAndSelect('user.referredBy', 'referredBy')
-      .leftJoinAndSelect('user.country', 'country')
-      .addSelect('user.permissions') // ✅ تضمين عمود الصلاحيات
+      .leftJoinAndSelect('user.person', 'person')
+      .leftJoinAndSelect('person.referredBy', 'referredBy')
+      .leftJoinAndSelect('person.country', 'country')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -406,18 +420,16 @@ export class AuthService {
     }
 
     const relatedUsers = await this.getRelatedUsers(user.id);
+    (user as any).relatedUsers = relatedUsers;
 
-    return this.serializeUser({
-      ...user,
-      relatedUsers,
-      permissions: user.permissions,
-    });
+    return this.serializeUser(user);
   }
 
 
   async getUserInfo(userId: string) {
     const qb = this.userRepository.createQueryBuilder('user')
-      .leftJoinAndSelect('user.country', 'country')
+      .innerJoinAndSelect('user.person', 'person')
+      .leftJoinAndSelect('person.country', 'country')
       .where('user.id = :userId', { userId });
 
     // Conditionally join and order by created_at, limit to 10
@@ -457,7 +469,8 @@ export class AuthService {
 
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: decoded.id })
       .getOne();
 
@@ -502,7 +515,10 @@ export class AuthService {
   async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
     const { email } = forgotPasswordDto;
 
-    const user = await this.userRepository.findOne({ where: { email } });
+    const user = await this.userRepository.findOne({
+      where: { person: { email } },
+      relations: ['person']
+    });
     if (!user) {
       return { message: 'OTP sent if account exists' };
     }
@@ -522,9 +538,9 @@ export class AuthService {
 
     const otp = this.generateOTP();
 
-    user.lastResetPasswordSentAt = new Date();
-    user.resetPasswordToken = otp;
-    user.resetPasswordExpires = new Date(Date.now() + this.PASSWORD_RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+    user.person.lastResetPasswordSentAt = new Date();
+    user.person.resetPasswordToken = otp;
+    user.person.resetPasswordExpires = new Date(Date.now() + this.PASSWORD_RESET_TOKEN_EXPIRY_MINUTES * 60 * 1000);
 
     await this.userRepository.save(user);
 
@@ -536,7 +552,15 @@ export class AuthService {
   async resetPassword(resetPasswordDto: ResetPasswordDto) {
     const { email, otp, newPassword } = resetPasswordDto;
 
-    const user = await this.userRepository.createQueryBuilder('user').where('user.email = :email', { email }).andWhere('user.resetPasswordToken = :token', { token: otp }).andWhere('user.resetPasswordExpires > :now', { now: new Date() }).getOne();
+    const user = await this.userRepository.createQueryBuilder('user')
+      // 1. Join the person table where security data now lives
+      .innerJoinAndSelect('user.person', 'person')
+
+      // 2. Query fields via the 'person' alias
+      .where('person.email = :email', { email: email })
+      .andWhere('person.resetPasswordToken = :token', { token: otp })
+      .andWhere('person.resetPasswordExpires > :now', { now: new Date() })
+      .getOne();
 
     if (!user) {
       throw new BadRequestException('Invalid email or OTP, or OTP has expired');
@@ -546,7 +570,7 @@ export class AuthService {
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    await this.userRepository.update(user.id, {
+    await this.personRepository.update(user.personId, {
       password: hashedPassword,
       resetPasswordToken: null,
       resetPasswordExpires: null,
@@ -604,13 +628,21 @@ export class AuthService {
     res.locals.accessToken = accessToken;
     res.locals.refreshToken = refreshToken;
 
-    // NOTE: return the real session id
-    return this.serializeUser({ ...user, accessToken, refreshToken, currentDeviceId: session.id });
+
+    (user as any).accessToken = accessToken;
+    (user as any).refreshToken = refreshToken;
+    (user as any).currentDeviceId = session.id;
+
+    return this.serializeUser(user);
   }
 
   serializeUser(user: any) {
+    const plainUser = instanceToPlain(user, {
+      enableCircularCheck: true,
+    }
+    )
     return {
-      ...user,
+      ...plainUser,
       referredBy: user.referredBy ? { id: user.referredBy.id, username: user.referredBy.username } : null,
     };
   }
@@ -624,9 +656,49 @@ export class AuthService {
     // single source of truth: User table
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['countryCode', 'id', 'username', 'email', 'phone', 'profileImage', 'role', 'status', 'description', 'languages', 'skills', 'education', 'certifications', 'introVideoUrl', 'portfolioItems', 'memberSince', 'lastLogin', 'portfolioFile', 'responseTime', 'deliveryTime', 'ageGroup', 'revisions', 'sellerLevel', 'lastActivity', 'preferences', 'balance', 'totalSpent', 'totalEarned', 'reputationPoints'],
-      relations: ['country']
+      // 1. Join both the Person (Identity) and Country relations
+      relations: ['person', 'person.country'],
+
+      // 2. Map fields to their respective physical tables
+      select: {
+        id: true,
+        profileImage: true,
+        role: true,
+        description: true,
+        skills: true,
+        education: true,
+        certifications: true,
+        introVideoUrl: true,
+        portfolioItems: true,
+        memberSince: true,
+        portfolioFile: true,
+        responseTime: true,
+        deliveryTime: true,
+        revisions: true,
+        sellerLevel: true,
+        lastActivity: true,
+        preferences: true,
+        balance: true,
+        totalSpent: true,
+        totalEarned: true,
+        reputationPoints: true,
+        ageGroup: true,
+
+
+        person: {
+          id: true,
+          username: true,
+          email: true,
+          phone: true,
+          countryCode: true,
+          status: true,
+          languages: true,
+          lastLogin: true,
+          country: true
+        }
+      }
     });
+
     if (!user) throw new NotFoundException('User not found');
     return user;
   }
@@ -640,12 +712,13 @@ export class AuthService {
       throw new ForbiddenException("You cannot update another admin's profile");
     }
 
-    const allowedFields: (keyof User)[] = ['countryCode', 'profileImage', 'username', 'phone', 'description', 'languages', 'skills', 'education', 'certifications', 'deliveryTime', 'ageGroup', 'revisions', 'preferences', 'type', 'countryId'];
+    const allowedFieldsUser: (keyof User)[] = ['profileImage', 'description', 'skills', 'education', 'certifications', 'deliveryTime', 'ageGroup', 'revisions', 'preferences'];
+    const allowedFieldsPerson: (keyof Person)[] = ['countryCode', 'username', 'phone', 'languages', 'type', 'countryId'];
 
     if (typeof updateData.email !== 'undefined' && updateData.email !== user.email) {
-      const exists = await this.userRepository.findOne({ where: { email: updateData.email } });
+      const exists = await this.userRepository.findOne({ where: { person: { email: updateData.email } } });
       if (exists) throw new ConflictException('Email already in use');
-      user.email = updateData.email!;
+      user.person.email = updateData.email!;
     }
 
     // ✅ Username update check
@@ -654,14 +727,14 @@ export class AuthService {
       updateData.username !== user.username
     ) {
       const usernameExists = await this.userRepository.findOne({
-        where: { username: updateData.username },
+        where: { person: { username: updateData.username } },
       });
 
       if (usernameExists) {
         throw new ConflictException('Username already taken');
       }
 
-      user.username = updateData.username;
+      user.person.username = updateData.username;
     }
 
     if (
@@ -674,8 +747,9 @@ export class AuthService {
     ) {
       const exists = await this.userRepository
         .createQueryBuilder('u')
-        .where('u.phone = :phone', { phone: updateData.phone })
-        .andWhere(`u.countryCode @> :countryCode`,
+        .innerJoin('u.person', 'p')
+        .where('p.phone = :phone', { phone: updateData.phone })
+        .andWhere(`p.countryCode @> :countryCode`,
           { countryCode: JSON.stringify(updateData.countryCode), }
         )
         .andWhere('u.id != :id', { id: user.id })
@@ -685,24 +759,29 @@ export class AuthService {
         throw new ConflictException('Phone number with this country code already in use');
       }
 
-      user.phone = updateData.phone;
-      user.countryCode = updateData.countryCode;
-      user.isPhoneVerified = false;
-      user.otpCode = null;
-      user.otpLastSentAt = null;
-      user.otpExpiresAt = null;
+      user.person.phone = updateData.phone;
+      user.person.countryCode = updateData.countryCode;
+      user.person.isPhoneVerified = false;
+      user.person.otpCode = null;
+      user.person.otpLastSentAt = null;
+      user.person.otpExpiresAt = null;
     }
     if (!updateData.phone || !updateData.countryCode) {
 
-      user.otpCode = null;
-      user.otpLastSentAt = null;
-      user.otpExpiresAt = null;
+      user.person.otpCode = null;
+      user.person.otpLastSentAt = null;
+      user.person.otpExpiresAt = null;
     }
 
 
-    for (const f of allowedFields) {
-      if (f !== 'email' && typeof (updateData as any)[f] !== 'undefined') {
+    for (const f of allowedFieldsUser) {
+      if (typeof (updateData as any)[f] !== 'undefined') {
         (user as any)[f] = (updateData as any)[f];
+      }
+    }
+    for (const f of allowedFieldsPerson) {
+      if (f !== 'email' && typeof (updateData as any)[f] !== 'undefined') {
+        (user.person as any)[f] = (updateData as any)[f];
       }
     }
     return this.userRepository.save(user);
@@ -734,7 +813,10 @@ export class AuthService {
 
     // Return full profile + computed stats
     const profile = await this.getUserProfile(userId);
-    return { ...profile, ordersCompleted, repeatBuyers, averageRating, topRated } as any;
+    const plainProfile = instanceToPlain(profile, {
+      enableCircularCheck: true
+    })
+    return { ...plainProfile, ordersCompleted, repeatBuyers, averageRating, topRated } as any;
   }
 
   async updateSellerLevelAutomatically(userId: string) {
@@ -788,8 +870,8 @@ export class AuthService {
     });
 
     // Update user status
-    user.status = UserStatus.INACTIVE;
-    user.deactivatedAt = new Date();
+    user.person.status = UserStatus.INACTIVE;
+    user.person.deactivatedAt = new Date();
 
     await this.userRepository.save(user);
     await this.accountDeactivationRepository.save(deactivation);
@@ -798,18 +880,20 @@ export class AuthService {
   }
 
   async changePassword(userId: string, currentPassword: string, newPassword: string) {
-    const user = await this.userRepository.createQueryBuilder('user').addSelect('user.password').where('user.id = :id', { id: userId }).getOne();
+    const user = await this.userRepository.createQueryBuilder('user')
+      .innerJoinAndSelect('user.person', 'person')
+      .addSelect('person.password').where('user.id = :id', { id: userId }).getOne();
 
     if (!user) throw new NotFoundException('User not found');
 
     const ok = await user.comparePassword(currentPassword);
     if (!ok) throw new UnauthorizedException('Current password is incorrect');
-    user.password = newPassword; // your entity hook hashes on save (existing logic)
+    user.person.password = newPassword; // your entity hook hashes on save (existing logic)
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
 
 
-    await this.userRepository.update(user.id, {
+    await this.personRepository.update(user.personId, {
       password: hashedPassword
     });
 
@@ -891,15 +975,18 @@ export class AuthService {
 
     // Check if new email is already used
     const emailExists = await this.userRepository.findOne({
-      where: { email: newEmail },
-      select: [
-        'id',
-        'username',
-        'email',
-        'pendingEmail',
-        'pendingEmailCode',
-        'lastEmailChangeSentAt',
-      ],
+      where: { person: { email: newEmail } },
+      select: {
+        id: true,
+        person: {
+          username: true,
+          email: true,
+          pendingEmail: true,
+          pendingEmailCode: true,
+          lastEmailChangeSentAt: true,
+        }
+      },
+
     });
     if (emailExists) throw new BadRequestException('Email already in use');
 
@@ -919,9 +1006,9 @@ export class AuthService {
     // Update last sent timestamp
     const code = this.generateOTP();
 
-    user.lastEmailChangeSentAt = new Date();
-    user.pendingEmail = newEmail;
-    user.pendingEmailCode = code;
+    user.person.lastEmailChangeSentAt = new Date();
+    user.person.pendingEmail = newEmail;
+    user.person.pendingEmailCode = code;
 
     await this.userRepository.save(user);
 
@@ -933,14 +1020,17 @@ export class AuthService {
 
   async resendEmailConfirmation(userId: string) {
     const user = await this.userRepository.findOne({
-      where: { id: userId }, select: [
-        'id',
-        'username',
-        'email',
-        'pendingEmail',
-        'pendingEmailCode',
-        'lastEmailChangeSentAt',
-      ],
+      where: { id: userId },
+      select: {
+        id: true,
+        person: {
+          username: true,
+          email: true,
+          pendingEmail: true,
+          pendingEmailCode: true,
+          lastEmailChangeSentAt: true,
+        }
+      },
     });
     if (!user || !user.pendingEmail || !user.pendingEmailCode) {
       throw new BadRequestException('No pending email change found');
@@ -959,7 +1049,7 @@ export class AuthService {
       }
     }
 
-    user.lastEmailChangeSentAt = new Date()
+    user.person.lastEmailChangeSentAt = new Date()
 
     await this.userRepository.save(user);
 
@@ -975,20 +1065,24 @@ export class AuthService {
 
   async cancelEmailChange(userId: string) {
     const user = await this.userRepository.findOne({
-      where: { id: userId }, select: [
-        'id',
-        'username',
-        'email',
-        'pendingEmail',
-        'pendingEmailCode',
-        'lastEmailChangeSentAt',
-      ],
+      where: { id: userId },
+      select: {
+        id: true,
+        person: {
+          username: true,
+          email: true,
+          pendingEmail: true,
+          pendingEmailCode: true,
+          lastEmailChangeSentAt: true,
+        }
+      },
+
     });
     if (!user) throw new NotFoundException('User not found');
 
-    user.pendingEmail = null;
-    user.pendingEmailCode = null;
-    user.lastEmailChangeSentAt = null;
+    user.person.pendingEmail = null;
+    user.person.pendingEmailCode = null;
+    user.person.lastEmailChangeSentAt = null;
 
     await this.userRepository.save(user);
     return { message: 'Pending email change canceled' };
@@ -996,14 +1090,18 @@ export class AuthService {
 
   async confirmEmailChange(userId: string, pendingEmail: string, code: string) {
     const user = await this.userRepository.findOne({
-      where: { id: userId }, select: [
-        'id',
-        'username',
-        'email',
-        'pendingEmail',
-        'pendingEmailCode',
-        'lastEmailChangeSentAt',
-      ],
+      where: { id: userId },
+      select: {
+        id: true,
+        person: {
+          username: true,
+          email: true,
+          pendingEmail: true,
+          pendingEmailCode: true,
+          lastEmailChangeSentAt: true,
+        }
+      },
+
     });
     if (!user) throw new NotFoundException('User not found');
 
@@ -1012,14 +1110,14 @@ export class AuthService {
     }
 
     // Check if email is now used
-    const emailExists = await this.userRepository.findOne({ where: { email: pendingEmail } });
+    const emailExists = await this.userRepository.findOne({ where: { person: { email: pendingEmail } } });
     if (emailExists) throw new BadRequestException('Email already in use');
 
     const oldEmail = user.email;
-    user.email = pendingEmail;
-    user.pendingEmail = null;
-    user.pendingEmailCode = null;
-    user.lastEmailChangeSentAt = null;
+    user.person.email = pendingEmail;
+    user.person.pendingEmail = null;
+    user.person.pendingEmailCode = null;
+    user.person.lastEmailChangeSentAt = null;
 
     await this.userRepository.save(user);
     // Get admin/contact email from settings
@@ -1153,16 +1251,9 @@ export class AuthService {
 
     // 2. Create new user (COPY DATA)
     const subUser = this.userRepository.create({
-      username: `${mainUser.username}_seller_${Date.now() % 100000}`,
-      email: null,
-      password: mainUser.password,
+      personId: mainUser.personId,
       role: 'seller',
-      type: mainUser.type,
-      phone: mainUser.phone,
-      countryCode: mainUser.countryCode,
       profileImage: mainUser.profileImage,
-      countryId: mainUser.countryId,
-      languages: mainUser.languages,
       preferences: mainUser.preferences,
     });
 
@@ -1179,7 +1270,6 @@ export class AuthService {
     const emailPromises = [
       this.emailService.sendWelcomeEmail(subUser.email, subUser.username, subUser.role)
     ];
-
 
 
     if (subUser.role === 'seller') {
@@ -1223,7 +1313,8 @@ export class AuthService {
 
     const targetUser = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: targetUserId })
       .getOne();
 
@@ -1234,7 +1325,7 @@ export class AuthService {
 
     const deviceInfo = await this.sessionService.getDeviceInfoFromRequest(req);
     await this.sessionService.trackDevice(targetUser.id, deviceInfo);
-    await this.userRepository.update(targetUser.id, {
+    await this.personRepository.update(targetUser.personId, {
       lastLogin: new Date()
     });
 
@@ -1259,9 +1350,11 @@ export class AuthService {
     res.locals.refreshToken = refreshToken;
 
     const relatedUsers = await this.getRelatedUsers(targetUser.id);
-
+    const plainTargetUser = instanceToPlain(targetUser, {
+      enableCircularCheck: true
+    })
     // return serialized user + current session id (optional for UI)
-    const serialized = this.serializeUser({ ...targetUser, accessToken, refreshToken, currentDeviceId: session.id, relatedUsers });
+    const serialized = this.serializeUser({ ...plainTargetUser, accessToken, refreshToken, currentDeviceId: session.id, relatedUsers });
     return { accessToken, refreshToken, user: serialized };
   }
 
@@ -1269,9 +1362,15 @@ export class AuthService {
   async getRelatedUsers(userId: string) {
     const relations = await this.userAccountsRepo.find({
       where: [{ mainUserId: userId }, { subUserId: userId }],
-      relations: ['mainUser', 'subUser'],
+      relations: {
+        mainUser: {
+          person: true // Profile for the primary account
+        },
+        subUser: {
+          person: true // Profile for the linked/sub account
+        }
+      },
     });
-
     const relatedUsers = relations
       .map(rel => (rel.mainUserId === userId ? rel.subUser : rel.mainUser))
       .filter((user, index, self) =>
@@ -1291,7 +1390,8 @@ export class AuthService {
   async updateUserPermissions(userId: string, dto: UpdateUserPermissionsDto) {
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect('user.permissions')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -1316,7 +1416,7 @@ export class AuthService {
 
     await qb.execute();
 
-    await this.userRepository.update(user.id, {
+    await this.personRepository.update(user.personId, {
       permissions: Object.keys(updatedPermissions).length > 0 ? updatedPermissions : null
     });
 
@@ -1327,7 +1427,8 @@ export class AuthService {
   async sendPhoneVerificationOTP(userId: string) {
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect(['user.otpCode', 'user.otpExpiresAt'])
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect(['person.otpCode', 'person.otpExpiresAt'])
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -1380,7 +1481,7 @@ export class AuthService {
       throw new BadRequestException('Failed to send OTP')
     }
 
-    await this.userRepository.update(user.id, {
+    await this.personRepository.update(user.personId, {
       otpCode: otpCode,
       otpExpiresAt: new Date(currentTimestamp + this.CODE_EXPIRY_MINUTES * 60 * 1000),
       otpLastSentAt: new Date(currentTimestamp)
@@ -1400,7 +1501,8 @@ export class AuthService {
   ) {
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect(['user.otpCode', 'user.otpExpiresAt'])
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect(['person.otpCode', 'person.otpExpiresAt'])
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -1426,7 +1528,7 @@ export class AuthService {
     }
 
 
-    await this.userRepository.update(user.id, {
+    await this.personRepository.update(user.personId, {
       isPhoneVerified: true,
       otpCode: null,
       otpExpiresAt: null,
@@ -1453,10 +1555,11 @@ export class AuthService {
     // Check if user already exists
     const user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect(['user.permissions', 'user.otpCode', 'user.otpExpiresAt'])
-      .where('user.phone = :phone', { phone })
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect(['person.permissions', 'person.otpCode', 'person.otpExpiresAt'])
+      .where('person.phone = :phone', { phone })
       // Use ->> to extract the JSON value as text and '=' to compare
-      .andWhere("user.countryCode ->> 'dial_code' = :dialCode", {
+      .andWhere("person.countryCode ->> 'dial_code' = :dialCode", {
         dialCode: countryCode.dial_code
       })
       .getOne();
@@ -1497,6 +1600,9 @@ export class AuthService {
         }
       }
     }
+    else {
+      throw new NotFoundException('User not found');
+    }
 
 
     const otpExpiresAt = new Date(currentTimestamp + this.CODE_EXPIRY_MINUTES * 60 * 1000);
@@ -1518,72 +1624,73 @@ export class AuthService {
         throw new BadRequestException('Failed to send OTP')
       }
 
-      await this.userRepository.update(user.id, {
+      await this.personRepository.update(user.personId, {
         otpCode: finalOTP,
         otpExpiresAt: otpExpiresAt,
         otpLastSentAt: otpLastSentAt,
       });
 
-    } else {
-      // 🔹 Otherwise → create or update pending phone registration
-      let pendingPhone = await this.pendingPhoneRepository.findOne({
-        where: { phone, countryCode },
-      });
-
-      if (pendingPhone && pendingPhone.otpLastSentAt) {
-        const lastSentTime = pendingPhone.otpLastSentAt.getTime();
-        const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
-
-        if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
-          const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-          const remainingMinutes = Math.ceil(remainingSeconds / 60);
-          throw new ForbiddenException(
-            `Please wait ${remainingSeconds} seconds before resending OTP`
-          );
-        }
-      }
-
-      if (role === UserRole.ADMIN) {
-        throw new ForbiddenException('You cannot assign yourself as admin');
-      }
-
-      if (pendingPhone) {
-        // ✅ Decide whether to reuse or generate OTP
-        if (pendingPhone.otpCode && pendingPhone.otpExpiresAt && new Date() < pendingPhone.otpExpiresAt) {
-          finalOTP = pendingPhone.otpCode;
-        } else {
-          finalOTP = this.generateOTP();
-          pendingPhone.otpCode = finalOTP;
-        }
-      } else {
-        finalOTP = this.generateOTP();
-      }
-
-      const { success, details } = await this.smsService.sendOTP(phone, countryCode.dial_code, finalOTP, this.CODE_EXPIRY_MINUTES);
-      if (!success) {
-        throw new BadRequestException('Failed to send OTP')
-      }
-
-
-      if (pendingPhone) {
-        pendingPhone.otpCode = finalOTP;
-        pendingPhone.otpExpiresAt = otpExpiresAt;
-        pendingPhone.otpLastSentAt = otpLastSentAt;
-        await this.pendingPhoneRepository.save(pendingPhone);
-      } else {
-        const newPendingPhone = this.pendingPhoneRepository.create({
-          phone,
-          countryCode,
-          otpCode: finalOTP,
-          otpExpiresAt,
-          otpLastSentAt,
-          role: role || UserRole.BUYER, // default role
-          type: type || 'Individual',     // default type
-          referralCodeUsed: ref || null
-        });
-        await this.pendingPhoneRepository.save(newPendingPhone);
-      }
     }
+    // else {
+    //   // 🔹 Otherwise → create or update pending phone registration
+    //   let pendingPhone = await this.pendingPhoneRepository.findOne({
+    //     where: { phone, countryCode },
+    //   });
+
+    //   if (pendingPhone && pendingPhone.otpLastSentAt) {
+    //     const lastSentTime = pendingPhone.otpLastSentAt.getTime();
+    //     const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
+
+    //     if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
+    //       const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
+    //       const remainingMinutes = Math.ceil(remainingSeconds / 60);
+    //       throw new ForbiddenException(
+    //         `Please wait ${remainingSeconds} seconds before resending OTP`
+    //       );
+    //     }
+    //   }
+
+    //   if (role === UserRole.ADMIN) {
+    //     throw new ForbiddenException('You cannot assign yourself as admin');
+    //   }
+
+    //   if (pendingPhone) {
+    //     // ✅ Decide whether to reuse or generate OTP
+    //     if (pendingPhone.otpCode && pendingPhone.otpExpiresAt && new Date() < pendingPhone.otpExpiresAt) {
+    //       finalOTP = pendingPhone.otpCode;
+    //     } else {
+    //       finalOTP = this.generateOTP();
+    //       pendingPhone.otpCode = finalOTP;
+    //     }
+    //   } else {
+    //     finalOTP = this.generateOTP();
+    //   }
+
+    //   const { success, details } = await this.smsService.sendOTP(phone, countryCode.dial_code, finalOTP, this.CODE_EXPIRY_MINUTES);
+    //   if (!success) {
+    //     throw new BadRequestException('Failed to send OTP')
+    //   }
+
+
+    //   if (pendingPhone) {
+    //     pendingPhone.otpCode = finalOTP;
+    //     pendingPhone.otpExpiresAt = otpExpiresAt;
+    //     pendingPhone.otpLastSentAt = otpLastSentAt;
+    //     await this.pendingPhoneRepository.save(pendingPhone);
+    //   } else {
+    //     const newPendingPhone = this.pendingPhoneRepository.create({
+    //       phone,
+    //       countryCode,
+    //       otpCode: finalOTP,
+    //       otpExpiresAt,
+    //       otpLastSentAt,
+    //       role: role || UserRole.BUYER, // default role
+    //       type: type || 'Individual',     // default type
+    //       referralCodeUsed: ref || null
+    //     });
+    //     await this.pendingPhoneRepository.save(newPendingPhone);
+    //   }
+    // }
 
     // 🔹 Send OTP via SMS provider
 
@@ -1600,12 +1707,14 @@ export class AuthService {
     const { code: otpCode, countryCode, phone } = dto;
     let user = await this.userRepository
       .createQueryBuilder('user')
-      .addSelect(['user.permissions', 'user.otpCode', 'user.otpExpiresAt'])
-      .leftJoinAndSelect('user.country', 'country')
-      .where('user.phone = :phone', { phone })
-      .andWhere(`user.countryCode @> :countryCode`,
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect(['person.permissions', 'person.otpCode', 'person.otpExpiresAt'])
+      .leftJoinAndSelect('person.country', 'country')
+      .where('person.phone = :phone', { phone })
+      .andWhere(`person.countryCode @> :countryCode`,
         { countryCode: JSON.stringify(countryCode), }
       )
+      .orderBy('user.role', 'ASC')
       .getOne();
 
 
@@ -1627,7 +1736,7 @@ export class AuthService {
       }
 
       // Clear OTP fields after successful verification
-      await this.userRepository.update(user.id, {
+      await this.personRepository.update(user.personId, {
         otpCode: null,
         otpExpiresAt: null,
         otpLastSentAt: null,
@@ -1638,51 +1747,54 @@ export class AuthService {
       const result = await this.generateTokens(user, res, req);
       return result;
     }
-
-    // 🔹 Otherwise check pending phone registration
-    const pendingPhone = await this.pendingPhoneRepository.findOne({
-      where: { phone, countryCode },
-    });
-
-    if (!pendingPhone) {
-      throw new NotFoundException('No active registration found for this phone number');
+    else {
+      throw new NotFoundException('User not found');
     }
 
-    // Validate OTP
-    if (pendingPhone.otpCode !== otpCode) {
-      throw new BadRequestException('Invalid OTP code');
-    }
-    if (new Date() > pendingPhone.otpExpiresAt) {
-      throw new BadRequestException('OTP has expired');
-    }
+    // // 🔹 Otherwise check pending phone registration
+    // const pendingPhone = await this.pendingPhoneRepository.findOne({
+    //   where: { phone, countryCode },
+    // });
 
-    const { role, referralCodeUsed, type } = pendingPhone;
-    const referralCode = crypto.randomBytes(8).toString('hex').toUpperCase();
-    const finalRole = role === UserRole.ADMIN ? UserRole.BUYER : role;
-    const baseName = phone; // use phone number as prefix 
-    const uniqueSuffix = crypto.randomBytes(6).toString('hex'); // 12-char hex string
-    // 🔹 Create new user record
-    user = this.userRepository.create({
-      username: `${baseName}_${uniqueSuffix}`,
-      phone,
-      countryCode,
-      email: null,
-      password: null,
-      type,
-      role: finalRole,
-      referralCode: referralCode,
-      isPhoneVerified: true,
-    });
+    // if (!pendingPhone) {
+    //   throw new NotFoundException('No active registration found for this phone number');
+    // }
 
-    await this.userRepository.save(user);
+    // // Validate OTP
+    // if (pendingPhone.otpCode !== otpCode) {
+    //   throw new BadRequestException('Invalid OTP code');
+    // }
+    // if (new Date() > pendingPhone.otpExpiresAt) {
+    //   throw new BadRequestException('OTP has expired');
+    // }
 
-    // Process referral if used
-    if (referralCodeUsed) {
-      await this.processReferral(user, referralCodeUsed);
-    }
+    // const { role, referralCodeUsed, type } = pendingPhone;
+    // const referralCode = crypto.randomBytes(8).toString('hex').toUpperCase();
+    // const finalRole = role === UserRole.ADMIN ? UserRole.BUYER : role;
+    // const baseName = phone; // use phone number as prefix 
+    // const uniqueSuffix = crypto.randomBytes(6).toString('hex'); // 12-char hex string
+    // // 🔹 Create new user record
+    // user = this.userRepository.create({
+    //   username: `${baseName}_${uniqueSuffix}`,
+    //   phone,
+    //   countryCode,
+    //   email: null,
+    //   password: null,
+    //   type,
+    //   role: finalRole,
+    //   referralCode: referralCode,
+    //   isPhoneVerified: true,
+    // });
 
-    // Remove pending record
-    await this.pendingPhoneRepository.delete(pendingPhone.id);
+    // await this.userRepository.save(user);
+
+    // // Process referral if used
+    // if (referralCodeUsed) {
+    //   await this.processReferral(user, referralCodeUsed);
+    // }
+
+    // // Remove pending record
+    // await this.pendingPhoneRepository.delete(pendingPhone.id);
 
     // 🔹 Send onboarding messages
     // const onboardingPromises = [
@@ -1708,7 +1820,7 @@ export class AuthService {
     // }
 
     // 🔹 Issue tokens for login immediately after registration
-    return await this.generateTokens(user, res, req);
+    // return await this.generateTokens(user, res, req);
   }
 
   private generateOTP() {

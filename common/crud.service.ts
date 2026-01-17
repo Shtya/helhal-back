@@ -39,6 +39,15 @@ export class CRUD {
     const skip = (pageNumber - 1) * limitNumber;
     const query = repository.createQueryBuilder(entityName).skip(skip).take(limitNumber);
 
+    if (relations?.length > 0) {
+      const invalidRelations = relations.filter(relation => !repository.metadata.relations.some(rel => rel.propertyName === relation));
+      if (invalidRelations.length > 0) {
+        throw new BadRequestException(`Invalid relations: ${invalidRelations.join(', ')}`);
+      }
+      relations.forEach(relation => {
+        query.leftJoinAndSelect(`${entityName}.${relation}`, relation);
+      });
+    }
 
     if (extraSelects?.length) {
       extraSelects.forEach(col => {
@@ -82,10 +91,11 @@ export class CRUD {
       const flatFilters = flatten(filters);
       Object.entries(flatFilters).forEach(([flatKey, value]) => {
         if (value !== null && value !== undefined && value !== '') {
+          const fullPath = flatKey.includes('.') ? flatKey : `${entityName}.${flatKey}`;
           const paramKey = flatKey.replace(/\./g, '_');
           // Handle explicit null
           if (value === null) {
-            query.andWhere(`${entityName}.${flatKey} IS NULL`);
+            query.andWhere(`${fullPath} IS NULL`);
             return;
           }
 
@@ -93,7 +103,7 @@ export class CRUD {
           if (typeof value === 'object' && value !== null) {
             // Example: { not: 5 } → NOT EQUAL
             if ('not' in value) {
-              query.andWhere(`${entityName}.${flatKey} != :${paramKey}`, {
+              query.andWhere(`${fullPath} != :${paramKey}`, {
                 [paramKey]: value.not,
               });
               return;
@@ -101,18 +111,18 @@ export class CRUD {
 
             // Example: { isNull: true } → IS NULL
             if (value.isNull === true) {
-              query.andWhere(`${entityName}.${flatKey} IS NULL`);
+              query.andWhere(`${fullPath} IS NULL`);
               return;
             }
 
             // Example: { isNull: false } → IS NOT NULL
             if (value.isNull === false) {
-              query.andWhere(`${entityName}.${flatKey} IS NOT NULL`);
+              query.andWhere(`${fullPath} IS NOT NULL`);
               return;
             }
 
             if ('in' in value) {
-              query.andWhere(`${entityName}.${flatKey} IN (:...${paramKey})`, {
+              query.andWhere(`${fullPath} IN (:...${paramKey})`, {
                 [paramKey]: value.in,
               });
               return;
@@ -120,7 +130,7 @@ export class CRUD {
 
           }
           // Default: equality
-          query.andWhere(`${entityName}.${flatKey} = :${paramKey}`, {
+          query.andWhere(`${fullPath} = :${paramKey}`, {
             [paramKey]: value,
           });
 
@@ -132,45 +142,52 @@ export class CRUD {
       query.andWhere(
         new Brackets(qb => {
           searchFields.forEach(field => {
-            const columnMetadata = repository.metadata.columns.find(col => col.propertyName === field);
+            let currentAlias = entityName;
+            let propertyName = field;
+
+            // 1. Handle nested relations (e.g., 'person.username')
+            if (field.includes('.')) {
+              const parts = field.split('.');
+              currentAlias = parts[0];   // e.g., 'person'
+              propertyName = parts[1];   // e.g., 'username'
+            }
+
+            const columnMetadata = repository.metadata.columns.find(
+              col => col.propertyName === propertyName && col.entityMetadata.targetName.toLowerCase() === (field.includes('.') ? propertyName : entityName)
+            ) || repository.metadata.columns.find(col => col.propertyName === propertyName);
+
+            const fullPath = `${currentAlias}.${propertyName}`;
+
             if (columnMetadata?.type === 'jsonb') {
-              qb.orWhere(`LOWER(${entityName}.${field}::text) LIKE LOWER(:search)`, { search: `%${search}%` });
+              qb.orWhere(`LOWER(${fullPath}::text) LIKE LOWER(:search)`, { search: `%${search}%` });
             } else if (columnMetadata?.type === String || columnMetadata?.type == 'text') {
-              qb.orWhere(`LOWER(${entityName}.${field}) LIKE LOWER(:search)`, {
+              qb.orWhere(`LOWER(${fullPath}) LIKE LOWER(:search)`, {
                 search: `%${search}%`,
               });
             } else if (['decimal', 'float'].includes(columnMetadata?.type as any)) {
               const numericSearch = parseFloat(search);
               if (!isNaN(numericSearch))
-                qb.orWhere(`${entityName}.${field} = :numericSearch`, {
+                qb.orWhere(`${fullPath} = :numericSearch`, {
                   numericSearch,
                 });
             } else if (columnMetadata?.type === 'enum') {
               const enumValues = columnMetadata.enum;
               if (enumValues.includes(search)) {
-                qb.orWhere(`${entityName}.${field} = :value`, {
+                qb.orWhere(`${fullPath} = :value`, {
                   value: search,
                 });
               } else {
                 throw new BadRequestException(`Invalid value '${search}' for enum field '${field}'. Allowed values: ${enumValues.join(', ')}`);
               }
             } else {
-              qb.orWhere(`${entityName}.${field} = :search`, { search });
+              qb.orWhere(`${fullPath} = :search`, { search });
             }
           });
         }),
       );
     }
 
-    if (relations?.length > 0) {
-      const invalidRelations = relations.filter(relation => !repository.metadata.relations.some(rel => rel.propertyName === relation));
-      if (invalidRelations.length > 0) {
-        throw new BadRequestException(`Invalid relations: ${invalidRelations.join(', ')}`);
-      }
-      relations.forEach(relation => {
-        query.leftJoinAndSelect(`${entityName}.${relation}`, relation);
-      });
-    }
+
 
     const defaultSortBy = 'created_at';
     const sortField = sortBy || defaultSortBy;
@@ -183,7 +200,7 @@ export class CRUD {
 
     query.orderBy(`${entityName}.${sortField}`, sortDirection);
 
-    console.log('Generated Query:', query.getSql());
+
     const [data, total] = await query.getManyAndCount();
 
     return {
@@ -318,7 +335,7 @@ export class CRUD {
     }
 
     try {
-      const referrerUser = await userRepository.findOne({ where: { referralCode: referralCodeUsed } });
+      const referrerUser = await userRepository.findOne({ where: { person: { referralCode: referralCodeUsed } } });
 
       if (referrerUser) {
         newUser.referredBy = referrerUser;
@@ -327,8 +344,8 @@ export class CRUD {
         // هنا بدلاً من استخدام save() من الكائن newUser، استخدم الـ repository
         await userRepository.save(newUser); // حفظ المستخدم الجديد
 
-        referrerUser.referralCount = (referrerUser.referralCount || 0) + 1;
-        referrerUser.referralRewardsCount = (referrerUser.referralRewardsCount || 0) + 1;
+        referrerUser.person.referralCount = (referrerUser.referralCount || 0) + 1;
+        referrerUser.person.referralRewardsCount = (referrerUser.referralRewardsCount || 0) + 1;
 
         await userRepository.save(referrerUser); // حفظ التعديلات على الـ referrerUser
 
@@ -355,7 +372,7 @@ export class CRUD {
         .toUpperCase();
 
       // استخدام repository للبحث عن المستخدم باستخدام referralCode
-      const existingUser = await userRepository.findOne({ where: { referralCode } });
+      const existingUser = await userRepository.findOne({ where: { person: { referralCode } } });
       if (!existingUser) {
         isUnique = true;
       }

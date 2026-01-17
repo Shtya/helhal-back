@@ -14,7 +14,7 @@ export class AbuseReportsService {
     private serviceRepository: Repository<Service>,
     @InjectRepository(Notification)
     private notificationRepository: Repository<Notification>,
-  ) {}
+  ) { }
 
   async createReport(userId: string, createReportDto: any) {
     const { reason, reportedUserId, reportedServiceId } = createReportDto;
@@ -60,7 +60,19 @@ export class AbuseReportsService {
 
     const [reports, total] = await this.abuseReportRepository.findAndCount({
       where: whereClause,
-      relations: ['reporter', 'reportedUser', 'reportedService'],
+      relations: {
+        reporter: {
+          person: true // Fetches the profile of the user who filed the report
+        },
+        reportedUser: {
+          person: true // Fetches the profile of the user being accused
+        },
+        reportedService: {
+          seller: {
+            person: true // Optional: Fetches the profile of the service owner
+          }
+        }
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
@@ -83,7 +95,16 @@ export class AbuseReportsService {
 
     const [reports, total] = await this.abuseReportRepository.findAndCount({
       where: { reporterId: userId },
-      relations: ['reportedUser', 'reportedService'],
+      relations: {
+        reportedUser: {
+          person: true // Fetches the profile of the user being accused
+        },
+        reportedService: {
+          seller: {
+            person: true // Optional: Fetches the profile of the service owner
+          }
+        }
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
@@ -103,7 +124,19 @@ export class AbuseReportsService {
   async getReport(userId: string, userRole: string, reportId: string) {
     const report = await this.abuseReportRepository.findOne({
       where: { id: reportId },
-      relations: ['reporter', 'reportedUser', 'reportedService'],
+      relations: {
+        reporter: {
+          person: true // Fetches the profile of the user who filed the report
+        },
+        reportedUser: {
+          person: true // Fetches the profile of the user being accused
+        },
+        reportedService: {
+          seller: {
+            person: true // Optional: Fetches the profile of the service owner
+          }
+        }
+      },
     });
 
     if (!report) {
@@ -121,7 +154,19 @@ export class AbuseReportsService {
   async updateReportStatus(reportId: string, status: string, actionTaken?: string) {
     const report = await this.abuseReportRepository.findOne({
       where: { id: reportId },
-      relations: ['reporter', 'reportedUser', 'reportedService'],
+      relations: {
+        reporter: {
+          person: true // Fetches the profile of the user who filed the report
+        },
+        reportedUser: {
+          person: true // Fetches the profile of the user being accused
+        },
+        reportedService: {
+          seller: {
+            person: true // Optional: Fetches the profile of the service owner
+          }
+        }
+      },
     });
 
     if (!report) {
@@ -129,7 +174,7 @@ export class AbuseReportsService {
     }
 
     report.status = status as AbuseReportStatus;
-    
+
     if (actionTaken) {
       report.reason += `\n\nAction Taken: ${actionTaken}`;
     }
@@ -145,7 +190,7 @@ export class AbuseReportsService {
         message: `Your abuse report has been ${status}. ${actionTaken ? 'Action taken: ' + actionTaken : ''}`,
         relatedEntityType: 'abuse_report',
         relatedEntityId: reportId,
-      }as any);
+      } as any);
 
       await this.notificationRepository.save(notification);
     }
@@ -189,7 +234,7 @@ export class AbuseReportsService {
         break;
 
       case 'suspend':
-        user.status = 'suspended' as any;
+        user.person.status = 'suspended' as any;
         await this.userRepository.save(user);
 
         const suspensionNotification = this.notificationRepository.create({
@@ -202,7 +247,7 @@ export class AbuseReportsService {
         break;
 
       case 'ban':
-        user.status = 'deleted' as any;
+        user.person.status = 'deleted' as any;
         await this.userRepository.save(user);
 
         const banNotification = this.notificationRepository.create({

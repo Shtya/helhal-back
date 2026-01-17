@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException 
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In, Between, MoreThanOrEqual, LessThanOrEqual, ILike } from 'typeorm';
 import { Blog, BlogComment, BlogCategory, User, BlogLike, BlogStatus, CommentStatus, UserRole } from 'entities/global.entity';
+import { instanceToPlain } from 'class-transformer';
 
 
 @Injectable()
@@ -17,7 +18,7 @@ export class BlogsService {
     private userRepository: Repository<User>,
     @InjectRepository(BlogLike)
     private blogLikeRepository: Repository<BlogLike>,
-  ) {}
+  ) { }
 
   async getBlogs(query: any) {
     const {
@@ -41,9 +42,24 @@ export class BlogsService {
       whereClause.authorId = author;
     }
 
-    const [blogs, total]:any = await this.blogRepository.findAndCount({
+    const [blogs, total]: any = await this.blogRepository.findAndCount({
       where: whereClause,
-      relations: ['author', 'categories', 'comments', 'likes'],
+      relations: {
+        author: {
+          person: true // Author's profile data
+        },
+        categories: true,
+        comments: {
+          user: {
+            person: true // Profile of the person who commented
+          }
+        },
+        likes: {
+          user: {
+            person: true // Profile of the person who liked
+          }
+        }
+      },
       order: { [sortBy]: sortOrder },
       skip,
       take: limit,
@@ -78,7 +94,12 @@ export class BlogsService {
         { excerpt: ILike(`%${q}%`), status: BlogStatus.PUBLISHED },
         { tags: In([q]), status: BlogStatus.PUBLISHED },
       ],
-      relations: ['author', 'categories'],
+      relations: {
+        categories: true,
+        author: {
+          person: true // Joins the Person table to get the author's display name/avatar
+        }
+      },
       order: { publishedAt: 'DESC' },
       skip,
       take: limit,
@@ -96,11 +117,25 @@ export class BlogsService {
   }
 
   async getBlog(blogId: string) {
-    const blog:any = await this.blogRepository.findOne({
+    const blog: any = await this.blogRepository.findOne({
       where: { id: blogId },
-      relations: ['author', 'categories', 'comments', 'comments.user', 'likes', 'likes.user'],
+      relations: {
+        author: {
+          person: true // Profile of the blog writer
+        },
+        categories: true,
+        comments: {
+          user: {
+            person: true // Profile of the person who commented
+          }
+        },
+        likes: {
+          user: {
+            person: true // Profile of the person who liked
+          }
+        }
+      },
     });
-
     if (!blog) {
       throw new NotFoundException('Blog not found');
     }
@@ -113,7 +148,9 @@ export class BlogsService {
     await this.blogRepository.save(blog);
 
     return {
-      ...blog,
+      ...instanceToPlain(blog, {
+        enableCircularCheck: true
+      }),
       commentCount: blog.comments.length,
       likeCount: blog.likes.length,
     };
@@ -127,7 +164,7 @@ export class BlogsService {
 
     const { categoryIds, ...blogData } = createBlogDto;
 
-    const blog:any = this.blogRepository.create({
+    const blog: any = this.blogRepository.create({
       ...blogData,
       authorId: userId,
       status: BlogStatus.DRAFT,
@@ -145,9 +182,13 @@ export class BlogsService {
   }
 
   async updateBlog(userId: string, blogId: string, updateBlogDto: any) {
-    const blog:any = await this.blogRepository.findOne({
+    const blog: any = await this.blogRepository.findOne({
       where: { id: blogId },
-      relations: ['author'],
+      relations: {
+        author: {
+          person: true // Joins the Person table to get the author's display name/avatar
+        }
+      }
     });
 
     if (!blog) {
@@ -178,7 +219,11 @@ export class BlogsService {
   async deleteBlog(userId: string, blogId: string) {
     const blog = await this.blogRepository.findOne({
       where: { id: blogId },
-      relations: ['author'],
+      relations: {
+        author: {
+          person: true // Joins the Person table to get the author's display name/avatar
+        }
+      }
     });
 
     if (!blog) {
@@ -199,7 +244,11 @@ export class BlogsService {
   async publishBlog(userId: string, blogId: string) {
     const blog = await this.blogRepository.findOne({
       where: { id: blogId },
-      relations: ['author'],
+      relations: {
+        author: {
+          person: true // Joins the Person table to get the author's display name/avatar
+        }
+      }
     });
 
     if (!blog) {
@@ -223,7 +272,11 @@ export class BlogsService {
   async unpublishBlog(userId: string, blogId: string) {
     const blog = await this.blogRepository.findOne({
       where: { id: blogId },
-      relations: ['author'],
+      relations: {
+        author: {
+          person: true // Joins the Person table to get the author's display name/avatar
+        }
+      }
     });
 
     if (!blog) {
@@ -249,11 +302,15 @@ export class BlogsService {
     const skip = (page - 1) * limit;
 
     const [comments, total] = await this.blogCommentRepository.findAndCount({
-      where: { 
-        blogId, 
-        status: CommentStatus.APPROVED 
+      where: {
+        blogId,
+        status: CommentStatus.APPROVED
       },
-      relations: ['user'],
+      relations: {
+        user: {
+          person: true // Fetches the profile details linked to this user
+        }
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
@@ -312,7 +369,12 @@ export class BlogsService {
   async deleteComment(userId: string, userRole: string, commentId: string) {
     const comment = await this.blogCommentRepository.findOne({
       where: { id: commentId },
-      relations: ['user', 'blog'],
+      relations: {
+        blog: true,
+        user: {
+          person: true // Ensures the author's profile data is loaded
+        }
+      }
     });
 
     if (!comment) {
@@ -332,7 +394,7 @@ export class BlogsService {
   }
 
   async likeBlog(userId: string, blogId: string) {
-    const blog:any = await this.blogRepository.findOne({ where: { id: blogId } });
+    const blog: any = await this.blogRepository.findOne({ where: { id: blogId } });
     if (!blog) {
       throw new NotFoundException('Blog not found');
     }
@@ -372,7 +434,7 @@ export class BlogsService {
     await this.blogLikeRepository.remove(like);
 
     // Update blog like count
-    const blog:any = await this.blogRepository.findOne({ where: { id: blogId } });
+    const blog: any = await this.blogRepository.findOne({ where: { id: blogId } });
     if (blog) {
       blog.likes = await this.blogLikeRepository.find({ where: { blogId } });
       await this.blogRepository.save(blog);
@@ -391,9 +453,9 @@ export class BlogsService {
     }
 
     const [blogs, total] = await this.blogRepository.findAndCount({
-      where: { 
-        authorId, 
-        status: BlogStatus.PUBLISHED 
+      where: {
+        authorId,
+        status: BlogStatus.PUBLISHED
       },
       relations: ['categories', 'comments', 'likes'],
       order: { publishedAt: 'DESC' },
@@ -429,15 +491,30 @@ export class BlogsService {
     }
 
     const [blogs, total] = await this.blogRepository.findAndCount({
-      where: { 
+      where: {
         categories: { id: categoryId },
-        status: BlogStatus.PUBLISHED 
+        status: BlogStatus.PUBLISHED
       },
-      relations: ['author', 'categories', 'comments', 'likes'],
+      relations: {
+        author: {
+          person: true // Author's profile data
+        },
+        categories: true,
+        comments: {
+          user: {
+            person: true // Profile of the person who commented
+          }
+        },
+        likes: {
+          user: {
+            person: true // Profile of the person who liked
+          }
+        }
+      },
       order: { publishedAt: 'DESC' },
       skip,
       take: limit,
-    }as any);
+    } as any);
 
     const enhancedBlogs = blogs.map(blog => ({
       ...blog,
@@ -460,7 +537,12 @@ export class BlogsService {
   async getPopularBlogs(limit: number = 5) {
     return this.blogRepository.find({
       where: { status: BlogStatus.PUBLISHED },
-      relations: ['author', 'categories'],
+      relations: {
+        categories: true,
+        author: {
+          person: true // Joins the Person table to get the author's display name/avatar
+        }
+      },
       order: { views: 'DESC', likes: 'DESC' },
       take: limit,
     });
@@ -469,7 +551,12 @@ export class BlogsService {
   async getRecentBlogs(limit: number = 5) {
     return this.blogRepository.find({
       where: { status: BlogStatus.PUBLISHED },
-      relations: ['author', 'categories'],
+      relations: {
+        categories: true,
+        author: {
+          person: true // Joins the Person table to get the author's display name/avatar
+        }
+      },
       order: { publishedAt: 'DESC' },
       take: limit,
     });

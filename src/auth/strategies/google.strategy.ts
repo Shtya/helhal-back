@@ -24,12 +24,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     const email = profile.emails?.[0]?.value;
     if (!email) throw new Error('No email found in Google profile');
 
-    let user = await this.userRepository.findOne({ where: { email } });
+    let user = await this.userRepository.findOne({ where: { person: { email } } });
     if (!user) {
       user = this.userRepository.create({ username: profile.displayName.trim(), email, googleId: profile.id, role: 'buyer' });
       await this.userRepository.save(user);
     } else if (!user.googleId) {
-      user.googleId = profile.id;
+      user.person.googleId = profile.id;
       await this.userRepository.save(user);
     }
 

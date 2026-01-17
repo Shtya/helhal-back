@@ -101,8 +101,19 @@ export class DashboardService {
         const queries: string[] = [];
 
         tables.forEach((table) => {
-
-            queries.push(`
+            if (table === 'users') {
+                // Special query for users because status is in the person table
+                queries.push(`
+                SELECT 
+                    'users' AS entity, 
+                    p.status::text AS status, 
+                    COUNT(*)::int AS status_count
+                FROM "users" u
+                INNER JOIN "persons" p ON u."person_id" = p.id
+                GROUP BY p.status
+            `);
+            } else {
+                queries.push(`
                 SELECT
                 '${table}' AS entity,
                 status::text AS status,
@@ -110,6 +121,7 @@ export class DashboardService {
                 FROM ${table}
                 GROUP BY status
             `);
+            }
         });
 
         const finalQuery = queries.join(' UNION ALL ');
@@ -146,6 +158,8 @@ export class DashboardService {
         const orders = await this.dataSource.createQueryBuilder<Order>('orders', 'o')
             .leftJoinAndSelect('o.buyer', 'buyer')
             .leftJoinAndSelect('o.seller', 'seller')
+            .leftJoinAndSelect('buyer.person', 'buyerPerson')
+            .leftJoinAndSelect('seller.person', 'sellerPerson')
             .orderBy('o.created_at', 'DESC')
             .take(10)
             .getMany();
@@ -159,6 +173,7 @@ export class DashboardService {
     private async getLatestWithdrawals() {
         const qb = this.dataSource.createQueryBuilder('transactions', 't')
             .leftJoinAndSelect('t.user', 'user')
+            .leftJoinAndSelect('user.person', 'person')
             .where('t.type = :type', { type: 'withdrawal' }) // filter withdrawals
             .orderBy('t.created_at', 'DESC')
             .take(10); // only latest 10

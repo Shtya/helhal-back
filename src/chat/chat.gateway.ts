@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Conversation, Message, User, Order, Service } from 'entities/global.entity';
+import { instanceToPlain } from 'class-transformer';
 
 @WebSocketGateway({
   cors: {
@@ -85,11 +86,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitNewMessage(otherUserId: string, message: any, sender: any) {
+    const cleanMessage = instanceToPlain(message, { enableCircularCheck: true });
     console.log(`User ${sender.username} send message to ${otherUserId}`);
     this.server
       .to(`user_${otherUserId}`)
       .emit('new_message', {
-        ...message,
+        ...cleanMessage,
         sender,
       });
   }

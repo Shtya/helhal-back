@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Like, Repository } from 'typeorm';
 import { Conversation, Message, User, Order, Service as ServiceEntity, FavoriteConversation } from 'entities/global.entity';
 import { ChatGateway } from 'src/chat/chat.gateway';
+import { instanceToPlain } from 'class-transformer';
 
 @Injectable()
 export class ConversationsService {
@@ -26,7 +27,17 @@ export class ConversationsService {
   async getConversation(userId: string, conversationId: string) {
     const conversation = await this.conversationRepository.findOne({
       where: { id: conversationId },
-      relations: ['buyer', 'seller', 'service', 'order'],
+      relations: {
+        buyer: {
+          person: true // Fetches person details for the buyer
+        },
+        seller: {
+          person: true // Fetches person details for the seller
+        },
+        service: true,
+        order: true,
+      }
+      ,
     });
 
     if (!conversation) {
@@ -46,7 +57,9 @@ export class ConversationsService {
     });
 
     return {
-      ...conversation,
+      ...instanceToPlain(conversation, {
+        enableCircularCheck: true
+      }),
       unreadCount,
     };
   }
@@ -70,7 +83,11 @@ export class ConversationsService {
 
     const [messages, total] = await this.messageRepository.findAndCount({
       where: { conversationId },
-      relations: ['sender'],
+      relations: {
+        sender: {
+          person: true
+        }
+      },
       order: { created_at: 'DESC' as any },
       skip,
       take: limit,
@@ -219,7 +236,9 @@ export class ConversationsService {
     });
 
     return conversations.map(conversation => ({
-      ...conversation,
+      ...instanceToPlain(conversation, {
+        enableCircularCheck: true
+      }),
       isFavorite: favoriteMap.has(conversation.id),
     }));
   }
@@ -231,7 +250,16 @@ export class ConversationsService {
 
     const [conversations, total] = await this.conversationRepository.findAndCount({
       where: [{ buyerId: userId }, { sellerId: userId }],
-      relations: ['buyer', 'seller', 'service', 'order'],
+      relations: {
+        buyer: {
+          person: true // Fetches person details for the buyer
+        },
+        seller: {
+          person: true // Fetches person details for the seller
+        },
+        service: true,
+        order: true,
+      },
       order: { lastMessageAt: 'DESC' as any },
       skip,
       take: limit,
@@ -239,6 +267,10 @@ export class ConversationsService {
 
     const conversationsWithUnread = await Promise.all(
       conversations.map(async conversation => {
+        const plainConversation = instanceToPlain(conversation, {
+          enableCircularCheck: true
+        }) as any;
+
         const unreadCount = await this.messageRepository.count({
           where: {
             conversationId: conversation.id,
@@ -248,7 +280,7 @@ export class ConversationsService {
         });
 
         return {
-          ...conversation,
+          ...plainConversation,
           unreadCount,
         };
       }),
@@ -269,11 +301,20 @@ export class ConversationsService {
 
   // Search users
   async searchUsers(userId: string, query: string) {
-    const users = await this.userRepository.find({
-      where: [{ username: Like(`%${query}%`) }, { email: Like(`%${query}%`) }],
-      take: 20,
-      select: ['id', 'username', 'email', 'profileImage', 'memberSince'],
-    });
+    const users = await this.userRepository.createQueryBuilder('user')
+      .innerJoinAndSelect('user.person', 'person') // Join the table where the data lives
+      .where('person.username ILIKE :query', { query: `%${query.trim()}%` }) // Case-insensitive search + trim
+      .orWhere('person.email ILIKE :query', { query: `%${query.trim()}%` })
+      .take(20)
+      // Manually select the fields you need (mapped via @AfterLoad)
+      .select([
+        'user.id',
+        'user.profileImage',
+        'user.memberSince',
+        'person.username',
+        'person.email'
+      ])
+      .getMany();
 
     return users.filter(user => user.id !== userId);
   }
@@ -312,7 +353,16 @@ export class ConversationsService {
   async getFavoriteConversations(userId: string) {
     const favorites = await this.favoriteRepository.find({
       where: { userId },
-      relations: ['conversation', 'conversation.buyer', 'conversation.seller'],
+      relations: {
+        conversation: {
+          buyer: {
+            person: true // Profile data for the buyer in the chat
+          },
+          seller: {
+            person: true // Profile data for the seller in the chat
+          }
+        }
+      },
     });
 
     return favorites.map(fav => fav.conversation);
@@ -363,7 +413,14 @@ export class ConversationsService {
     if (orderId) {
       const order = await this.orderRepository.findOne({
         where: { id: orderId },
-        relations: ['buyer', 'seller'],
+        relations: {
+          buyer: {
+            person: true // Fetches person details for the buyer
+          },
+          seller: {
+            person: true // Fetches person details for the seller
+          }
+        },
       });
 
       if (!order) {
@@ -394,7 +451,14 @@ export class ConversationsService {
     // Return with relations
     return this.conversationRepository.findOne({
       where: { id: savedConversation.id },
-      relations: ['buyer', 'seller'],
+      relations: {
+        buyer: {
+          person: true // Fetches person details for the buyer
+        },
+        seller: {
+          person: true // Fetches person details for the seller
+        }
+      }
     });
   }
 }

@@ -13,7 +13,7 @@ import { CRUD } from 'common/crud.service';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { CalculateRemainingImagesInterceptor, fileUploadOptions, imageUploadOptions, videoUploadOptions } from './upload.config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 
 import { promises as fsp } from 'fs';
 import { join, normalize as pathNormalize } from 'path';
@@ -53,7 +53,7 @@ export class AuthController {
   @Post('login')
   async login(@Body() dto: LoginDto, @Res() res: Response, @Req() req: any) {
     const result = await this.authService.login(dto, res, req);
-    return res.json(result);
+    res.json(result);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -403,26 +403,83 @@ export class AuthController {
     }
   })
   async getAllUsers(@Query('') query: any, @Req() req: any) {
+    const {
+      search,
+      page = 1,
+      limit = 10,
+      sortBy,
+      sortOrder = 'DESC',
+      filter,
+      status,
+      hasPermissions
+    } = query;
     const role = req.user?.role;
 
-    return CRUD.findAll(this.authService.userRepository, 'user', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['username', 'email'],
-      {
-        role: query.filter === 'all' ? '' : query.filter,
-        status: query.status === 'all' ? '' : query.status === 'Deleted' ? '' : query.status,
-        deleted_at: query.status === 'Deleted' ? { isNull: false } : '',
-        permissions:
-          role === 'admin'
-            ? (
-              !query.hasPermissions || query.hasPermissions === 'all'
-                ? ''
-                : query.hasPermissions === 'true'
-                  ? { isNull: false }
-                  : { isNull: true }
-            )
-            : ''
+    const pageNumber = Number(page) || 1;
+    const limitNumber = Number(limit) || 10;
+    const skip = (pageNumber - 1) * limitNumber;
 
-      },
-      ['permissions']);
+    // 1. Initialize QueryBuilder
+    const qb = this.authService.userRepository.createQueryBuilder('user');
+
+    // 2. Joins (MUST be first)
+    qb.leftJoinAndSelect('user.person', 'person')
+      .skip(skip)
+      .take(limitNumber);
+
+    // 3. Filtering Logic
+    if (filter && filter !== 'all') {
+      qb.andWhere('user.role = :role', { role: filter });
+    }
+
+    if (status && status !== 'all') {
+      if (status === 'Deleted') {
+        qb.andWhere('user.deleted_at IS NOT NULL');
+      } else {
+        qb.andWhere('person.status = :status', { status });
+      }
+    }
+
+    // Permission filtering for Admin
+    if (role === 'admin' && hasPermissions && hasPermissions !== 'all') {
+      if (hasPermissions === 'true') {
+        qb.andWhere('person.permissions IS NOT NULL');
+      } else {
+        qb.andWhere('person.permissions IS NULL');
+      }
+    }
+
+    // 4. Search Logic (Username and Email)
+    if (search) {
+      qb.andWhere(new Brackets(innerQb => {
+        innerQb.where('LOWER(person.username) LIKE LOWER(:search)', { search: `%${search}%` })
+          .orWhere('LOWER(person.email) LIKE LOWER(:search)', { search: `%${search}%` });
+      }));
+    }
+
+    // 5. Sorting Logic
+    const sortField = sortBy || 'created_at';
+    const sortDirection = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    // Metadata check for sorting
+    const columnExists = this.authService.userRepository.metadata.columns.some(
+      col => col.propertyName === sortField
+    );
+
+    if (!columnExists) {
+      throw new BadRequestException(`Invalid sortBy field: '${sortField}'`);
+    }
+    qb.orderBy(`user.${sortField}`, sortDirection);
+
+    // 6. Execution and Final Return
+    const [data, total] = await qb.getManyAndCount();
+
+    return {
+      total_records: total,
+      current_page: pageNumber,
+      per_page: limitNumber,
+      records: data,
+    };
   }
 
   @Delete('user/:id')
@@ -525,8 +582,7 @@ export class AuthController {
   @Post('verify-phone')
   async verifyPhone(@Body() dto: PhoneVerifyDto, @Res() res: Response, @Req() req: any) {
     const result = await this.authService.verifyOTP(dto, req, res);
-
-    return res.json(result);
+    res.json(result);
   }
 
   @Get('verify-oauth-token')
@@ -545,7 +601,7 @@ export class AuthController {
     }
 
     const serializedUser = await this.oauthService['authService'].authenticateUser(user, res);
-    return res.json({ message: 'Authentication successful', user: serializedUser });
+    res.json({ message: 'Authentication successful', user: serializedUser });
   }
 
   @Get('search')
@@ -606,7 +662,7 @@ export class AuthController {
     const sid = req.user.sessionId;
     if (sid) await this.authService.logoutSession(req.user.id, sid);
     this.authService.clearTokenCookies(res);
-    return res.json({ message: 'Logged out successfully' });
+    res.json({ message: 'Logged out successfully' });
   }
 
   @UseGuards(JwtAuthGuard, AccessGuard)
@@ -675,7 +731,7 @@ export class AuthController {
     @Res() res: Response,
   ) {
     const result = await this.authService.createSellerSubAccount(req.user.id, res, req);
-    return res.json(result);
+    res.json(result);
   }
 
 
@@ -697,7 +753,7 @@ export class AuthController {
       req,
     );
 
-    return res.json(result);
+    res.json(result);
   }
 
 

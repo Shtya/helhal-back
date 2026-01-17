@@ -16,7 +16,16 @@ export class InviteService {
     async sendInvites(userId: string, dto: SendInviteDto) {
         const user = await this.userRepository.findOne({
             where: { id: userId },
-            select: ['id', 'username', 'email', 'referralCode'],
+            relations: ['person'],
+            // 2. Select the specific columns from both tables
+            select: {
+                id: true,
+                person: {
+                    username: true,
+                    email: true,
+                    referralCode: true,
+                }
+            },
         });
 
         // if (!user) throw new NotFoundException('User not found');

@@ -12,11 +12,11 @@ export class BlogCategoriesService {
     private blogRepository: Repository<Blog>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
-  ) {}
+  ) { }
 
   async getCategories(withBlogs: boolean = false) {
     const relations = withBlogs ? ['blogs'] : [];
-    
+
     const categories = await this.blogCategoryRepository.find({
       relations,
       order: { name: 'ASC' },
@@ -36,7 +36,7 @@ export class BlogCategoriesService {
 
   async getCategory(categoryId: string, withBlogs: boolean = false) {
     const relations = withBlogs ? ['blogs', 'blogs.author'] : [];
-    
+
     const category = await this.blogCategoryRepository.findOne({
       where: { id: categoryId },
       relations,
@@ -134,11 +134,26 @@ export class BlogCategoriesService {
     }
 
     const [blogs, total] = await this.blogRepository.findAndCount({
-      where: { 
+      where: {
         categories: { id: categoryId },
-        status: BlogStatus.PUBLISHED 
+        status: BlogStatus.PUBLISHED
       },
-      relations: ['author', 'categories', 'comments', 'likes'],
+      relations: {
+        author: {
+          person: true // Author's profile data
+        },
+        categories: true,
+        comments: {
+          user: {
+            person: true // Profile of the person who commented
+          }
+        },
+        likes: {
+          user: {
+            person: true // Profile of the person who liked
+          }
+        }
+      },
       order: { publishedAt: 'DESC' },
       skip,
       take: limit,

@@ -59,7 +59,12 @@ export class CategoriesService {
 
     const [services, total] = await this.serviceRepository.findAndCount({
       where: { categoryId: category.id },
-      relations: ['seller', 'category'],
+      relations: {
+        seller: {
+          person: true, // Fetches profile details for the seller
+        },
+        category: true,
+      },
       order: { ordersCount: 'DESC' },
       skip,
       take: limit,

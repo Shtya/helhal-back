@@ -14,10 +14,10 @@ export class RecommendationService {
     private serviceRepository: Repository<Service>,
     @InjectRepository(Order)
     private orderRepository: Repository<Order>,
-  ) {}
+  ) { }
 
   async generatePersonalRecommendations(userId: string) {
-    const user = await this.userRepository.findOne({ 
+    const user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ['ordersAsBuyer', 'favorites']
     });
@@ -28,7 +28,7 @@ export class RecommendationService {
 
     // Get categories from user history
     const preferredCategories = new Set();
-    
+
     userOrders.forEach(order => {
       if (order.service?.categoryId) {
         preferredCategories.add(order.service.categoryId);
@@ -44,8 +44,8 @@ export class RecommendationService {
     // Generate recommendations based on preferred categories
     const recommendations = await this.serviceRepository
       .createQueryBuilder('service')
-      .where('service.categoryId IN (:...categories)', { 
-        categories: Array.from(preferredCategories) 
+      .where('service.categoryId IN (:...categories)', {
+        categories: Array.from(preferredCategories)
       })
       .andWhere('service.status = :status', { status: 'Active' })
       .orderBy('service.ordersCount', 'DESC')
@@ -53,7 +53,7 @@ export class RecommendationService {
       .getMany();
 
     // Store recommendations
-    const recommendationRecords = recommendations.map(service => 
+    const recommendationRecords = recommendations.map(service =>
       this.recommendationRepository.create({
         userId,
         type: 'personal',
@@ -77,14 +77,14 @@ export class RecommendationService {
       .getMany();
 
     // Store recommendations
-    const recommendationRecords = trendingServices.map(service => 
+    const recommendationRecords = trendingServices.map(service =>
       this.recommendationRepository.create({
         userId,
         type: 'business',
-        reference: { 
-          serviceId: service.id, 
+        reference: {
+          serviceId: service.id,
           serviceTitle: service.title,
-          reason: 'Trending in your industry' 
+          reason: 'Trending in your industry'
         }
       })
     );

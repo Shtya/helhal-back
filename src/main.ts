@@ -1,6 +1,6 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { ClassSerializerInterceptor, Logger, ValidationPipe } from '@nestjs/common';
 import { join } from 'path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { LoggingValidationPipe } from 'common/translationPipe';
@@ -33,6 +33,10 @@ async function bootstrap() {
 	app.useGlobalPipes(loggingValidationPipe);
 
 	app.useGlobalPipes(new ValidationPipe({ disableErrorMessages: false, transform: true, forbidNonWhitelisted: true, whitelist: true }));
+	// main.ts
+	app.useGlobalInterceptors(
+		new ClassSerializerInterceptor(app.get(Reflector)),
+	);
 
 	Logger.log(`🚀 server is running on port ${port}`);
 	await app.listen(port || 8081, '0.0.0.0');

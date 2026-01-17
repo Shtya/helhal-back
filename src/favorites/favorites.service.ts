@@ -12,7 +12,7 @@ export class FavoritesService {
     private serviceRepository: Repository<Service>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
-  ) {}
+  ) { }
 
   async getUserFavorites(userId: string, page: number = 1) {
     const limit = 20;
@@ -20,12 +20,18 @@ export class FavoritesService {
 
     const [favorites, total] = await this.favoriteRepository.findAndCount({
       where: { userId },
-      relations: ['service', 'service.seller', 'service.category'],
+      relations: {
+        service: {
+          category: true,
+          seller: {
+            person: true // Joins the Person table to get seller's profile details
+          }
+        }
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
     });
-
     return {
       favorites,
       pagination: {
@@ -40,7 +46,7 @@ export class FavoritesService {
   async addToFavorites(userId: string, serviceId: string) {
     const service = await this.serviceRepository.findOne({
       where: { id: serviceId, status: 'Active' },
-    }as any);
+    } as any);
 
     if (!service) {
       throw new NotFoundException('Service not found or not available');

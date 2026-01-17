@@ -18,7 +18,7 @@ export class ReportsService {
     private transactionRepository: Repository<Transaction>,
     @InjectRepository(UserBalance)
     private userBalanceRepository: Repository<UserBalance>,
-  ) {}
+  ) { }
 
   async getSalesReport(userId: string, startDate: string, endDate: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -36,8 +36,14 @@ export class ReportsService {
           sellerId: userId,
           status: In([OrderStatus.COMPLETED, OrderStatus.ACCEPTED, OrderStatus.DELIVERED]),
           orderDate: Between(start, end),
-        },
-        relations: ['service', 'buyer'],
+        }, relations: {
+          buyer: {
+            person: true // Fetches person details for the buyer
+          },
+          seller: {
+            person: true // Fetches person details for the seller
+          }
+        }
       });
     } else {
       orders = await this.orderRepository.find({
@@ -45,7 +51,12 @@ export class ReportsService {
           buyerId: userId,
           orderDate: Between(start, end),
         },
-        relations: ['service', 'seller'],
+        relations: {
+          seller: {
+            person: true, // Fetches profile details for the seller
+          },
+          service: true,
+        }
       });
     }
 
@@ -113,7 +124,7 @@ export class ReportsService {
     });
 
     const report = services.map(service => {
-      const periodOrders = service.orders.filter(order => 
+      const periodOrders = service.orders.filter(order =>
         order.orderDate >= start && order.orderDate <= end
       );
 
@@ -121,8 +132,8 @@ export class ReportsService {
       const cancelledOrders = periodOrders.filter(order => order.status === OrderStatus.CANCELLED);
 
       const revenue = completedOrders.reduce((sum, order) => sum + order.totalAmount, 0);
-      const avgRating = service.reviews.length > 0 
-        ? service.reviews.reduce((sum, review) => sum + review.rating, 0) / service.reviews.length 
+      const avgRating = service.reviews.length > 0
+        ? service.reviews.reduce((sum, review) => sum + review.rating, 0) / service.reviews.length
         : 0;
 
       return {
@@ -292,7 +303,7 @@ export class ReportsService {
       ...user.services.map(s => s.created_at),
     ].filter(date => date !== null);
 
-    return activities.length > 0 
+    return activities.length > 0
       ? new Date(Math.max(...activities.map(d => new Date(d).getTime())))
       : user.created_at;
   }
