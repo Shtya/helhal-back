@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, Not } from 'typeorm';
+import { Repository, MoreThan, Not, DataSource } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import * as bcrypt from 'bcryptjs';
@@ -221,13 +221,20 @@ export class AuthService {
     // Generate referral code for new user
     const referralCode = crypto.randomBytes(8).toString('hex').toUpperCase();
 
-    const user = this.userRepository.create({
+
+    const person = this.personRepository.create({
       username,
       email: userEmail,
       password: passwordHash,
       type: pendingUser.type,
-      role: finalRole,
       referralCode,
+    });
+
+    const savedPerson = await this.personRepository.save(person);
+
+    const user = this.userRepository.create({
+      role: finalRole,
+      person: savedPerson
     });
 
     await this.userRepository.save(user);

@@ -42,7 +42,7 @@ export class AuthController {
 
   @Post('verify-email') async verifyEmail(@Body() dto: VerifyEmailDto, @Res() res: Response) {
     const result = await this.authService.verifyEmail(dto, res);
-    return res.status(201).json(result);
+    res.status(201).json(result);
   }
 
   @Post('resend-verification-email')
