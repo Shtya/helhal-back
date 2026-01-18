@@ -1624,7 +1624,6 @@ export class AuthService {
         finalOTP = this.generateOTP();
       }
 
-      finalOTP = user.otpCode;
       const { success, details } = await this.smsService.sendOTP(phone, countryCode.dial_code, finalOTP, this.CODE_EXPIRY_MINUTES);
       if (!success) {
         throw new BadRequestException('Failed to send OTP')
