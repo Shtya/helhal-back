@@ -122,19 +122,15 @@ export class AuthService {
   async register(registerDto: RegisterDto) {
     const { username, email, password, role, type, ref: referralCode } = registerDto;
 
-
-
-    const existingUser = await this.userRepository.createQueryBuilder('user')
-      .innerJoinAndSelect('user.person', 'person')
-      // We use the person alias to access the moved columns
-      .where('person.email = :email', { email: email })
+    const existingPerson = await this.personRepository.createQueryBuilder('person')
+      .where('person.email = :email', { email })
       .orWhere('person.username = :username', { username })
       .getOne();
 
-    if (existingUser) {
-      if (existingUser.email === email) {
+    if (existingPerson) {
+      if (existingPerson.email === email) {
         throw new ConflictException('Email already exists');
-      } else if (existingUser.username === username) {
+      } else if (existingPerson.username === username) {
         throw new ConflictException('Username already exists');
       }
     }
