@@ -903,7 +903,7 @@ export class MailService {
         const ctaText = isSeller ? 'Create Your First Service' : 'Explore Services';
         const ctaLink = isSeller
             ? `${process.env.FRONTEND_URL}/create-gig`
-            : `${process.env.FRONTEND_URL}/explore`;
+            : `${process.env.FRONTEND_URL}/services`;
 
         const html = `
   <html>

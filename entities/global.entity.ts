@@ -247,7 +247,7 @@ export class User extends CoreEntity {
   @JoinColumn({ name: 'person_id' })
   person: Person;
 
-  @Column({ name: 'person_id', nullable: true })
+  @Column({ name: 'person_id' })
   personId: string;
 
   //mapped properties from person table to prevent break logic at front and backend;
@@ -886,14 +886,13 @@ export class Category extends CoreEntity {
   @Column({ type: 'enum', enum: CategoryType, default: CategoryType.CATEGORY })
   type: CategoryType;
 
-
   @Column()
   name_ar: string;
 
   @Column()
   name_en: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'uuid', nullable: true })
   parentId: string;
 
   @Column({ unique: true })
@@ -916,6 +915,14 @@ export class Category extends CoreEntity {
 
   @Column({ nullable: true })
   topIconUrl: string;
+
+
+  // Self-referencing relation for subcategories
+  @OneToMany(() => Category, category => category.parent)
+  children: Category[];
+
+  @ManyToOne(() => Category, category => category.children)
+  parent: Category;
 
   // @Column({ default: false })
   // freelanceTop: boolean;

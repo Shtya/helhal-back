@@ -15,6 +15,17 @@ export class CategoriesService {
   ) { }
 
 
+  async getTopCategoriesWithSub(limit: number = 10) {
+    return await this.categoryRepository
+      .createQueryBuilder('category')
+      .where('category.parentId IS NULL')
+      .leftJoinAndSelect('category.children', 'subcategory')
+      .addOrderBy('category.created_at', 'DESC')
+      .take(limit)
+      .getMany();
+  }
+
+
   async getCategory(id: string) {
     const category = await this.categoryRepository.findOne({
       where: { id },

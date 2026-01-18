@@ -14,6 +14,12 @@ import { Permissions } from 'entities/permissions';
 export class CategoriesController {
   constructor(private categoriesService: CategoriesService) { }
 
+  @Get('top')
+  async getTopCategories(@Query('limit') limit: string) {
+    const parsedLimit = limit ? parseInt(limit, 10) : 10;
+    return this.categoriesService.getTopCategoriesWithSub(parsedLimit);
+  }
+
   @Get()
   async getCategories(@Query() query) {
     let parentFilter = {};

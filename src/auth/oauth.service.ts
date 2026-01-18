@@ -46,6 +46,75 @@ export class OAuthService {
       return { redirectPath: '/' };
     }
   }
+  private async getMissingUsername(baseName) {
+    const searchPattern = `${baseName}_%`;
+
+    const result = await this.userRepository.query(
+      `
+     WITH numeric_usernames AS (
+        SELECT
+          username,
+          CAST(SUBSTRING(username FROM '_(.+)$') AS TEXT) AS num_text
+        FROM persons
+        WHERE username LIKE $1
+      ),
+      valid_numbers AS (
+        -- Keep only rows where numeric part matches '^[0-9\.]+$' (digits or dot)
+        SELECT
+          username,
+          CAST(num_text AS NUMERIC) AS num
+        FROM numeric_usernames
+        WHERE num_text ~ '^[0-9]+$'
+      ),
+      ordered AS (
+        -- 3️⃣ Order by number and get previous number
+        SELECT
+          num,
+          LAG(num) OVER (ORDER BY num) AS prev_num,
+          username
+        FROM valid_numbers
+      ),
+     gap_calc AS (
+      SELECT
+        CASE
+          -- Gap found (e.g., 1, 3 -> returns 2)
+          WHEN prev_num IS NOT NULL AND num - prev_num > 1 THEN prev_num + 1
+          -- Check if the sequence started after 1 (e.g., first is 2 -> returns 1)
+          WHEN prev_num IS NULL AND num > 1 THEN 1
+          ELSE NULL
+        END AS gap_candidate
+      FROM ordered
+    )
+          -- 4️⃣ Get smallest gap_candidate or 1 if first number >1
+        SELECT
+      COALESCE(
+        -- 1. Look for the first empty middle slot (gap)
+        (SELECT MIN(gap_candidate) FROM gap_calc WHERE gap_candidate IS NOT NULL),
+        -- 2. If no gaps, get the next number after the highest one
+        (SELECT MAX(num) + 1 FROM valid_numbers),
+        -- 3. If no users exist at all, return 1
+        1
+      ) AS first_missing;`,
+      [searchPattern]
+    )
+
+    const rawValue = result?.[0]?.['first_missing'];
+
+    // Use Number() and trim to handle strings safely
+    let firstMissingNum: number | null;
+
+    if (rawValue === null || rawValue === undefined) {
+      // Return a random 4-digit number (1000 to 9999)
+      firstMissingNum = Math.floor(1000 + Math.random() * 9000);
+    } else {
+      firstMissingNum = Number(String(rawValue).trim());
+
+    }
+
+    const usernameSuffix = `_${firstMissingNum}`;
+    const finalUsername = `${baseName}${usernameSuffix}`;
+    return finalUsername;
+  }
 
   async handleGoogleCallback(profile: any, state?: string, res?: Response) {
     const email = profile.email;
@@ -62,17 +131,28 @@ export class OAuthService {
     let newUserCreated = false;
     if (!user) {
       const baseName = profile.name || email.split('@')[0];
-      const uniqueSuffix = randomBytes(6).toString('hex'); // 12-char hex string
+      const finalUsername = await this.getMissingUsername(baseName);
 
-      user = this.userRepository.create({
-        username: `${baseName}_${uniqueSuffix}`,
-        email,
+      // 1. Create the Person
+      const person = this.personRepository.create({
+        username: finalUsername,
+        email: email,
         googleId: profile.id,
-        role: 'buyer',
-        type: 'Individual'
+        type: 'Individual',
       });
+
+      // 2. Save the person FIRST to generate an ID
+      const savedPerson = await this.personRepository.save(person);
+
+      // 3. Create the User and link the SAVED person
+      user = this.userRepository.create({
+
+        role: 'buyer',
+        person: savedPerson,
+      });
+
+      // 4. Save the user
       await this.userRepository.save(user);
-      newUserCreated = true;
     }
     else if (!user.googleId) {
       user.person.googleId = profile.id;
@@ -112,16 +192,31 @@ export class OAuthService {
     let newUserCreated = false;
     if (!user) {
       const baseName = profile.name || email.split('@')[0];
-      const uniqueSuffix = randomBytes(6).toString('hex'); // 12-char hex string
-
-      user = this.userRepository.create({
-        username: `${baseName}_${uniqueSuffix}`,
-        email,
+      const finalUsername = await this.getMissingUsername(baseName);
+      // 1. Create the Person
+      const person = this.personRepository.create({
+        username: finalUsername,
+        email: email,
         appleId: profile.id,
-        role: 'buyer',
-        type: 'Individual'
+        type: 'Individual',
+
       });
+
+      // 2. Save the person FIRST to generate an ID
+      const savedPerson = await this.personRepository.save(person);
+
+      // 3. Create the User and link the SAVED person
+      user = this.userRepository.create({
+        role: 'buyer',
+        person: savedPerson,
+      });
+
+      // 4. Save the user
       await this.userRepository.save(user);
+
+      // 3. Save the User (this will automatically save the Person due to cascade)
+      await this.userRepository.save(user);
+
       newUserCreated = true;
     } else if (!user.appleId) {
       user.person.appleId = profile.id;

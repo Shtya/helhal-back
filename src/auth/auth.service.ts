@@ -405,7 +405,6 @@ export class AuthService {
 
 
   async getCurrentUser(userId: string) {
-
     const user = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
@@ -424,6 +423,8 @@ export class AuthService {
 
     return this.serializeUser(user);
   }
+
+
 
 
   async getUserInfo(userId: string) {
@@ -452,10 +453,12 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
-
+    const plainUser = instanceToPlain(user, {
+      enableCircularCheck: true,
+    })
     const relatedUsers = await this.getRelatedUsers(user.id);
 
-    return this.serializeUser({ ...user, relatedUsers });
+    return this.serializeUser({ ...plainUser, relatedUsers });
 
   }
 

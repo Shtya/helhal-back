@@ -398,12 +398,14 @@ export class ServicesService {
       .leftJoin('person.country', 'country')
       .addSelect([
         'country.id',
-        'country.name'
+        'country.name',
+        'country.name_ar'
       ])
       .leftJoin('service.category', 'category')
       .addSelect([
         'category.id',
         'category.name_en',
+        'category.name_ar',
         'category.image',
         'category.slug',
       ])
