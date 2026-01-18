@@ -574,7 +574,7 @@ export class AuthController {
     return this.authService.verifyPhoneOTP(userId, otpCode);
   }
 
-  // 🔹 Login/Register with phone
+  // 🔹 Login with phone
   @Post('phone')
   async phone(@Body() dto: PhoneRegisterDto) {
     return this.authService.phoneAuth(dto);
