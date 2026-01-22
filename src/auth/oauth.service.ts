@@ -124,6 +124,7 @@ export class OAuthService {
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
       .addSelect('person.permissions')
+      .addSelect('person.nationalId')
       .where('person.email = :email', { email: email })
       .orderBy('user.role', 'ASC')
       .getOne();
@@ -185,6 +186,7 @@ export class OAuthService {
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
       .addSelect('person.permissions')
+      .addSelect('person.nationalId')
       .where('person.email = :email', { email: email })
       .orderBy('user.role', 'ASC')
       .getOne();

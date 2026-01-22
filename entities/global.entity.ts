@@ -222,6 +222,21 @@ export class Person extends CoreEntity {
   @Column({ name: 'deactivated_at', type: 'timestamptz', nullable: true })
   deactivatedAt: Date;
 
+  @Column({ nullable: true, select: false, unique: true })
+  nationalId: string; //
+
+  @Column({ nullable: true, select: false, unique: true })
+  nafathTransId: string; // From MfaRequestResponseDto
+
+  @Column({ nullable: true, select: false })
+  nafathRandom: string; // The 2-digit number for the user
+
+  @Column({ nullable: true, select: false, unique: true })
+  nafathRequestId: string; // Your unique client identifier
+
+  @Column({ type: 'boolean', default: false })
+  isIdentityVerified: boolean;
+
   createPasswordResetToken(): string {
     const resetToken = crypto.randomBytes(32).toString('hex');
     this.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
@@ -323,6 +338,27 @@ export class User extends CoreEntity {
   get status(): UserStatus { return this.person?.status }
   @Expose()
   get deactivatedAt(): Date { return this.person?.deactivatedAt }
+  @Expose()
+  get isIdentityVerified(): boolean {
+    return this.person?.isIdentityVerified ?? false;
+  }
+  @Expose()
+  get nationalId(): string | undefined {
+    return this.person?.nationalId;
+  }
+  @Expose()
+  get nafathTransId(): string {
+    return this.person?.nafathTransId;
+  }
+  @Expose()
+  get nafathRandom(): string {
+    return this.person?.nafathRandom;
+  }
+  @Expose()
+  get nafathRequestId(): string {
+    return this.person?.nafathRequestId;
+  }
+
 
   @Column({ name: 'profile_image', nullable: true })
   profileImage: string;

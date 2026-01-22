@@ -31,6 +31,8 @@ import { ReferralModule } from 'src/referral/referral.module';
 import { SessionService } from './session.service';
 import { SettingsService } from 'src/settings/settings.service';
 import { SmsService } from 'common/sms-service';
+import { NafathService } from 'common/nafath-service';
+import { ConversationsModule } from 'src/conversations/conversations.module';
 @Module({
   imports: [
     ConfigModule.forRoot(),
@@ -47,6 +49,7 @@ import { SmsService } from 'common/sms-service';
       Notification,
       Setting
     ]),
+    forwardRef(() => ConversationsModule),
     forwardRef(() => ReferralModule),
     PassportModule,
     JwtModule.registerAsync({
@@ -70,6 +73,7 @@ import { SmsService } from 'common/sms-service';
     SettingsService,
     MailService,
     SmsService,
+    NafathService
   ],
   controllers: [AuthController],
   exports: [AuthService, JwtAuthGuard, AccessGuard],

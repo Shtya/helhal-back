@@ -1,19 +1,21 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, NotFoundException, BadRequestException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, Not, DataSource } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
-
+import { v4 as uuidv4 } from 'uuid';
 import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount, PendingPhoneRegistration, Person } from 'entities/global.entity';
-import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, UpdateUserPermissionsDto, PhoneRegisterDto, PhoneVerifyDto } from 'dto/user.dto';
+import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, UpdateUserPermissionsDto, PhoneRegisterDto, PhoneVerifyDto, NafazDto } from 'dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from 'common/nodemailer';
 import { SessionService } from './session.service';
 import { PermissionDomains } from 'entities/permissions';
 import { SmsService } from 'common/sms-service';
 import { instanceToPlain } from 'class-transformer';
+import { NafathService } from 'common/nafath-service';
+import { ChatGateway } from 'src/chat/chat.gateway';
 @Injectable()
 export class AuthService {
   constructor(
@@ -36,11 +38,14 @@ export class AuthService {
     @InjectRepository(UserSession) private sessionsRepo: Repository<UserSession>,
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
     @InjectRepository(Setting) private settingsRepo: Repository<Setting>,
+    @Inject(forwardRef(() => ChatGateway))
+    private chatGateway: ChatGateway,
 
     public jwtService: JwtService,
     public configService: ConfigService,
     public emailService: MailService,
     public smsService: SmsService,
+    public nafathService: NafathService,
     public sessionService: SessionService,
   ) { }
 
@@ -341,6 +346,7 @@ export class AuthService {
       .innerJoinAndSelect('user.person', 'person')
       .addSelect('person.password')
       .addSelect('person.permissions')
+      .addSelect('person.nationalId')
       .leftJoinAndSelect('person.country', 'country')
       .where('person.email = :email', { email })
       .orderBy('user.role', 'ASC')
@@ -414,6 +420,7 @@ export class AuthService {
       .leftJoinAndSelect('person.referredBy', 'referredBy')
       .leftJoinAndSelect('person.country', 'country')
       .addSelect('person.permissions')
+      .addSelect('person.nationalId')
       .where('user.id = :id', { id: userId })
       .getOne();
 
@@ -426,8 +433,6 @@ export class AuthService {
 
     return this.serializeUser(user);
   }
-
-
 
 
   async getUserInfo(userId: string) {
@@ -719,7 +724,7 @@ export class AuthService {
     }
 
     const allowedFieldsUser: (keyof User)[] = ['profileImage', 'description', 'skills', 'education', 'certifications', 'deliveryTime', 'ageGroup', 'revisions', 'preferences'];
-    const allowedFieldsPerson: (keyof Person)[] = ['countryCode', 'username', 'phone', 'languages', 'type', 'countryId'];
+    const allowedFieldsPerson: (keyof Person)[] = ['countryCode', 'username', 'phone', 'languages', 'type', 'countryId', 'nationalId'];
 
     if (typeof updateData.email !== 'undefined' && updateData.email !== user.email) {
       const exists = await this.userRepository.findOne({ where: { person: { email: updateData.email } } });
@@ -777,6 +782,29 @@ export class AuthService {
       user.person.otpCode = null;
       user.person.otpLastSentAt = null;
       user.person.otpExpiresAt = null;
+    }
+
+    if (updateData.nationalId && updateData.nationalId !== user.person.nationalId) {
+      // Trim the ID per your preference
+      const cleanNationalId = updateData.nationalId.trim();
+
+      // Check if another user already has this National ID
+      const idExists = await this.userRepository
+        .createQueryBuilder('u')
+        .innerJoin('u.person', 'p')
+        .where('p.nationalId = :nationalId', { nationalId: cleanNationalId })
+        .andWhere('u.id != :id', { id: user.id })
+        .getOne();
+
+      if (idExists) {
+        throw new ConflictException('A user with this National ID already exists');
+      }
+      // Update the record and RESET verification status
+      user.person.nationalId = cleanNationalId;
+      user.person.isIdentityVerified = false; // Must re-verify with Nafath
+      user.person.nafathTransId = null;       // Clear old transaction data
+      user.person.nafathRequestId = null;
+      user.person.nafathRandom = null;
     }
 
 
@@ -1321,6 +1349,7 @@ export class AuthService {
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
       .addSelect('person.permissions')
+      .addSelect('person.nationalId')
       .where('user.id = :id', { id: targetUserId })
       .getOne();
 
@@ -1713,7 +1742,7 @@ export class AuthService {
     let user = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
-      .addSelect(['person.permissions', 'person.otpCode', 'person.otpExpiresAt'])
+      .addSelect(['person.permissions', 'person.otpCode', 'person.otpExpiresAt', 'person.nationalId'])
       .leftJoinAndSelect('person.country', 'country')
       .where('person.phone = :phone', { phone })
       .andWhere(`person.countryCode @> :countryCode`,
@@ -1828,9 +1857,133 @@ export class AuthService {
     // return await this.generateTokens(user, res, req);
   }
 
+  async initiateNafathFlow(userId: string, dto: NafazDto) {
+
+    const user = await this.userRepository.findOne({ where: { id: userId }, relations: ['person'] });
+    if (!user || !user.person) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (!dto.nationalId) {
+      throw new UnauthorizedException('National Id is required');
+    }
+
+    if (dto.nationalId == user.nationalId && user.isIdentityVerified) {
+      throw new BadRequestException('Your identity is already verified.');
+    }
+
+    const requestId = uuidv4();
+    const nafathResponse = await this.nafathService.createMfaRequest(dto.nationalId, "HelhalVerify", requestId);
+
+    await this.personRepository.update(user.personId, {
+      nationalId: dto.nationalId,
+      nafathTransId: nafathResponse.transId, // From MfaRequestResponseDto
+      nafathRandom: nafathResponse.random,   // The 2-digit number (e.g., "15")
+      nafathRequestId: requestId,            // Your internal GUID
+      isIdentityVerified: false,
+    });
+
+    // 2. Start polling in the background
+    this.pollNafathStatus(requestId, user, dto.nationalId, nafathResponse.transId, nafathResponse.random);
+
+    return { message: 'MFA initiated', requestId, random: nafathResponse.random, };
+  }
+  // At the top of your AuthService
+  private activePolls = new Map<string, NodeJS.Timeout>();
+
+  private async pollNafathStatus(requestId: string, user: User, nationalId: string, transId: string, random: string) {
+    const startTime = Date.now();
+    const timeout = 120000; // 2 minutes
+    const interval = 2000;  // 2 seconds
+
+    const check = setInterval(async () => {
+
+      try {
+        const elapsed = Date.now() - startTime;
+        const response = await this.nafathService.getMfaStatus(nationalId, transId, random);
+        const status = response.status; // EXPIRED, REJECTED, COMPLETED, WAITING
+
+        if (status === 'COMPLETED') {
+          this.stopPoll(user.id, check);
+          // Verify token before finalizing
+          const decoded = await this.nafathService.verifyNafathToken(response.token);
+          await this.personRepository.update(user.personId, {
+            isIdentityVerified: true,
+            nationalId: nationalId,
+            nafathTransId: transId,
+            nafathRequestId: requestId,
+            nafathRandom: null,
+          });
+          this.chatGateway.emitNafathStatus(user.id, { status: 'COMPLETED', requestId, random });
+        }
+        else if (status === 'REJECTED' || status === 'EXPIRED') {
+          this.stopPoll(user.id, check);
+          this.chatGateway.emitNafathStatus(user.id, { status, requestId, random });
+        }
+        else if (status === 'WAITING') {
+          this.chatGateway.emitNafathStatus(user.id, { status, requestId, random });
+        }
+        else if (elapsed >= timeout) {
+          this.stopPoll(user.id, check);
+          this.chatGateway.emitNafathStatus(user.id, { status: 'TIMEOUT', requestId, random });
+        }
+        // If status is WAITING, the interval continues...
+
+      } catch (error) {
+        this.stopPoll(user.id, check);
+        this.chatGateway.emitNafathStatus(user.id, { status: 'ERROR', requestId, random, message: error.message });
+      }
+    }, interval);
+
+    this.activePolls.set(user.id, check);
+  }
+
+  private stopPoll(userId: string, interval: NodeJS.Timeout) {
+    clearInterval(interval);
+    this.activePolls.delete(userId);
+  }
+
+  async cancelNafathFlow(userId: string) {
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.nationalId')
+      .addSelect('person.nafathTransId')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
+
+    if (!user || !user.person) throw new NotFoundException('User not found');
+
+    // BLOCK: If already verified, do not allow cancellation/reset of data
+    if (user.person.isIdentityVerified) {
+      throw new ForbiddenException('Cannot cancel a completed and verified identity.');
+    }
+
+    if (!user.person.nafathTransId) {
+      throw new NotFoundException('No active Nafath request found to cancel.');
+    }
+
+    // Otherwise, proceed with normal cancellation
+    const interval = this.activePolls.get(userId);
+    if (interval) {
+      clearInterval(interval);
+      this.activePolls.delete(userId);
+    }
+
+    await this.personRepository.update(user.personId, {
+      nafathTransId: null,
+      nafathRandom: null,
+      nafathRequestId: null,
+    });
+
+    return { message: 'MFA Request cancelled' };
+  }
   private generateOTP() {
 
     return Math.floor(1000 + Math.random() * 9000).toString()
   }
 
 }
+
+

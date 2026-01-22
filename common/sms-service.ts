@@ -39,25 +39,20 @@ export class SmsService {
 
         try {
             // Log and Test Structure(POST JSON)
-            this.logger.debug(`Structure (POST) url :${this.smsParamUrl},  Payload: ${JSON.stringify({ ...postPayload })}`);
+            this.logger.log(`Attempting to send OTP to ${fullNumber.replace(/.(?=.{4})/g, '*')}`);
             const resp = await axios.post(this.smsParamUrl, postPayload);
             this.logger.log(`Structure  Response: ${JSON.stringify(resp.data)}`);
             const responseData = resp.data;
             const success = typeof responseData === 'string' && responseData.includes('Send Successful');
 
             if (success) {
-                this.logger.log('SMS Sent Successfully via Structure');
                 return { success: true, details: responseData };
             } else {
-                this.logger.warn(`Structure Failed. Raw Response: ${responseData}`);
                 throw new BadRequestException('Failed to send OTP via provider');
             }
 
         } catch (err) {
             this.logger.error(`SMS Multi-Structure Error: ${err.message}`);
-            if (err.response) {
-                this.logger.error(`Provider Error Data: ${JSON.stringify(err.response.data)}`);
-            }
             return { success: false };
         }
     }

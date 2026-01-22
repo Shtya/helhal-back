@@ -4,7 +4,7 @@ import { Request, Response } from 'express';
 import axios from 'axios';
 import { AuthService } from './auth.service';
 import { OAuthService } from './oauth.service';
-import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto, UpdateUserPermissionsDto, PhoneRegisterDto, PhoneVerifyDto } from 'dto/user.dto';
+import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto, UpdateUserPermissionsDto, PhoneRegisterDto, PhoneVerifyDto, NafazDto } from 'dto/user.dto';
 import { JwtAuthGuard } from './guard/jwt-auth.guard';
 import { AccessGuard } from './guard/access.guard';
 import { RequireAccess } from 'decorators/access.decorator';
@@ -583,6 +583,19 @@ export class AuthController {
   async verifyPhone(@Body() dto: PhoneVerifyDto, @Res() res: Response, @Req() req: any) {
     const result = await this.authService.verifyOTP(dto, req, res);
     res.json(result);
+  }
+
+  @Post('nafath-mfa')
+  @UseGuards(JwtAuthGuard)
+  async startNafathMfa(@Body() dto: NafazDto, @Req() req: any) {
+    return this.authService.initiateNafathFlow(req.user.id, dto);
+  }
+
+  @Post('nafath-mfa/cancel')
+  @UseGuards(JwtAuthGuard)
+  async cancelNafathMfa(@Req() req: any) {
+    const userId = req.user.id;
+    return this.authService.cancelNafathFlow(userId);
   }
 
   @Get('verify-oauth-token')

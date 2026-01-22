@@ -147,3 +147,12 @@ export class PhoneVerifyDto {
   @IsString()
   code: string;
 }
+
+
+export class NafazDto {
+  @IsString()
+  @Matches(/^[1234569]{1}\d{9}$/, {
+    message: 'National ID must be 10 digits and start with a valid digit',
+  })
+  nationalId: string;
+}

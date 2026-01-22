@@ -101,4 +101,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     console.log("📢 Sent notification to user:", userId);
   }
 
+  emitNafathStatus(userId: string, data: { status: string, requestId?: string, random?: string, message?: string }) {
+    // 1. Clean and trim the data for the frontend
+    const cleanStatus = instanceToPlain(data, { enableCircularCheck: true });
+
+    console.log(`🔐 Nafath status [${data.status}] sent to user: ${userId}`);
+
+    // 2. Emit to the specific user's room
+    this.server
+      .to(`user_${userId}`)
+      .emit('nafath_status_update', cleanStatus);
+  }
 }
