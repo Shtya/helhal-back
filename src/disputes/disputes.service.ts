@@ -942,6 +942,8 @@ export class DisputesService {
           await manager.getRepository(User).save(seller);
         }
 
+        await this.sendRatingNotifications(order)
+
       } else {
         order.status = OrderStatus.CANCELLED; // ensure this exists in your enum
         (order as any).cancelledAt = new Date();
@@ -970,5 +972,31 @@ export class DisputesService {
     });
 
     return { ok: true, id: disputeId, status: DisputeStatus.RESOLVED };
+  }
+
+  // Helper: Send notifications to both parties to rate each other
+  private async sendRatingNotifications(order: Order) {
+    // 1. Notify Buyer
+    const buyerNotif = this.notificationRepository.create({
+      userId: order.buyerId,
+      type: 'rating', // specific type for frontend routing
+      title: 'Order Completed',
+      message: `Order “${order.title}” is complete. Please rate the freelancer to share your experience.`,
+      relatedEntityType: 'order',
+      relatedEntityId: order.id,
+    });
+
+    // 2. Notify Seller
+    const sellerNotif = this.notificationRepository.create({
+      userId: order.sellerId,
+      type: 'rating',
+      title: 'Order Completed',
+      message: `Order “${order.title}” is complete. Please rate the client to share your experience.`,
+      relatedEntityType: 'order',
+      relatedEntityId: order.id,
+    });
+
+    // Save both in one transaction
+    await this.notificationRepository.save([buyerNotif, sellerNotif]);
   }
 }

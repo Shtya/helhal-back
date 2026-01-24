@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import * as ExcelJS from 'exceljs';
-import { Repository, Brackets, IsNull, Not } from 'typeorm';
+import { Repository, Brackets, IsNull, Not, ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 import { BadRequestException } from '@nestjs/common';
 import { User } from 'entities/global.entity';
 import * as crypto from 'crypto';
@@ -10,6 +10,15 @@ export interface CustomPaginatedResponse<T> {
   current_page: number;
   per_page: number;
   records: T[];
+}
+
+export interface IPaginateOptions<T extends ObjectLiteral> {
+  queryBuilder: SelectQueryBuilder<T>;
+  alias?: string;
+  sortField?: string; // e.g., 'conversation.sort_id' or 'lastMessage.sort_id'
+  cursor?: { createdAt: Date; id: string };    // The ULID string from the last item
+  limit?: number;
+  sort?: "DESC" | "ASC"
 }
 
 export class CRUD {
@@ -209,6 +218,46 @@ export class CRUD {
       per_page: limitNumber,
       records: data,
     };
+  }
+
+  static async paginateCursor<T extends ObjectLiteral>(options: IPaginateOptions<T>) {
+    const {
+      queryBuilder,
+      alias = 'entity',
+      sortField = `${alias}.created_at`,
+      cursor,
+      limit = 50,
+      sort = 'DESC'
+    } = options;
+
+
+    if (cursor) {
+      queryBuilder.andWhere(
+        `(${alias}.created_at, ${alias}.id) < (:createdAt, :id)`,
+        { createdAt: cursor.createdAt, id: cursor.id }
+      );
+    }
+
+    queryBuilder
+      .orderBy(sortField, sort)
+      .addOrderBy(`${alias}.id`, sort)
+      .take(limit + 1);
+
+    const items = await queryBuilder.getMany();
+
+    // 3. Logic for "hasMore" and nextCursor
+    const hasMore = items.length > limit;
+
+    if (hasMore) items.pop();
+
+    const nextCursor = hasMore
+      ? {
+        createdAt: (items[items.length - 1] as any).created_at,
+        id: (items[items.length - 1] as any).id,
+      }
+      : null;
+
+    return { items, nextCursor, hasMore };
   }
 
   static async delete<T>(repository: Repository<T>, entityName: string, id: number | string): Promise<{ message: string }> {

@@ -6,7 +6,7 @@ import { join } from 'path';
 import { promises as fsp } from 'fs';
 import { SessionService } from 'src/auth/session.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
-import { PermissionDomains, Permissions } from 'entities/permissions';
+import { Permissions } from 'entities/permissions';
 import { formatSearchTerm } from 'utils/search.helper';
 import { instanceToPlain } from 'class-transformer';
 
@@ -360,7 +360,7 @@ export class ServicesService {
   }
 
   async getCategoryServices(categorySlug: string, query: any) {
-    const { page = 1, limit = 8, search = '', priceRange = '', rating = '', sortBy = '', sellerLevel = '', sellerAvailability = '', sellerSpeaks = '', sellerCountries = '', budget = '', deliveryTime = '', revisions = '', fastDelivery = '', additionalRevision = '', customBudget = '', customDeliveryTime = '', country = '', state = "" } = query;
+    const { page = 1, limit = 8, search = '', priceRange = '', rating = '', sortBy = '', sellerLevel = '', sellerAvailability = '', sellerSpeaks = '', sellerCountries = '', budget = '', deliveryTime = '', revisions = '', fastDelivery = '', additionalRevision = '', customBudget = '', customDeliveryTime = '', country = '', state = "", trusted = '' } = query;
 
     const skip = (page - 1) * limit;
 
@@ -391,9 +391,12 @@ export class ServicesService {
         'seller.profileImage',
         'seller.sellerLevel',
         'seller.lastActivity',
+        'seller.topRated',
+        'seller.rating',
         'person.username',
         'person.languages',
         'person.countryId',
+        'person.isIdentityVerified'
       ])
       .leftJoin('person.country', 'country')
       .addSelect([
@@ -418,6 +421,10 @@ export class ServicesService {
       category = await this.categoryRepository.findOne({ where: { slug: categorySlug } });
       if (!category) throw new NotFoundException('Category not found');
       queryBuilder.andWhere('service.categoryId = :categoryId', { categoryId: category.id });
+    }
+
+    if (trusted === 'true') {
+      queryBuilder.andWhere('person.isIdentityVerified = :isVerified', { isVerified: true });
     }
 
     // Search filter

@@ -12,6 +12,12 @@ import { Permissions } from 'entities/permissions';
 export class OrdersController {
   constructor(private ordersService: OrdersService) { }
 
+
+  @Get()
+  async getOrders(@Req() req, @Query() query: any) {
+    return this.ordersService.getOrdersForUser(req.user.id, query);
+  }
+
   @Get('admin')
   @UseGuards(JwtAuthGuard, AccessGuard)
   @RequireAccess({
@@ -34,12 +40,6 @@ export class OrdersController {
   })
   async getOrdersInvoices(@Query() query: any) {
     return this.ordersService.getInvoices(query);
-  }
-
-
-  @Get()
-  async getOrders(@Req() req, @Query() query: any) {
-    return this.ordersService.getOrdersForUser(req.user.id, query);
   }
 
 

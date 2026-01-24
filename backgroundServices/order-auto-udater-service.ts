@@ -35,6 +35,7 @@ export class OrderAutoUpdaterService {
 
             this.logger.log(`Processed ${delayedOrders.length} delayed orders`);
         } catch (err) {
+            console.log(err, err.message)
             this.logger.error('Error processing delayed orders', err);
         }
     }

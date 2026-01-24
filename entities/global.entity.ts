@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn, BeforeInsert, BeforeUpdate, Index, BaseEntity, DeleteDateColumn, ManyToMany, JoinTable, Unique, AfterLoad, Relation } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany, ManyToOne, JoinColumn, BeforeInsert, BeforeUpdate, Index, BaseEntity, DeleteDateColumn, ManyToMany, JoinTable, Unique, AfterLoad, Relation, OneToOne } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { CoreEntity } from './core.entity';
@@ -359,6 +359,8 @@ export class User extends CoreEntity {
     return this.person?.nafathRequestId;
   }
 
+  @Column({ type: 'float', default: 0, nullable: true })
+  rating: number;
 
   @Column({ name: 'profile_image', nullable: true })
   profileImage: string;
@@ -1457,6 +1459,9 @@ export class Order extends CoreEntity {
   @Column()
   title: string;
 
+  @OneToOne('OrderRating', (rating: OrderRating) => rating.order)
+  rating: Relation<OrderRating>;
+
   @Column({ default: 1 })
   quantity: number;
 
@@ -2455,6 +2460,93 @@ export class BlogCategory extends CoreEntity {
   blogs: Blog[];
 }
 
+@Entity('order_ratings')
+@Index(['orderId'], { unique: true })
+export class OrderRating extends CoreEntity {
+  @OneToOne(() => Order)
+  @JoinColumn({ name: 'order_id' })
+  order: Order;
+
+  @Column({ name: 'order_id' })
+  orderId: string;
+
+  // Linked to Buyer and Seller for quick lookup [cite: 11]
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'buyer_id' })
+  buyer: User;
+
+  @Column({ name: 'buyer_id' })
+  buyerId: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'seller_id' })
+  seller: User;
+
+  @Column({ name: 'seller_id' })
+  sellerId: string;
+
+  @ManyToOne(() => Service, { nullable: true })
+  @JoinColumn({ name: 'service_id' })
+  service: Service;
+
+  @Column({ name: 'service_id', nullable: true })
+  serviceId: string;
+
+  // --- Buyer Rating Seller (5 Dimensions) [cite: 2] ---
+  @Column({ type: 'int', nullable: true })
+  buyer_rating_quality: number;
+
+  @Column({ type: 'int', nullable: true })
+  buyer_rating_communication: number;
+
+  @Column({ type: 'int', nullable: true })
+  buyer_rating_skills: number;
+
+  @Column({ type: 'int', nullable: true })
+  buyer_rating_availability: number;
+
+  @Column({ type: 'int', nullable: true })
+  buyer_rating_cooperation: number;
+
+  @Column({ type: 'text', nullable: true })
+  buyer_review_text: string;
+
+  @Column({ type: 'float', nullable: true })
+  buyer_total_score: number;
+  @Column({ type: 'timestamp', nullable: true })
+  buyer_rated_at: Date;
+
+  // --- Seller Rating Buyer (5 Dimensions) 
+  @Column({ type: 'int', nullable: true })
+  seller_rating_communication: number;
+
+  @Column({ type: 'int', nullable: true })
+  seller_rating_cooperation: number;
+
+  @Column({ type: 'int', nullable: true })
+  seller_rating_availability: number;
+
+  @Column({ type: 'int', nullable: true })
+  seller_rating_clarity: number;
+
+  @Column({ type: 'int', nullable: true })
+  seller_rating_payment: number;
+
+  @Column({ type: 'text', nullable: true })
+  seller_review_text: string;
+
+  @Column({ type: 'float', nullable: true })
+  seller_total_score: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  seller_rated_at: Date;
+
+  // --- Status Flags ---
+
+  @Column({ default: false })
+  isPublic: boolean;
+}
+
 // -----------------------------------------------------
 // OAuth State Functions
 // -----------------------------------------------------
@@ -2487,4 +2579,5 @@ export const parseOAuthState = (state: string): OAuthState => {
     console.error('Error parsing OAuth state:', error);
     throw new Error('Invalid OAuth state');
   }
+
 };

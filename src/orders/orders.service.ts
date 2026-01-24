@@ -58,25 +58,31 @@ export class OrdersService {
       // 2. Join and select specific fields for Buyer
       .leftJoin('order.buyer', 'buyer')
       .leftJoin('buyer.person', 'buyerPerson')
-      .addSelect(['buyer.id', 'buyer.profileImage', 'buyerPerson.username', 'buyerPerson.email', 'seller.profileImage'])
+      .addSelect(['buyer.id', 'buyer.profileImage', 'buyerPerson.username', 'buyerPerson.email'])
 
       // 3. Join and select specific fields for Seller
       .leftJoin('order.seller', 'seller')
       .leftJoin('seller.person', 'sellerPerson')
-      .addSelect(['seller.id', 'seller.profileImage', 'sellerPerson.username', 'sellerPerson.email', 'seller.profileImage'])
+      .addSelect(['seller.id', 'seller.profileImage', 'sellerPerson.username', 'sellerPerson.email'])
 
       // 4. Join and select Disputes (all fields or specific ones)
       .leftJoinAndSelect('order.disputes', 'disputes')
 
       // 5. Join and select Invoices
-      .leftJoinAndSelect('order.invoices', 'invoices');
+      .leftJoinAndSelect('order.invoices', 'invoices')
+      // 6. Join and select specific Rating/Review fields for the flow logic
+      .leftJoin('order.rating', 'rating')
+      .addSelect([
+        'rating.isPublic',
+        'rating.buyer_rated_at',
+        'rating.seller_rated_at'
+      ]);;
 
     // Role-based filtering
     if (user.role === UserRole.BUYER)
       qb.andWhere('order.buyerId = :userId', { userId });
     else
       qb.andWhere('order.sellerId = :userId', { userId });
-
 
 
     // Status filtering
@@ -451,6 +457,32 @@ export class OrdersService {
     await this.userRepository.save(seller);
   }
 
+  // Helper: Send notifications to both parties to rate each other
+  private async sendRatingNotifications(order: Order) {
+    // 1. Notify Buyer
+    const buyerNotif = this.notifRepo.create({
+      userId: order.buyerId,
+      type: 'rating', // specific type for frontend routing
+      title: 'Order Completed',
+      message: `Order “${order.title}” is complete. Please rate the freelancer to share your experience.`,
+      relatedEntityType: 'order',
+      relatedEntityId: order.id,
+    });
+
+    // 2. Notify Seller
+    const sellerNotif = this.notifRepo.create({
+      userId: order.sellerId,
+      type: 'rating',
+      title: 'Order Completed',
+      message: `Order “${order.title}” is complete. Please rate the client to share your experience.`,
+      relatedEntityType: 'order',
+      relatedEntityId: order.id,
+    });
+
+    // Save both in one transaction
+    await this.notifRepo.save([buyerNotif, sellerNotif]);
+  }
+
 
   async updateOrderStatus(userId: string, userRole: string, orderId: string, status: string, req: any) {
     const order = await this.getOrder(userId, userRole, orderId, req);
@@ -486,6 +518,7 @@ export class OrdersService {
       {
         order.completedAt = new Date();
         await this.updateSellerStats(order);
+        await this.sendRatingNotifications(order)
       }
     } else if (status === OrderStatus.CANCELLED) {
       order.cancelledAt = new Date();
@@ -849,7 +882,7 @@ export class OrdersService {
 
     // Update seller stats
     await this.updateSellerStats(order);
-
+    await this.sendRatingNotifications(order)
     // 🔔 notify seller
     await this.notifRepo.save(
       this.notifRepo.create({
@@ -974,7 +1007,7 @@ export class OrdersService {
 
     // Update seller stats
     await this.updateSellerStats(order);
-
+    await this.sendRatingNotifications(order)
     // 🔔 notify seller
     await this.notifRepo.save(
       this.notifRepo.create({
