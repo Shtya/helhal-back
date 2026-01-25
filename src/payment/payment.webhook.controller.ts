@@ -1,10 +1,12 @@
-import { Body, Controller, Logger, Post, Req } from "@nestjs/common";
+import { Body, Controller, Logger, Post, Req, UnauthorizedException } from "@nestjs/common";
 import { PaymobPaymentService } from "./paymob.payment.service";
-
+import * as crypto from 'crypto';
 
 @Controller('payments/webhooks')
 export class PaymentWebhookController {
   private readonly logger = new Logger('PaymobWebhook');
+  private readonly hmac: string = process.env.PAYMOB_HMAC_SECRET!;
+
   constructor(
     private readonly paymobService: PaymobPaymentService,
   ) { }
@@ -25,6 +27,62 @@ export class PaymentWebhookController {
 
     this.logger.log('--------------------------------------------------');
 
+    const fields = [
+      'amount_cents',
+      'created_at',
+      'currency',
+      'error_occured',
+      'has_parent_transaction',
+      'id',
+      'integration_id',
+      'is_3d_secure',
+      'is_auth',
+      'is_capture',
+      'is_refunded',
+      'is_standalone_payment',
+      'is_voided',
+      'order',
+      'owner',
+      'pending',
+      'source_data.pan',
+      'source_data.sub_type',
+      'source_data.type',
+      'success',
+    ];
+    const obj = body?.obj;
+    // 2. Concatenate values based on the keys
+    let concatenatedString = '';
+    for (const field of fields) {
+      let value: any;
+
+      // Handle nested source_data fields
+      if (field.includes('.')) {
+        const [parent, child] = field.split('.');
+        value = obj[parent]?.[child];
+      } else if (field === 'order') {
+        value = obj.order?.id; // Paymob HMAC uses the order ID specifically
+      } else {
+        value = obj[field];
+      }
+
+      // Concatenate if value exists, otherwise Paymob expects nothing (empty)
+      concatenatedString += value !== undefined && value !== null ? value : '';
+    }
+
+    // 3. Verify HMAC
+    const hmacSecret = process.env.PAYMOB_HMAC_SECRET;
+    const hash = crypto
+      .createHmac('sha512', hmacSecret)
+      .update(concatenatedString)
+      .digest('hex');
+
+    if (hash !== this.hmac) {
+      this.logger.error('❌ HMAC Verification Failed!');
+      this.logger.debug(`Expected: ${this.hmac} | Calculated: ${hash}`);
+      throw new UnauthorizedException('Invalid HMAC signature');
+    }
+
+    this.logger.log('✅ HMAC Verified Successfully');
     // 3. Extract quick info for the console log summary
     const isSuccess = body?.obj?.success;
     const merchantOrderId = body?.obj?.order?.merchant_order_id;
@@ -38,3 +96,4 @@ export class PaymentWebhookController {
     return { status: 'received' };
   }
 }
+
