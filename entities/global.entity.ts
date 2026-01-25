@@ -2162,8 +2162,11 @@ export class UserBillingInfo extends CoreEntity {
   @Column({ name: 'user_id', unique: true })
   userId: string;
 
-  @Column({ name: 'full_name' })
-  fullName: string;
+  @Column({ name: 'first_name', nullable: true })
+  firstName: string;
+
+  @Column({ name: 'last_name', nullable: true })
+  lastName: string;
 
   @ManyToOne(() => Country, { nullable: true })
   @JoinColumn({ name: 'country_id' })
@@ -2172,8 +2175,12 @@ export class UserBillingInfo extends CoreEntity {
   @Column({ name: 'country_id', nullable: true })
   countryId: string;
 
-  @Column({ name: 'state' })
-  state: string;
+  @ManyToOne(() => State, { nullable: true })
+  @JoinColumn({ name: 'state_id' })
+  state: State;
+
+  @Column({ name: 'state_id', nullable: true })
+  stateId: string;
 
   @Column({ name: 'is_saudi_resident', nullable: true })
   isSaudiResident: boolean;
@@ -2181,9 +2188,40 @@ export class UserBillingInfo extends CoreEntity {
   @Column({ name: 'agree_to_invoice_emails', default: false })
   agreeToInvoiceEmails: boolean;
 
-  @ManyToOne(() => User, user => user.balances)
+  @OneToOne(() => User)
   @JoinColumn({ name: 'user_id' })
   user: User;
+}
+
+// transaction-billing-info.entity.ts (THE VERSIONING TABLE)
+@Entity('transaction_billing_info')
+export class TransactionBillingInfo extends CoreEntity {
+  @Column({ name: 'transaction_id' })
+  transactionId: string; // Links this specific version to a payment
+
+  @Column({ name: 'user_id' })
+  userId: string;
+
+  @Column({ name: 'first_name' })
+  firstName: string;
+
+  @Column({ name: 'last_name' })
+  lastName: string;
+
+  @Column({ name: 'phone_number' })
+  phoneNumber: string;
+
+  @Column({ name: 'email' })
+  email: string;
+
+  @Column({ name: 'state_name', nullable: true })
+  stateName: string; // New field to store the snapshot name
+
+  @Column({ name: 'country_iso', nullable: true })
+  countryIso: string;
+
+  @Column({ name: 'is_saudi_resident' })
+  isSaudiResident: boolean;
 }
 
 @Entity('user_bank_accounts')

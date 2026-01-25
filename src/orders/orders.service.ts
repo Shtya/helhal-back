@@ -1,13 +1,15 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Not, Repository } from 'typeorm';
-import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest, UserRelatedAccount } from 'entities/global.entity';
+import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest, UserRelatedAccount, PaymentMethod, PaymentMethodType } from 'entities/global.entity';
 import { AccountingService } from 'src/accounting/accounting.service';
 import { randomBytes } from 'crypto';
 import { CRUD } from 'common/crud.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { PermissionDomains, Permissions } from 'entities/permissions';
 import { instanceToPlain } from 'class-transformer';
+import { PaymentGatewayFactory } from 'src/payment/payment.gateway.factory';
+import { UnifiedCheckout } from 'src/payment/payment.types';
 
 
 @Injectable()
@@ -33,7 +35,7 @@ export class OrdersService {
 
     private readonly dataSource: DataSource,
     private readonly accountingService: AccountingService,
-
+    private readonly gatewayFactory: PaymentGatewayFactory,
     @InjectRepository(Job) private jobRepo: Repository<Job>,
     @InjectRepository(Proposal) private proposalRepo: Repository<Proposal>,
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
@@ -222,6 +224,26 @@ export class OrdersService {
     return result;
   }
 
+  async processOrderPayment(dto: UnifiedCheckout, orderId: string) {
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: ['invoices'],
+    });
+
+    if (!order) throw new NotFoundException('Order not found');
+
+    // Only buyer (or admin) can mark it as paid
+    if (order.buyerId !== dto.userId) throw new ForbiddenException("Only buyer can process payment");
+
+    // Check permissions
+    if (order.status !== OrderStatus.PENDING) {
+      throw new ForbiddenException('Order cannot be paid because it is not in PENDING status');
+    }
+
+
+    const gateway = this.gatewayFactory.getGateway(dto.billingInfo.paymentMethod);
+    return await gateway.createPaymentIntention(dto, order);
+  }
   async getUserOrders(userId: string, userRole: string, status?: string, page: number = 1) {
     const limit = 20;
     console.log(page, limit);

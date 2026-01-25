@@ -37,6 +37,7 @@ lerna-debug.log*
 
 # dotenv environment variable files
 .env
+.env.development
 # .env.development.local
 # .env.test.local
 # .env.production.local
@@ -58,3 +59,4 @@ src/firebase/venuat-6f346-firebase-adminsdk-fbsvc-b2ce39bdcd.json
 .vercel
 .env*.local
 .vscode
+

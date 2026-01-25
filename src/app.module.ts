@@ -43,6 +43,7 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { StatesModule } from './states/states.module';
 import { CountriesModule } from './countries/countries.module';
 import { RatingsModule } from './rating/rating.module';
+import { PaymentModule } from './payment/payment.module';
 
 @Module({
   imports: [
@@ -106,7 +107,6 @@ import { RatingsModule } from './rating/rating.module';
     AbuseReportsModule,
     DisputesModule,
     SupportTicketsModule,
-    AccountingModule,
     ReferralModule,
     ReportsModule,
     BlogsModule,
@@ -115,7 +115,9 @@ import { RatingsModule } from './rating/rating.module';
     StatesModule,
     InviteModule,
     DashboardModule,
-    RatingsModule
+    RatingsModule,
+    AccountingModule,
+    PaymentModule
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter, NotificationSubscriber, ResponseTimeUpdaterService, OrderAutoUpdaterService],

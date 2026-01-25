@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, PreconditionFailedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource, In } from 'typeorm';
-import { UserBalance, Transaction, PaymentMethod, User, Order, TransactionStatus, PaymentMethodType, PaymentStatus, Invoice, Setting, Wallet, Notification, UserBillingInfo, UserBankAccount, Country } from 'entities/global.entity';
+import { UserBalance, Transaction, PaymentMethod, User, Order, TransactionStatus, PaymentMethodType, PaymentStatus, Invoice, Setting, Wallet, Notification, UserBillingInfo, UserBankAccount, Country, TransactionBillingInfo, State } from 'entities/global.entity';
 
 type ReverseResolutionInput = {
   orderId: string;
@@ -25,6 +25,7 @@ export class AccountingService {
     @InjectRepository(Transaction) private transactionRepository: Repository<Transaction>,
     @InjectRepository(PaymentMethod) private paymentMethodRepository: Repository<PaymentMethod>,
     @InjectRepository(Country) private countryRepository: Repository<Country>,
+    @InjectRepository(State) private stateRepository: Repository<State>,
     @InjectRepository(User) private userRepository: Repository<User>,
     @InjectRepository(Order) private orderRepository: Repository<Order>,
     @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
@@ -33,7 +34,8 @@ export class AccountingService {
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
     @InjectRepository(UserBillingInfo)
     private userBillingInfoRepository: Repository<UserBillingInfo>,
-
+    @InjectRepository(TransactionBillingInfo)
+    private transactionBillingRepo: Repository<TransactionBillingInfo>,
     @InjectRepository(UserBankAccount)
     private userBankAccountRepository: Repository<UserBankAccount>,
     private readonly dataSource: DataSource,
@@ -42,18 +44,23 @@ export class AccountingService {
   async getBillingInformation(userId: string) {
     let billingInfo = await this.userBillingInfoRepository.findOne({
       where: { userId },
+      relations: ['country',
+        'state',
+        'user',
+        'user.person'],
     });
 
     if (!billingInfo) {
-      // Create default billing info if none exists
       const user = await this.userRepository.findOne({ where: { id: userId } });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+
       billingInfo = this.userBillingInfoRepository.create({
         userId,
-        fullName: user?.username || '',
-        country: null,
-        state: '',
-        isSaudiResident: null,
-        agreeToInvoiceEmails: false,
+        firstName: user?.username || '',
+        // other fields default to null/empty
       });
       await this.userBillingInfoRepository.save(billingInfo);
     }
@@ -61,27 +68,46 @@ export class AccountingService {
     return billingInfo;
   }
 
-  async updateBillingInformation(userId: string, billingInfoData: any) {
-    let billingInfo: any = await this.userBillingInfoRepository.findOne({
-      where: { userId },
+  async updateBillingInformation(userId: string, data: any): Promise<UserBillingInfo> {
+    // Ensure we find ONE record
+    let billingInfo = await this.userBillingInfoRepository.findOne({
+      where: { userId: userId }
     });
-    const country = await this.countryRepository.findOne({ where: { id: billingInfoData?.countryId } });
-    if (!country) {
-      throw new NotFoundException('Country not found');
-    }
+
+    const country = await this.countryRepository.findOne({ where: { id: data.countryId } });
+    if (!country) throw new NotFoundException('Country not found');
+
+    // 2. Validate State (Ensure it belongs to the selected country)
+    const state = await this.stateRepository.findOne({
+      where: { id: data.stateId, countryId: data.countryId }
+    });
+
+    if (!state) throw new BadRequestException('Invalid state selected for this country');
+    const updateData = {
+      firstName: data.firstName,
+      lastName: data.lastName,
+      countryId: data.countryId,
+      stateId: data.stateId, // Now using ID
+      agreeToInvoiceEmails: data.agreeToInvoiceEmails,
+      isSaudiResident: country.iso2 === 'SA',
+    };
 
     if (!billingInfo) {
+      // Create new entity if it doesn't exist
       billingInfo = this.userBillingInfoRepository.create({
-        ...billingInfoData,
-        userId,
-        isSaudiResident: country.iso2 === 'SA',
+        ...updateData,
+        userId
       });
     } else {
-      Object.assign(billingInfo, billingInfoData);
+      // Merge new data into existing entity
+      Object.assign(billingInfo, updateData);
+      billingInfo.userId = userId;
     }
-
-    return this.userBillingInfoRepository.save(billingInfo);
+    // Explicitly return the saved entity
+    return await this.userBillingInfoRepository.save(billingInfo);
   }
+
+
 
   // Bank Account Methods
   async getBankAccounts(userId: string) {

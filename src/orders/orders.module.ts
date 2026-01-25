@@ -4,12 +4,14 @@ import { OrdersController } from './orders.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Order, Service, User, Invoice, Payment, Job, Proposal, Notification, Setting, Dispute, OrderSubmission, OrderChangeRequest, UserRelatedAccount } from 'entities/global.entity';
 import { AccountingModule } from 'src/accounting/accounting.module';
+import { PaymentModule } from 'src/payment/payment.module';
 
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Order, Service, User, Invoice, Payment, Job, Proposal, Notification, Setting, Dispute, OrderSubmission, OrderChangeRequest, UserRelatedAccount]),
     AccountingModule,
+    PaymentModule,
+    TypeOrmModule.forFeature([Order, Service, User, Invoice, Payment, Job, Proposal, Notification, Setting, Dispute, OrderSubmission, OrderChangeRequest, UserRelatedAccount]),
   ],
   controllers: [OrdersController],
   providers: [OrdersService],

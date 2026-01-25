@@ -2,10 +2,11 @@ import { Controller, Get, Post, Put, Body, Param, UseGuards, Req, Query, NotFoun
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { OrdersService } from './orders.service';
 import { AccessGuard } from 'src/auth/guard/access.guard';
-import { UserRole } from 'entities/global.entity';
+import { PaymentMethodType, UserRole } from 'entities/global.entity';
 import { RequireAccess } from 'decorators/access.decorator';
 import { CRUD } from 'common/crud.service';
 import { Permissions } from 'entities/permissions';
+import { BillingInfoDto, UnifiedCheckout } from 'src/payment/payment.types';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
@@ -43,15 +44,24 @@ export class OrdersController {
   }
 
 
-  @Post(':orderId/mark-paid')
+  @Post(':orderId/pay')
   @UseGuards(JwtAuthGuard)
-  async markOrderPaid(@Param('orderId') orderId: string, @Req() req: any) {
+  async payOrder(
+    @Param('orderId') orderId: string,
+    @Body() billingInfo: BillingInfoDto,
+    @Req() req: any,
+  ) {
     const userId = req.user.id;
-    const out = await this.ordersService.markOrderPaid(orderId, userId);
-    if (!out) throw new NotFoundException('Order not found');
-    return out;
-  }
 
+    // Prepare the unified DTO
+    const checkoutDto: UnifiedCheckout = {
+      userId,
+      billingInfo,
+    };
+
+    // The service now handles the logic based on the method
+    return await this.ordersService.processOrderPayment(checkoutDto, orderId);
+  }
   @Get(':id')
   async getOrder(@Req() req, @Param('id') id: string) {
     return this.ordersService.getOrder(req.user.id, req.user.role, id, req);
