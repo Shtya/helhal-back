@@ -6,7 +6,7 @@ import * as crypto from 'crypto';
 export class PaymentWebhookController {
   private readonly logger = new Logger('PaymobWebhook');
   private readonly hmac: string = process.env.PAYMOB_HMAC_SECRET!;
-  private readonly secretKey: string = process.env.PAYMOB_SECRET_KEY!;
+
   constructor(
     private readonly paymobService: PaymobPaymentService,
   ) { }
@@ -72,7 +72,7 @@ export class PaymentWebhookController {
     // 3. Verify HMAC
 
     const hash = crypto
-      .createHmac('sha512', this.secretKey)
+      .createHmac('sha512', this.hmac)
       .update(concatenatedString)
       .digest('hex');
 
