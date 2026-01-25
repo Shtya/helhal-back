@@ -6,7 +6,7 @@ import * as crypto from 'crypto';
 export class PaymentWebhookController {
   private readonly logger = new Logger('PaymobWebhook');
   private readonly hmac: string = process.env.PAYMOB_HMAC_SECRET!;
-
+  private readonly secretKey: string = process.env.PAYMOB_SECRET_KEY!;
   constructor(
     private readonly paymobService: PaymobPaymentService,
   ) { }
@@ -28,26 +28,26 @@ export class PaymentWebhookController {
     this.logger.log('--------------------------------------------------');
 
     const fields = [
-      'amount_cents',
-      'created_at',
-      'currency',
-      'error_occured',
-      'has_parent_transaction',
-      'id',
-      'integration_id',
-      'is_3d_secure',
-      'is_auth',
-      'is_capture',
-      'is_refunded',
-      'is_standalone_payment',
-      'is_voided',
-      'order',
-      'owner',
-      'pending',
-      'source_data.pan',
-      'source_data.sub_type',
-      'source_data.type',
-      'success',
+      "amount_cents",
+      "created_at",
+      "currency",
+      "error_occured",
+      "has_parent_transaction",
+      "id",
+      "integration_id",
+      "is_3d_secure",
+      "is_auth",
+      "is_capture",
+      "is_refunded",
+      "is_standalone_payment",
+      "is_voided",
+      "order.id",
+      "owner",
+      "pending",
+      "source_data.pan",
+      "source_data.sub_type",
+      "source_data.type",
+      "success",
     ];
     const obj = body?.obj;
     // 2. Concatenate values based on the keys
@@ -70,15 +70,15 @@ export class PaymentWebhookController {
     }
 
     // 3. Verify HMAC
-    const hmacSecret = process.env.PAYMOB_HMAC_SECRET;
+
     const hash = crypto
-      .createHmac('sha512', hmacSecret)
+      .createHmac('sha512', this.secretKey)
       .update(concatenatedString)
       .digest('hex');
 
     if (hash !== this.hmac) {
       this.logger.error('❌ HMAC Verification Failed!');
-      this.logger.debug(`Expected: ${this.hmac} | Calculated: ${hash}`);
+      this.logger.debug(`Expected: ${this.hmac} | from ${concatenatedString} | Calculated: ${hash}`);
       throw new UnauthorizedException('Invalid HMAC signature');
     }
 
