@@ -53,24 +53,35 @@ export class PaymentWebhookController {
     // 2. Concatenate values based on the keys
     let concatenatedString = '';
     for (const field of fields) {
+      let value: any = obj;
       const parts = field.split('.');
-      let value = obj;
+
       for (const part of parts) {
         value = value?.[part];
       }
-      concatenatedString += value ?? '';
+
+      // Paymob requires booleans to be lowercase strings "true" or "false"
+      if (typeof value === 'boolean') {
+        concatenatedString += value.toString();
+      } else if (value !== undefined && value !== null) {
+        concatenatedString += value;
+      }
+      // If null/undefined, Paymob expects it to be skipped (add nothing)
     }
     const calculatedHmac = crypto.createHmac('sha512', this.hmac).update(concatenatedString).digest('hex');
+    const receivedHmac = req.query.hmac;
+    const isValid = calculatedHmac === receivedHmac;
 
-    const isValid = calculatedHmac === body.hmac;
 
-    if (isValid) {
+
+    if (!isValid) {
       this.logger.error('❌ HMAC Verification Failed!');
-      this.logger.debug(`Expected: ${this.hmac} | from ${concatenatedString} | Calculated: ${calculatedHmac}`);
+      this.logger.debug(`Expected: ${receivedHmac} | from ${concatenatedString} | Calculated: ${calculatedHmac}`);
       throw new UnauthorizedException('Invalid HMAC signature');
     }
 
     this.logger.log('✅ HMAC Verified Successfully');
+    this.logger.debug(`Expected: ${receivedHmac} | from ${concatenatedString} | Calculated: ${calculatedHmac}`);
     // 3. Extract quick info for the console log summary
     const isSuccess = body?.obj?.success;
     const merchantOrderId = body?.obj?.order?.merchant_order_id;
@@ -83,6 +94,8 @@ export class PaymentWebhookController {
     // Return success to Paymob so they don't keep retrying the request
     return { status: 'received' };
   }
+
 }
+
 
 
