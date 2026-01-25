@@ -89,7 +89,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
                     country: snapshot.countryIso, // Captured in snapshot logic
                 },
                 special_reference: savedTx.id, // Our internal TX ID
-                notification_url: `${process.env.BACKEND_URL}/payments/webhooks/paymob`,
+                notification_url: `${process.env.BACKEND_URL}/api/v1/payments/webhooks/paymob`,
                 redirection_url: `${process.env.FRONTEND_URL}/payment/success`
             };
 
