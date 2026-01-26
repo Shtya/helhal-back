@@ -1,11 +1,12 @@
-import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException, PreconditionFailedException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, Logger, NotFoundException, PreconditionFailedException, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import axios from "axios";
-import { Order, OrderStatus, Transaction, TransactionBillingInfo, TransactionStatus, UserBillingInfo } from "entities/global.entity";
+import { Order, Transaction, TransactionBillingInfo, TransactionStatus, UserSavedCard } from "entities/global.entity";
 import { AccountingService } from "src/accounting/accounting.service";
-import { DataSource, EntityManager, Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
 import { getPaymobIntegrationId, UnifiedCheckout } from "./payment.types";
 import { BasePaymentGateway } from "./BasePaymentGateway";
+import * as crypto from 'crypto';
 
 
 
@@ -14,12 +15,16 @@ export class PaymobPaymentService extends BasePaymentGateway {
     private readonly logger = new Logger(PaymobPaymentService.name);
     private readonly secretKey: string = process.env.PAYMOB_SECRET_KEY!;
     private readonly publicKey: string = process.env.PAYMOB_PUBLIC_KEY!;
+    private readonly hmacSecret: string = process.env.PAYMOB_HMAC_SECRET!;
+
 
     constructor(
         dataSource: DataSource,
         accountingService: AccountingService,
         @InjectRepository(Order) orderRepo: Repository<Order>,
         @InjectRepository(TransactionBillingInfo) transactionBillingRepo: Repository<TransactionBillingInfo>,
+        @InjectRepository(Transaction) private transactionRepo: Repository<Transaction>,
+        @InjectRepository(UserSavedCard) private savedCardRepo: Repository<UserSavedCard>,
     ) {
         super(dataSource, accountingService, orderRepo, transactionBillingRepo);
     }
@@ -43,7 +48,8 @@ export class PaymobPaymentService extends BasePaymentGateway {
         // 1. Verify Order exists
         // 2. Update the main billing profile first (Standardizing the user's current data)
         await this.accountingService.updateBillingInformation(userId, billingInfo);
-
+        const savedCards = await this.savedCardRepo.find({ where: { userId } });
+        const cardTokens = savedCards.map(card => card.token);
         // 3. Start DB Transaction for internal records
         return await this.dataSource.transaction(async (manager) => {
 
@@ -74,6 +80,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
             const payload = {
                 amount: amountInCents,
                 currency: this.DEFAULT_CURRENCY,
+                card_tokens: cardTokens,
                 payment_methods: [Number(getPaymobIntegrationId('card')), Number(getPaymobIntegrationId('wallet'))],
                 items: [{
                     name: order.title,
@@ -125,6 +132,92 @@ export class PaymobPaymentService extends BasePaymentGateway {
                 throw new InternalServerErrorException("Paymob initialization failed, please try again or contact support.");
             }
         });
+    }
+
+    async processWebhook(body: any, queryHmac: string) {
+        // 1. Validate HMAC
+        const isValid = this.validateHmac(body, queryHmac);
+        if (!isValid) throw new UnauthorizedException('Invalid HMAC');
+
+        const type = body.type; // TRANSACTION or TOKEN
+
+        if (type === 'TRANSACTION') {
+            return await this.handleTransactionWebhook(body.obj);
+        }
+
+        if (type === 'TOKEN') {
+            return await this.handleTokenWebhook(body.obj);
+        }
+    }
+
+    private validateHmac(body: any, queryHmac: string): boolean {
+        const obj = body?.obj;
+        const fields = [
+            "amount_cents", "created_at", "currency", "error_occured",
+            "has_parent_transaction", "id", "integration_id", "is_3d_secure",
+            "is_auth", "is_capture", "is_refunded", "is_standalone_payment",
+            "is_voided", "order.id", "owner", "pending",
+            "source_data.pan", "source_data.sub_type", "source_data.type", "success"
+        ];
+
+        let concatenatedString = '';
+        for (const field of fields) {
+            let value = obj;
+            field.split('.').forEach(part => value = value?.[part]);
+
+            if (typeof value === 'boolean') concatenatedString += value.toString();
+            else if (value !== undefined && value !== null) concatenatedString += value;
+        }
+
+        const calculatedHmac = crypto
+            .createHmac('sha512', this.hmacSecret)
+            .update(concatenatedString)
+            .digest('hex');
+
+        return calculatedHmac === queryHmac;
+    }
+
+
+    private async handleTokenWebhook(tokenObj: any) {
+
+        const transaction = await this.transactionRepo.findOne({
+            where: { externalOrderId: tokenObj.order_id.toString() }
+        });
+
+        if (!transaction) {
+            this.logger.error(`No internal transaction found for Paymob Order ID: ${tokenObj.order_id}`);
+            return;
+        }
+
+        // Idempotent Save: Update if token exists for user, otherwise create
+        return await this.savedCardRepo.upsert({
+            userId: transaction.userId,
+            token: tokenObj.token,
+            maskedPan: tokenObj.masked_pan,
+            cardSubtype: tokenObj.card_subtype,
+            paymobTokenId: tokenObj.id,
+            lastTransactionId: transaction.id
+        }, ['userId', 'token']);
+    }
+
+    private async handleTransactionWebhook(trxObj: any) {
+        // merchant_order_id is your internal Transaction ID (UUID)
+        const internalTxId = trxObj.order.merchant_order_id;
+
+        const transaction = await this.transactionRepo.findOne({
+            where: { id: internalTxId }
+        });
+
+        if (!transaction) throw new NotFoundException('Transaction not found');
+
+        // Update internal transaction with Paymob's IDs
+        await this.transactionRepo.update(internalTxId, {
+            externalTransactionId: trxObj.id.toString(), // Paymob Trx ID
+            externalOrderId: trxObj.order.id.toString(), // Paymob Order ID
+            status: trxObj.success ? TransactionStatus.COMPLETED : TransactionStatus.FAILED
+        });
+
+        //order update logic can be added here
     }
 
     // async ProcessRefund() {

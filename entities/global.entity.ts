@@ -2098,6 +2098,14 @@ export class Transaction extends CoreEntity {
   @Column({ name: 'user_id' })
   userId: string;
 
+  // Paymob's Transaction ID (body.obj.id)
+  @Column({ name: 'external_transaction_id', nullable: true })
+  externalTransactionId: string;
+
+  // Paymob's Order ID (body.obj.order.id)
+  @Column({ name: 'external_order_id', nullable: true })
+  externalOrderId: string;
+
   @Column()
   type: string;
 
@@ -2222,6 +2230,33 @@ export class TransactionBillingInfo extends CoreEntity {
 
   @Column({ name: 'is_saudi_resident' })
   isSaudiResident: boolean;
+}
+
+@Entity('user_saved_cards')
+@Unique(['userId', 'token']) // Ensures one card token per user
+export class UserSavedCard extends CoreEntity {
+  @Column({ name: 'user_id' })
+  userId: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @Column()
+  @Index()
+  token: string;
+
+  @Column({ name: 'masked_pan' })
+  maskedPan: string;
+
+  @Column({ name: 'card_subtype', nullable: true })
+  cardSubtype: string;
+
+  @Column({ name: 'paymob_token_id', type: 'bigint' })
+  paymobTokenId: number;
+
+  @Column({ name: 'last_transaction_id', nullable: true })
+  lastTransactionId: string;
 }
 
 @Entity('user_bank_accounts')

@@ -3,7 +3,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 // Entities
-import { Order, Transaction, TransactionBillingInfo, User } from 'entities/global.entity';
+import { Order, Transaction, TransactionBillingInfo, User, UserSavedCard } from 'entities/global.entity';
 import { PaymobPaymentService } from './paymob.payment.service';
 import { PaymentGatewayFactory } from './payment.gateway.factory';
 import { AccountingModule } from 'src/accounting/accounting.module';
@@ -17,7 +17,8 @@ import { PaymentWebhookController } from './payment.webhook.controller';
             Order,
             Transaction,
             TransactionBillingInfo,
-            User
+            User,
+            UserSavedCard
         ]),
     ],
     controllers: [PaymentWebhookController],
