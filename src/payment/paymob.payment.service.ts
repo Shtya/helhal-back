@@ -135,11 +135,18 @@ export class PaymobPaymentService extends BasePaymentGateway {
     }
 
     async processWebhook(body: any, queryHmac: string) {
+        const type = body.type;
+        const eventId = body.obj?.id || 'N/A';
+
+        // Log 1: Inbound Entry
+        this.logger.log(`[Webhook Received] Type: ${type} | Paymob_ID: ${eventId}`);
+
         // 1. Validate HMAC
         const isValid = this.validateHmac(body, queryHmac);
-        if (!isValid) throw new UnauthorizedException('Invalid HMAC');
-
-        const type = body.type; // TRANSACTION or TOKEN
+        if (!isValid) {
+            this.logger.warn(`[HMAC Failed] Unauthorized attempt for event ${eventId}`);
+            throw new UnauthorizedException('Invalid HMAC');
+        }
 
         if (type === 'TRANSACTION') {
             return await this.handleTransactionWebhook(body.obj);
@@ -152,6 +159,8 @@ export class PaymobPaymentService extends BasePaymentGateway {
 
     private validateHmac(body: any, queryHmac: string): boolean {
         const obj = body?.obj;
+
+
         const fields = [
             "amount_cents", "created_at", "currency", "error_occured",
             "has_parent_transaction", "id", "integration_id", "is_3d_secure",
@@ -183,6 +192,8 @@ export class PaymobPaymentService extends BasePaymentGateway {
         const transaction = await this.transactionRepo.findOne({
             where: { externalOrderId: tokenObj.order_id.toString() }
         });
+        const paymobOrderId = tokenObj.order_id.toString();
+        this.logger.debug(`[Token Webhook] Received token for Paymob Order: ${paymobOrderId}`);
 
         if (!transaction) {
             this.logger.error(`No internal transaction found for Paymob Order ID: ${tokenObj.order_id}`);
@@ -203,6 +214,9 @@ export class PaymobPaymentService extends BasePaymentGateway {
     private async handleTransactionWebhook(trxObj: any) {
         // merchant_order_id is your internal Transaction ID (UUID)
         const internalTxId = trxObj.order.merchant_order_id;
+        const paymobTrxId = trxObj.id.toString();
+
+        this.logger.debug(`[Transaction Update] Internal: ${internalTxId} <-> Paymob: ${paymobTrxId}`);
 
         const transaction = await this.transactionRepo.findOne({
             where: { id: internalTxId }

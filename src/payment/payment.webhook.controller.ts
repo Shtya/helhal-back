@@ -17,7 +17,7 @@ export class PaymentWebhookController {
     @Query('hmac') queryHmac: string,
     @Req() req: any
   ) {
-    this.logger.log(`Inbound Paymob Webhook: ${body.type}`);
+    this.logger.log(`Inbound Paymob Webhook: ${body.type} queryHmac`);
 
     try {
       await this.paymobService.processWebhook(body, queryHmac);
