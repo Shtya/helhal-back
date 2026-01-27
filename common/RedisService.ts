@@ -33,7 +33,18 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
             // url: this.redisConfiguration.url,
             retryDelayOnFailover: 100, // Retry delay when failover happens
             enableReadyCheck: true,    // Ensures Redis is ready before proceeding
-            maxRetriesPerRequest: 3,   // Limits retry attempts to avoid hanging
+            maxRetriesPerRequest: 3,   // Limits retry attempts to avoid hanging,
+            retryStrategy: (times) => {
+                // Delay starts at 50ms, then 100ms, 200ms... up to 3000ms (3 seconds)
+                const delay = Math.min(times * 50, 3000);
+
+                // Only log a warning on the first attempt or every 20th attempt to reduce noise
+                if (times === 1 || times % 20 === 0) {
+                    this.logger.warn(`Redis disconnected. Retrying attempt #${times} in ${delay}ms...`);
+                }
+
+                return delay;
+            },
         };
 
         this.logger.log('Connecting to Redis...', config);
@@ -47,8 +58,18 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         });
 
         // Log errors during connection or operation
-        this.redisClient.on('error', (error) => {
-            this.logger.error('Redis client error:', error);
+        this.redisClient.on('error', (error: any) => {
+            // These errors are common during disconnection/reconnection cycles.
+            // We ignore them because 'retryStrategy' is already handling the situation.
+            const isConnectionNoise =
+                error.code === 'ECONNRESET' ||
+                error.code === 'ECONNREFUSED' ||
+                (error.message && error.message.includes('AggregateError'));
+
+            if (!isConnectionNoise) {
+                // Only log genuine, unexpected application errors
+                this.logger.error('Redis client error:', error);
+            }
         });
     }
 
