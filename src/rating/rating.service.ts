@@ -120,12 +120,12 @@ export class RatingsService {
 
             // Send Notifications for publishing
             const notif1 = this.notifRepo.create({
-                userId: rating.buyerId, type: 'rating', title: 'Rating Published',
+                userId: rating.buyerId, type: 'rating_published', title: 'Rating Published',
                 message: `Reviews for order #${order.id} are now public.`,
                 relatedEntityType: 'order', relatedEntityId: order.id
             });
             const notif2 = this.notifRepo.create({
-                userId: rating.sellerId, type: 'rating', title: 'Rating Published',
+                userId: rating.sellerId, type: 'rating_published', title: 'Rating Published',
                 message: `Reviews for order #${order.id} are now public.`,
                 relatedEntityType: 'order', relatedEntityId: order.id
             });

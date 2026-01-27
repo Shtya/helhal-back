@@ -1,19 +1,23 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Not, Repository } from 'typeorm';
-import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest, UserRelatedAccount, PaymentMethod, PaymentMethodType } from 'entities/global.entity';
+import { DataSource, EntityManager, In, Not, Repository } from 'typeorm';
+import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest, UserRelatedAccount, PaymentMethod, PaymentMethodType, Transaction, TransactionStatus } from 'entities/global.entity';
 import { AccountingService } from 'src/accounting/accounting.service';
 import { randomBytes } from 'crypto';
 import { CRUD } from 'common/crud.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { PermissionDomains, Permissions } from 'entities/permissions';
 import { instanceToPlain } from 'class-transformer';
-import { PaymentGatewayFactory } from 'src/payment/payment.gateway.factory';
-import { UnifiedCheckout } from 'src/payment/payment.types';
+import { PaymentGatewayFactory } from 'src/payments/base/payment.gateway.factory';
+import { UnifiedCheckout } from 'src/payments/base/payment.constant';
+import { RedisService } from 'common/RedisService';
 
 
 @Injectable()
 export class OrdersService {
+
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     @InjectRepository(Order)
     public orderRepository: Repository<Order>,
@@ -33,6 +37,9 @@ export class OrdersService {
     @InjectRepository(UserRelatedAccount)
     public userAccountsRepo: Repository<UserRelatedAccount>,
 
+    @InjectRepository(Transaction)
+    public transactionRepo: Repository<Transaction>,
+
     private readonly dataSource: DataSource,
     private readonly accountingService: AccountingService,
     private readonly gatewayFactory: PaymentGatewayFactory,
@@ -41,6 +48,8 @@ export class OrdersService {
     @InjectRepository(Notification) private notifRepo: Repository<Notification>,
     @InjectRepository(Setting) private settingRepo: Repository<Setting>,
     @InjectRepository(Dispute) private disputeRepo: Repository<Dispute>,
+
+    private readonly redisService: RedisService
   ) { }
 
   Submission
@@ -140,88 +149,236 @@ export class OrdersService {
 
 
 
+  async completeOrderPayment(transactionId: string, isSuccess: boolean, paymentMethod?: string, externalTxId?: string, paymobOrderId?: string) {
+    let userId: string | undefined;
+    let orderId: string | undefined;
 
-  async markOrderPaid(orderId: string, userId: string) {
-    // 1) Commit the authoritative payment state in a single tx
-    const result = await this.dataSource.transaction(async manager => {
-      const order = await manager.findOne(Order, {
-        where: { id: orderId },
-        relations: ['invoices'],
+    try {
+      await this.dataSource.transaction(async (manager) => {
+
+        const transaction = await manager.findOne(Transaction, {
+          where: { id: transactionId },
+          lock: { mode: 'pessimistic_write' } // Prevents concurrent webhook processing
+        });
+
+        if (!transaction) throw new NotFoundException('Transaction not found');
+
+        userId = transaction.userId;
+        orderId = transaction.orderId;
+        // 2. Skip if already processed
+        if (transaction.status !== TransactionStatus.PENDING) {
+          throw new BadRequestException('Transaction already processed');
+        }
+
+        await manager.update(Transaction, transactionId, {
+          externalTransactionId: externalTxId?.toString(),
+          externalOrderId: paymobOrderId?.toString(),
+          status: isSuccess ? TransactionStatus.COMPLETED : TransactionStatus.FAILED
+        });
+        const notifRepo = manager.getRepository(Notification);
+
+        if (!isSuccess) {
+          await notifRepo.save(notifRepo.create({
+            userId: transaction.userId,
+            type: 'payment',
+            title: 'Payment Failed',
+            message: `Your payment attempt for Order #${transaction.orderId} failed. (Ref: ${transactionId}). Please try again.`,
+            relatedEntityType: 'transaction',
+            relatedEntityId: transactionId,
+          }));
+
+          return; // Exit early; do not process order updates or escrow
+        }
+        // 1. Fetch Order with required relations
+        const order = await manager.findOne(Order, {
+          where: { id: transaction.orderId },
+          relations: ['invoices', 'buyer', 'seller'],
+        });
+
+        if (!order) throw new NotFoundException('Order not found');
+        if (order.status !== OrderStatus.PENDING) return order; // Already processed
+
+        const invoice = order.invoices?.[0];
+        if (!invoice) throw new NotFoundException('Invoice not found');
+
+        // 2. Mark Invoice as Paid
+        invoice.paymentStatus = PaymentStatus.PAID;
+        invoice.paymentMethod = paymentMethod; // Dynamic from order
+        invoice.transactionId = transactionId;
+        await manager.save(invoice);
+
+        // 3. Update Order Status
+        order.status = OrderStatus.WAITING;
+        await manager.save(order);
+
+        // 4. Update Service Stats (Increment count)
+        if (order.serviceId) {
+          await manager.update(Service, order.serviceId, {
+            ordersCount: () => `"orders_count" + 1`,
+          });
+        }
+
+        // 5. Execute Escrow Logic (PASS THE MANAGER)
+        // Ensure your accounting service supports receiving a manager to stay in TX
+        await this.accountingService.holdEscrow(order.id, manager)
+
+        // 6. Create Notifications
+        const amount = Number(invoice.totalAmount ?? order.totalAmount);
+        const currency = 'SAR';
+
+
+        await notifRepo.save([
+          notifRepo.create({
+            userId: order.buyerId,
+            type: 'payment',
+            title: 'Payment Successful',
+            message: `Your payment of ${amount} ${currency} for “${order.title}” was processed successfully.`,
+            relatedEntityType: 'order',
+            relatedEntityId: order.id,
+          }),
+          notifRepo.create({
+            userId: order.sellerId,
+            type: 'payment',
+            title: 'Order Paid',
+            message: `The order “${order.title}” has been paid. Start working now!`,
+            relatedEntityType: 'order',
+            relatedEntityId: order.id,
+          })
+        ]);
+
+        this.logger.log(`✅ order marked paid successfully for TX: ${transactionId}`);
+        return order;
       });
-      if (!order) throw new NotFoundException('Order not found');
-
-      // Only buyer (or admin) can mark it as paid
-      if (order.buyerId !== userId) throw new ForbiddenException("Only buyer can mark it as paid");
-
-      // Check permissions
-      if (order.status !== OrderStatus.PENDING) {
-        throw new ForbiddenException('Order cannot be marked as paid because it is not in PENDING status');
+    }
+    finally {
+      if (userId && orderId) {
+        const resultKey = `result:${userId}-${orderId}`;
+        await this.redisService.del(resultKey);
       }
+    }
+  }
 
-      // Mark invoice as paid
-      const invoice = order.invoices?.[0];
-      if (!invoice) throw new NotFoundException('Invoice not found');
+  // async markOrderPaid(orderId: string, userId: string) {
+  //   // 1) Commit the authoritative payment state in a single tx
+  //   const result = await this.dataSource.transaction(async manager => {
+  //     const order = await manager.findOne(Order, {
+  //       where: { id: orderId },
+  //       relations: ['invoices'],
+  //     });
+  //     if (!order) throw new NotFoundException('Order not found');
 
-      invoice.paymentStatus = PaymentStatus.PAID; // 'paid'
-      invoice.paymentMethod = 'wallet';
-      invoice.transactionId = `TX-${Date.now()}`;
-      await manager.save(invoice);
+  //     // Only buyer (or admin) can mark it as paid
+  //     if (order.buyerId !== userId) throw new ForbiddenException("Only buyer can mark it as paid");
 
-      // Update order status
-      order.status = OrderStatus.WAITING;
-      await manager.save(order);
+  //     // Check permissions
+  //     if (order.status !== OrderStatus.PENDING) {
+  //       throw new ForbiddenException('Order cannot be marked as paid because it is not in PENDING status');
+  //     }
 
-      // Buyer & Seller notifications inside TX (guaranteed with payment state)
-      const amount = Number(invoice.totalAmount ?? order.totalAmount);
-      const currency = 'SAR';
-      const txId = invoice.transactionId ?? '';
-      const notifRepo = manager.getRepository(Notification);
+  //     // Mark invoice as paid
+  //     const invoice = order.invoices?.[0];
+  //     if (!invoice) throw new NotFoundException('Invoice not found');
 
-      // ✅ Increment service order count
-      if (order.serviceId) {
-        await manager
-          .createQueryBuilder()
-          .update(Service)
-          .set({ ordersCount: () => `"orders_count" + 1` })
-          .where('id = :id', { id: order.serviceId })
-          .execute();
-      }
+  //     invoice.paymentStatus = PaymentStatus.PAID; // 'paid'
+  //     invoice.paymentMethod = 'wallet';
+  //     invoice.transactionId = `TX-${Date.now()}`;
+  //     await manager.save(invoice);
 
-      const buyerNotif = notifRepo.create({
-        userId: order.buyerId,
-        type: 'payment',
-        title: 'Payment Successful',
-        message: `Your payment of ${amount} ${currency} for “${order.title}” was processed successfully. Transaction: ${txId}.`,
-        relatedEntityType: 'order',
-        relatedEntityId: order.id,
-      });
+  //     // Update order status
+  //     order.status = OrderStatus.WAITING;
+  //     await manager.save(order);
 
-      const sellerNotif = notifRepo.create({
-        userId: order.sellerId,
-        type: 'payment',
-        title: 'Order Paid',
-        // We tell seller the order price (200) as base, not the total buyer paid (210)
-        message: `The order “${order.title}” has been paid (${amount - invoice.platformPercent} ${currency}). Transaction: ${txId}.`,
-        relatedEntityType: 'order',
-        relatedEntityId: order.id,
-      });
+  //     // Buyer & Seller notifications inside TX (guaranteed with payment state)
+  //     const amount = Number(invoice.totalAmount ?? order.totalAmount);
+  //     const currency = 'SAR';
+  //     const txId = invoice.transactionId ?? '';
+  //     const notifRepo = manager.getRepository(Notification);
 
-      await notifRepo.save([buyerNotif, sellerNotif]);
+  //     // ✅ Increment service order count
+  //     if (order.serviceId) {
+  //       await manager
+  //         .createQueryBuilder()
+  //         .update(Service)
+  //         .set({ ordersCount: () => `"orders_count" + 1` })
+  //         .where('id = :id', { id: order.serviceId })
+  //         .execute();
+  //     }
 
-      return {
-        orderId: order.id,
-        status: order.status,
-        invoiceId: invoice.id,
-        amount,
-        currency,
-        txId,
-        orderTitle: order.title,
-      };
+  //     const buyerNotif = notifRepo.create({
+  //       userId: order.buyerId,
+  //       type: 'payment',
+  //       title: 'Payment Successful',
+  //       message: `Your payment of ${amount} ${currency} for “${order.title}” was processed successfully. Transaction: ${txId}.`,
+  //       relatedEntityType: 'order',
+  //       relatedEntityId: order.id,
+  //     });
+
+  //     const sellerNotif = notifRepo.create({
+  //       userId: order.sellerId,
+  //       type: 'payment',
+  //       title: 'Order Paid',
+  //       // We tell seller the order price (200) as base, not the total buyer paid (210)
+  //       message: `The order “${order.title}” has been paid (${amount - invoice.platformPercent} ${currency}). Transaction: ${txId}.`,
+  //       relatedEntityType: 'order',
+  //       relatedEntityId: order.id,
+  //     });
+
+  //     await notifRepo.save([buyerNotif, sellerNotif]);
+
+  //     return {
+  //       orderId: order.id,
+  //       status: order.status,
+  //       invoiceId: invoice.id,
+  //       amount,
+  //       currency,
+  //       txId,
+  //       orderTitle: order.title,
+  //     };
+  //   });
+
+  //   await this.accountingService.holdEscrow(result.orderId);
+
+  //   return result;
+  // }
+
+  async adminManualFinalize(orderId: string) {
+    // 1. Fetch Order and Invoice to get the amount and buyerId
+    const order = await this.orderRepository.findOne({
+      where: { id: orderId },
+      relations: ['invoices'],
     });
 
-    await this.accountingService.holdEscrow(result.orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== OrderStatus.PENDING) {
+      throw new BadRequestException('Order is already processed');
+    }
 
-    return result;
+    const invoice = order.invoices?.[0];
+    if (!invoice) throw new NotFoundException('Invoice not found');
+
+    // 2. Create the Manual Transaction Record
+    // We do this first so that completeOrderPayment has a transaction to lock onto
+    const transaction = await this.transactionRepo.save(
+      this.transactionRepo.create({
+        userId: order.buyerId,
+        orderId: order.id,
+        amount: invoice.totalAmount,
+        status: TransactionStatus.PENDING, // completeOrderPayment will move this to COMPLETED
+        currencyId: 'SAR',
+        type: 'escrow_deposit',
+        description: `Manual Admin Finalization - Order #${order.id} - Price: ${invoice.totalAmount} SAR`,
+      }),
+    );
+
+    // 3. Delegate to completeOrderPayment logic
+    // This handles order status, service counts, notifications, and Redis trimming
+    await this.completeOrderPayment(
+      transaction.id,
+      true, // isSuccess
+      'ADMIN_MANUAL', // paymentMethod
+    );
+
+    return order;
   }
 
   async processOrderPayment(dto: UnifiedCheckout, orderId: string) {
@@ -232,18 +389,28 @@ export class OrdersService {
 
     if (!order) throw new NotFoundException('Order not found');
 
-    // Only buyer (or admin) can mark it as paid
-    if (order.buyerId !== dto.userId) throw new ForbiddenException("Only buyer can process payment");
+    // 1. Consistency Check: Validate Invoice exists and is unpaid
+    const invoice = order.invoices?.[0];
+    if (!invoice) throw new NotFoundException('No invoice found for this order');
 
-    // Check permissions
-    if (order.status !== OrderStatus.PENDING) {
-      throw new ForbiddenException('Order cannot be paid because it is not in PENDING status');
+    if (invoice.paymentStatus === PaymentStatus.PAID) {
+      throw new BadRequestException('This invoice has already been paid');
     }
 
+    // 2. Permission Check
+    if (order.buyerId !== dto.userId) {
+      throw new ForbiddenException("Only the buyer can process payment");
+    }
 
-    const gateway = this.gatewayFactory.getGateway(dto.billingInfo.paymentMethod);
-    return await gateway.createPaymentIntention(dto, order);
+    if (order.status !== OrderStatus.PENDING) {
+      throw new ForbiddenException('Order is not in a payable state');
+    }
+
+    // 3. Pass both Order and Invoice to the gateway for accurate amount handling
+    const gateway = this.gatewayFactory.getGateway();
+    return await gateway.createPaymentIntention(dto, order, invoice);
   }
+
   async getUserOrders(userId: string, userRole: string, status?: string, page: number = 1) {
     const limit = 20;
     console.log(page, limit);

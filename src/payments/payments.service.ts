@@ -19,11 +19,11 @@ export class PaymentsService {
     @InjectRepository(PaymentMethod)
     public paymentMethodRepository: Repository<PaymentMethod>,
     public dataSource: DataSource,
-		@Inject(forwardRef(() => OrdersService))
+    @Inject(forwardRef(() => OrdersService))
     public readonly ordersService: OrdersService,
     @Inject(forwardRef(() => AccountingService))
     public readonly accountingService: AccountingService,
-  ) {}
+  ) { }
 
   async createPaymentIntent(userId: string, orderId: string, paymentMethodType: string) {
     const order = await this.orderRepository.findOne({
@@ -114,7 +114,7 @@ export class PaymentsService {
   }
 
   async addPaymentMethod(userId: string, paymentMethodData: any) {
-    const paymentMethod:any = this.paymentMethodRepository.create({
+    const paymentMethod: any = this.paymentMethodRepository.create({
       ...paymentMethodData,
       userId,
     });
@@ -151,7 +151,7 @@ export class PaymentsService {
     };
   }
 
-	async createCheckout(
+  async createCheckout(
     userId: string,
     body: { orderId: string; provider?: string; successUrl: string; cancelUrl: string },
   ) {

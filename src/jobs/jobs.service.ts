@@ -1,9 +1,8 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like, In, Between, MoreThanOrEqual, LessThanOrEqual, DataSource } from 'typeorm';
+import { Repository, Like, In, DataSource } from 'typeorm';
 import { Job, Proposal, User, Category, Order, Notification, JobStatus, ProposalStatus, UserRole, OrderStatus, Setting, PaymentStatus, PackageType, Invoice, UserRelatedAccount, Country, State } from 'entities/global.entity';
 import { CreateJobDto } from 'dto/job.dto';
-import { PaymentsService } from 'src/payments/payments.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { Permissions } from 'entities/permissions';
 import { formatSearchTerm } from 'utils/search.helper';
@@ -34,9 +33,6 @@ export class JobsService {
     @InjectRepository(UserRelatedAccount)
     public userAccountsRepo: Repository<UserRelatedAccount>,
     private readonly dataSource: DataSource,
-
-    @Inject(forwardRef(() => PaymentsService))
-    public readonly paymentsService: PaymentsService,
   ) { }
 
   async getJobs(query: any) {

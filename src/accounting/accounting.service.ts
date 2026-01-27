@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, PreconditionFailedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, DataSource, In } from 'typeorm';
+import { Repository, Between, DataSource, In, EntityManager } from 'typeorm';
 import { UserBalance, Transaction, PaymentMethod, User, Order, TransactionStatus, PaymentMethodType, PaymentStatus, Invoice, Setting, Wallet, Notification, UserBillingInfo, UserBankAccount, Country, TransactionBillingInfo, State } from 'entities/global.entity';
 
 type ReverseResolutionInput = {
@@ -82,15 +82,16 @@ export class AccountingService {
       where: { id: data.stateId, countryId: data.countryId }
     });
 
-    if (!state) throw new BadRequestException('Invalid state selected for this country');
+
     const updateData = {
       firstName: data.firstName,
       lastName: data.lastName,
       countryId: data.countryId,
-      stateId: data.stateId, // Now using ID
-      agreeToInvoiceEmails: data.agreeToInvoiceEmails,
+      stateId: state ? data.stateId : null, // Now using ID
+      ...(data.agreeToInvoiceEmails !== undefined ? { agreeToInvoiceEmails: data.agreeToInvoiceEmails } : {}),
       isSaudiResident: country.iso2 === 'SA',
     };
+
 
     if (!billingInfo) {
       // Create new entity if it doesn't exist
@@ -242,13 +243,19 @@ export class AccountingService {
   // ────────────────────────────────────────────────────────────────────────────
   // Escrow hold (into platform)
   // ────────────────────────────────────────────────────────────────────────────
-  async holdEscrow(orderId: string) {
-    const inv = await this.invoiceRepo.findOne({ where: { orderId }, relations: ['order'] });
+  async holdEscrow(orderId: string, manager?: EntityManager) {
+    const invoiceRepo = manager ? manager.getRepository(Invoice) : this.invoiceRepo;
+    const settingRepo = manager ? manager.getRepository(Setting) : this.settingRepo;
+    const balanceRepo = manager ? manager.getRepository(UserBalance) : this.userBalanceRepository;
+    const walletRepo = manager ? manager.getRepository(Wallet) : this.walletRepo;
+    const notifRepo = manager ? manager.getRepository(Notification) : this.notifRepo;
+
+    const inv = await invoiceRepo.findOne({ where: { orderId }, relations: ['order'] });
     if (!inv || inv.paymentStatus !== PaymentStatus.PAID) {
       throw new BadRequestException('Invoice not paid');
     }
 
-    const settings = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
+    const settings = await settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
     const platformUserId = settings?.[0]?.platformAccountUserId;
     if (!platformUserId) throw new BadRequestException('Platform account is not configured');
 
@@ -256,33 +263,33 @@ export class AccountingService {
 
     const platformBalance = await this.getUserBalance(platformUserId);
     platformBalance.availableBalance = Number(platformBalance.availableBalance) + amount;
-    await this.userBalanceRepository.save(platformBalance);
+    await balanceRepo.save(platformBalance);
 
-    await this.transactionRepository.save(
-      this.transactionRepository.create({
-        userId: platformUserId,
-        type: 'escrow_deposit',
-        amount,
-        description: `Escrow deposit for order #${orderId}`,
-        status: TransactionStatus.COMPLETED,
-        orderId,
-        currencyId: 'SAR',
-      }),
-    );
+    // await this.transactionRepository.save(
+    //   this.transactionRepository.create({
+    //     userId: platformUserId,
+    //     type: 'escrow_deposit',
+    //     amount,
+    //     description: `Escrow deposit for order #${orderId}`,
+    //     status: TransactionStatus.COMPLETED,
+    //     orderId,
+    //     currencyId: 'SAR',
+    //   }),
+    // );
 
-    let platformWallet = await this.walletRepo.findOne({ where: { userId: platformUserId } });
+    let platformWallet = await walletRepo.findOne({ where: { userId: platformUserId } });
     if (!platformWallet) {
-      platformWallet = this.walletRepo.create({
+      platformWallet = walletRepo.create({
         userId: platformUserId,
         balance: 0,
         currency: 'SAR',
       });
     }
     platformWallet.balance = Number(platformWallet.balance) + amount;
-    await this.walletRepo.save(platformWallet);
+    await walletRepo.save(platformWallet);
 
-    await this.notifRepo.save(
-      this.notifRepo.create({
+    await notifRepo.save(
+      notifRepo.create({
         userId: platformUserId,
         type: 'escrow_deposit',
         title: 'Funds received into the platform wallet',

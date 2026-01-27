@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, registerAs } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { HeaderResolver, I18nModule, QueryResolver } from 'nestjs-i18n';
 import { join } from 'path';
@@ -43,7 +43,8 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { StatesModule } from './states/states.module';
 import { CountriesModule } from './countries/countries.module';
 import { RatingsModule } from './rating/rating.module';
-import { PaymentModule } from './payment/payment.module';
+import { SharedModule } from 'common/shared.module';
+
 
 @Module({
   imports: [
@@ -84,15 +85,12 @@ import { PaymentModule } from './payment/payment.module';
       },
       resolvers: [{ use: QueryResolver, options: ['lang'] }, new HeaderResolver(['x-lang'])],
     }),
-
+    SharedModule,
     AuthModule,
     AssetModule,
-
     CategoriesModule,
     ServicesModule,
-
     JobsModule,
-
     RecommendationModule,
     SettingsModule,
     NotificationModule,
@@ -117,7 +115,6 @@ import { PaymentModule } from './payment/payment.module';
     DashboardModule,
     RatingsModule,
     AccountingModule,
-    PaymentModule
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter, NotificationSubscriber, ResponseTimeUpdaterService, OrderAutoUpdaterService],

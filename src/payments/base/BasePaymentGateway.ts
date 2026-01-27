@@ -1,9 +1,10 @@
 import { DataSource, EntityManager, Repository } from 'typeorm';
-import { TransactionBillingInfo, Order, Transaction } from 'entities/global.entity';
+import { TransactionBillingInfo, Order, Transaction, Invoice } from 'entities/global.entity';
 
 import { PreconditionFailedException } from '@nestjs/common';
 import { AccountingService } from 'src/accounting/accounting.service';
-import { UnifiedCheckout } from './payment.types';
+import { UnifiedCheckout } from './payment.constant';
+import { OrdersService } from 'src/orders/orders.service';
 
 
 export abstract class BasePaymentGateway {
@@ -12,6 +13,7 @@ export abstract class BasePaymentGateway {
         protected readonly accountingService: AccountingService,
         protected readonly orderRepo: Repository<Order>,
         protected readonly transactionBillingRepo: Repository<TransactionBillingInfo>,
+        protected readonly ordersService: OrdersService
     ) { }
 
     protected DEFAULT_CURRENCY = "EGP";
@@ -62,9 +64,18 @@ export abstract class BasePaymentGateway {
     }
 
     // Abstract method to be implemented by Paymob, Stripe, etc.
-    abstract createPaymentIntention(data: UnifiedCheckout, preloadedOrder?: Order): Promise<{
+    abstract createPaymentIntention(data: UnifiedCheckout, preloadedOrder: Order, invoice: Invoice): Promise<{
         paymentUrl: string;
         transactionId: string;
         orderId: string;
     }>;
+
+    protected async finalizeOrder(txId: string, success: boolean, method: string, extTxId: string, extOrderId: string) {
+        return await this.ordersService.completeOrderPayment(txId, success, method, extTxId, extOrderId);
+    }
+
+    protected generateFrontendUrl(isSuccess: boolean, orderId: string): string {
+        const path = isSuccess ? 'success' : 'fail';
+        return `${process.env.FRONTEND_URL}/payment/${path}?orderId=${orderId}`;
+    }
 }

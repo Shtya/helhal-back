@@ -4,18 +4,14 @@ import { AccessGuard } from '../auth/guard/access.guard';
 import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { JobsService } from './jobs.service';
-import { CreateJobDto, UpdateJobDto } from 'dto/job.dto';
+import { CreateJobDto } from 'dto/job.dto';
 import { CRUD } from 'common/crud.service';
-import { AuthGuard } from '@nestjs/passport';
-import { PaymentsService } from 'src/payments/payments.service';
 import { Permissions } from 'entities/permissions';
 
 @Controller('jobs')
 export class JobsController {
   constructor(
     private jobsService: JobsService,
-    @Inject(forwardRef(() => PaymentsService))
-    private paymentsService: PaymentsService,
   ) { }
 
   @Get()

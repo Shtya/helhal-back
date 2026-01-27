@@ -1,4 +1,5 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsString } from "class-validator";
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString } from "class-validator";
+import { TIMEOUT } from "dns";
 import { PaymentMethodType } from "entities/global.entity";
 
 export class BillingInfoDto {
@@ -7,8 +8,7 @@ export class BillingInfoDto {
     @IsEmail() email: string;
     @IsString() @IsNotEmpty() phoneNumber: string;
     @IsString() @IsNotEmpty() countryId: string;
-    @IsString() @IsNotEmpty() stateId: string;
-    @IsEnum(PaymentMethodType) @IsNotEmpty() paymentMethod: PaymentMethodType;
+    @IsString() @IsOptional() stateId: string;
 }
 
 export interface UnifiedCheckout {
@@ -23,3 +23,13 @@ export const getPaymobIntegrationId = (method: 'card' | 'wallet'): string | unde
     };
     return map[method];
 };
+
+// constants.ts
+export const PAYMENT_TIMING = {
+    LOCK_TTL: 10,           // 10 Seconds (Mutex)
+    INTENTION_TTL: 1800,    // 30 Minutes (Paymob Expiration)
+    CACHE_TTL: 1800,        // 30 Minutes (Result Cache)
+    TIMEOUT_MS: 10000,    // 10 Seconds (Operation Timeout)
+};
+
+export const EVENT_TTL_SECONDS = 259200; // 72 hours

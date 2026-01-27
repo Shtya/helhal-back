@@ -54,6 +54,7 @@
     "exceljs": "^4.4.0",
     "glob": "^11.0.3",
     "inflight": "^1.0.6",
+    "ioredis": "^5.9.2",
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^3.2.1",
     "multer": "^1.4.5-lts.1",

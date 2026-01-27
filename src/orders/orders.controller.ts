@@ -6,12 +6,16 @@ import { PaymentMethodType, UserRole } from 'entities/global.entity';
 import { RequireAccess } from 'decorators/access.decorator';
 import { CRUD } from 'common/crud.service';
 import { Permissions } from 'entities/permissions';
-import { BillingInfoDto, UnifiedCheckout } from 'src/payment/payment.types';
+import { BillingInfoDto, PAYMENT_TIMING, UnifiedCheckout } from 'src/payments/base/payment.constant';
+import { IdempotencyService } from 'common/IdempotencyService';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
 export class OrdersController {
-  constructor(private ordersService: OrdersService) { }
+  constructor(
+    private ordersService: OrdersService,
+    private readonly idempotencyService: IdempotencyService,
+  ) { }
 
 
   @Get()
@@ -31,6 +35,8 @@ export class OrdersController {
     return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'seller', 'service', 'invoices'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
 
+
+
   @Get('invoices')
   @UseGuards(JwtAuthGuard, AccessGuard)
   @RequireAccess({
@@ -43,6 +49,17 @@ export class OrdersController {
     return this.ordersService.getInvoices(query);
   }
 
+
+  @Post('admin/finalize-payment')
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN]
+  })
+  async adminFinalizeOrder(
+    @Body('orderId') orderId: string,
+  ) {
+    return await this.ordersService.adminManualFinalize(orderId);
+  }
 
   @Post(':orderId/pay')
   @UseGuards(JwtAuthGuard)
@@ -58,9 +75,15 @@ export class OrdersController {
       userId,
       billingInfo,
     };
-
+    const idempotencyKey = `${userId}-${orderId}`;
     // The service now handles the logic based on the method
-    return await this.ordersService.processOrderPayment(checkoutDto, orderId);
+    return this.idempotencyService.runWithIdempotency(
+      idempotencyKey,
+      () => this.ordersService.processOrderPayment(checkoutDto, orderId),
+      PAYMENT_TIMING.CACHE_TTL,
+      PAYMENT_TIMING.LOCK_TTL,
+      PAYMENT_TIMING.TIMEOUT_MS,
+    );
   }
   @Get(':id')
   async getOrder(@Req() req, @Param('id') id: string) {
