@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, In, MoreThanOrEqual, LessThanOrEqual } from 'typeorm';
-import { Report, Order, Service, User, Transaction, UserBalance, OrderStatus } from 'entities/global.entity';
+import { Report, Order, Service, User, Transaction, UserBalance, OrderStatus, TransactionStatus } from 'entities/global.entity';
 
 @Injectable()
 export class ReportsService {
@@ -82,7 +82,7 @@ export class ReportsService {
       where: {
         userId,
         created_at: Between(start, end),
-        status: 'completed',
+        status: TransactionStatus.COMPLETED,
       },
       order: { created_at: 'DESC' },
     });

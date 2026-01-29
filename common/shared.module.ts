@@ -4,6 +4,7 @@ import { RedisService } from "./RedisService";
 import { ConfigModule } from "@nestjs/config";
 import redisConfig from "./config/redis.config";
 
+
 @Module({
     imports: [
         ConfigModule.forFeature(redisConfig),

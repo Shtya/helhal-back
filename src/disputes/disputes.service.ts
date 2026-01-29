@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, Repository } from 'typeorm';
+import { DataSource, EntityManager, Not, Repository } from 'typeorm';
 import { Dispute, Order, User, Notification, DisputeStatus, OrderStatus, Setting, DisputeMessage } from 'entities/global.entity';
 import { AccountingService } from 'src/accounting/accounting.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
@@ -346,8 +346,10 @@ export class DisputesService {
     };
   }
 
-  async getDispute(userId: string, userRole: string, disputeId: string) {
-    const dispute = await this.disputeRepository.findOne({
+  async getDispute(userId: string, disputeId: string, manager?: EntityManager) {
+    const disputeRepo = manager ? manager.getRepository(Dispute) : this.disputeRepository;
+    const userRepo = manager ? manager.getRepository(User) : this.userRepository;
+    const dispute = await disputeRepo.findOne({
       where: { id: disputeId },
       relations: {
         raisedBy: {
@@ -364,7 +366,7 @@ export class DisputesService {
       },
     });
     if (!dispute) throw new NotFoundException('Dispute not found');
-    const user = await this.userRepository
+    const user = await userRepo
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
       .addSelect('person.permissions')
@@ -387,7 +389,7 @@ export class DisputesService {
       .where('user.id = :id', { id: userId })
       .getOne();
 
-    const dispute = await this.getDispute(userId, user.role, disputeId);
+    const dispute = await this.getDispute(userId, disputeId);
 
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.ChangeStatus);
 
@@ -462,7 +464,6 @@ export class DisputesService {
 
   async updateDisputeStatusSmart(
     userId: string,
-    userRole: string,
     disputeId: string,
     body: {
       status: 'open' | 'in_review' | 'resolved' | 'rejected' | 'closed_no_action';
@@ -473,173 +474,176 @@ export class DisputesService {
       setResolutionOnly?: boolean;
     },
   ) {
-    const restrictedNextStatuses = [
-      DisputeStatus.RESOLVED,
-      DisputeStatus.REJECTED,
-      DisputeStatus.CLOSE_NO_ACTION,
-    ];
+    return await this.dataSource.transaction(async (manager) => {
+      const restrictedNextStatuses = [
+        DisputeStatus.IN_REVIEW,
+        DisputeStatus.RESOLVED,
+        DisputeStatus.REJECTED,
+        DisputeStatus.CLOSE_NO_ACTION,
+      ];
 
-    const dispute = await this.disputeRepository.findOne({
-      where: { id: disputeId },
-      relations: {
-        order: {
-          buyer: {
-            person: true // Buyer profile data
-          },
-          seller: {
-            person: true // Seller profile data
+
+      const dispute = await manager.findOne(Dispute, {
+        where: { id: disputeId },
+        relations: {
+          order: {
+            buyer: {
+              person: true // Buyer profile data
+            },
+            seller: {
+              person: true // Seller profile data
+            }
           }
-        }
-      },
-    });
-    if (!dispute) throw new NotFoundException('Dispute not found');
+        },
+      });
+      if (!dispute) throw new NotFoundException('Dispute not found');
 
-    const order = dispute.order;
-    const prev = dispute.status as DisputeStatus;
-    const next = body.status as DisputeStatus;
+      const order = dispute.order;
+      const prev = dispute.status as DisputeStatus;
+      const next = body.status as DisputeStatus;
 
-    // Guard: only admin can set non-open statuses
-    const user = await this.userRepository
-      .createQueryBuilder('user')
-      .leftJoinAndSelect('user.person', 'person')
-      .addSelect('person.permissions')
-      .where('user.id = :id', { id: userId })
-      .getOne();
+      // Guard: only admin can set non-open statuses
+      const user = await this.userRepository
+        .createQueryBuilder('user')
+        .leftJoinAndSelect('user.person', 'person')
+        .addSelect('person.permissions')
+        .where('user.id = :id', { id: userId })
+        .getOne();
 
-    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.ChangeStatus);
-
-    if (next !== DisputeStatus.OPEN && !(user.role === 'admin' || hasPermission)) {
-      const isAccepting = next === DisputeStatus.RESOLVED && prev === DisputeStatus.IN_REVIEW && !!dispute.resolution && (order.buyerId === userId || order.sellerId === userId);
-      if (!isAccepting) {
-        throw new ForbiddenException('Only administrators can change dispute status');
-      }
-    }
-
-    if (restrictedNextStatuses.includes(next)) {
-      if (![DisputeStatus.OPEN, DisputeStatus.IN_REVIEW].includes(prev)) {
-        throw new BadRequestException(
-          `Dispute status "${next}" can only be set if the previous status is OPEN or IN_REVIEW.`
-        );
-      }
-    }
-
-
-    if (next === DisputeStatus.IN_REVIEW) {
-      // If coming back from RESOLVED → IN_REVIEW, reverse funds first
-      if (prev === DisputeStatus.RESOLVED) {
-        await this.reverseIfResolved(dispute, userId);
-      }
-
-      // Optional: proposal included with this request (no payout)
-      const hasProposal = typeof body?.sellerAmount === 'number' || typeof body?.buyerRefund === 'number' || body?.note;
-      if (hasProposal) {
-        dispute.resolution = JSON.stringify({
-          sellerAmount: Number(body.sellerAmount || 0),
-          buyerRefund: Number(body.buyerRefund || 0),
-          note: body?.note || '',
-        });
-      }
-
-      dispute.status = DisputeStatus.IN_REVIEW;
-      await this.disputeRepository.save(dispute);
-
-      // order state
-      order.status = OrderStatus.DISPUTED;
-      order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
-      await this.orderRepository.save(order);
-
-      await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "in_review" on "${order.title}".`, dispute.id);
-
-      return dispute;
-    }
-
-    if (next === DisputeStatus.OPEN) {
-      // If going RESOLVED → OPEN, reverse funds first
-      if (prev === DisputeStatus.RESOLVED) {
-        await this.reverseIfResolved(dispute, userId);
-      }
-      dispute.status = DisputeStatus.OPEN;
-      await this.disputeRepository.save(dispute);
-
-      order.status = OrderStatus.DISPUTED;
-      order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
-      await this.orderRepository.save(order);
-
-      await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "open" on "${order.title}".`, dispute.id);
-
-      return dispute;
-    }
-
-    if (next === DisputeStatus.RESOLVED) {
-      const { sellerAmount, buyerRefund, note } = this.getAmountsFromBodyOrResolution(body, dispute);
-      if (sellerAmount < 0 || buyerRefund < 0) throw new BadRequestException('Amounts must be >= 0');
+      const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.ChangeStatus);
 
       if (!(user.role === 'admin' || hasPermission)) {
-        if (prev !== DisputeStatus.IN_REVIEW || !dispute.resolution) {
-          throw new ForbiddenException('Only admin can directly resolve without a pending resolution');
+        throw new ForbiddenException('Only administrators can change dispute status');
+      }
+
+      if (!restrictedNextStatuses.includes(next)) {
+        throw new BadRequestException(`Invalid dispute status "${next}"`);
+      }
+
+      if ([DisputeStatus.RESOLVED, DisputeStatus.REJECTED, DisputeStatus.CLOSE_NO_ACTION,].includes(next)) {
+        if (![DisputeStatus.OPEN, DisputeStatus.IN_REVIEW].includes(prev)) {
+          throw new BadRequestException(
+            `Dispute status "${next}" can only be set if the previous status is OPEN or IN_REVIEW.`
+          );
         }
       }
 
-      if (user.role === 'admin' || hasPermission) {
-        // Save/overwrite the proposed resolution if admin provided amounts
-        if (typeof body?.sellerAmount === 'number' || typeof body?.buyerRefund === 'number' || body?.note) {
-          dispute.resolution = JSON.stringify({ sellerAmount, buyerRefund, note });
-        }
+      if (next === DisputeStatus.IN_REVIEW && prev !== DisputeStatus.OPEN) {
+        throw new BadRequestException(`Dispute status "in_review" can only be set if the previous status is OPEN.`);
       }
 
-      // 💸 Release from escrow
-      const tx = await this.accountingService.releaseEscrowSplit(order.id, sellerAmount, buyerRefund);
-      const { sellerPayoutTxId = null, buyerRefundTxId = null } = tx || {};
 
-      dispute.status = DisputeStatus.RESOLVED;
-      dispute.resolutionApplied = true;
-      dispute.sellerPayoutTxId = sellerPayoutTxId;
-      dispute.buyerRefundTxId = buyerRefundTxId;
-      await this.disputeRepository.save(dispute);
+      if (next === DisputeStatus.IN_REVIEW) {
+        // If coming back from RESOLVED → IN_REVIEW, reverse funds first
 
-      // Close order
-      const closeAs = body?.closeAs || 'completed';
-      order.status = closeAs === 'cancelled' ? OrderStatus.CANCELLED : OrderStatus.COMPLETED;
-      if (closeAs !== 'cancelled') order.completedAt = new Date();
-      order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'payout_released', by: userId, sellerAmount, buyerRefund }, { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
-      await this.orderRepository.save(order);
+        // Optional: proposal included with this request (no payout)
+        // const hasProposal = typeof body?.sellerAmount === 'number' || typeof body?.buyerRefund === 'number' || body?.note;
+        // if (hasProposal) {
+        //   dispute.resolution = JSON.stringify({
+        //     sellerAmount: Number(body.sellerAmount || 0),
+        //     buyerRefund: Number(body.buyerRefund || 0),
+        //     note: body?.note || '',
+        //   });
+        // }
 
-      await this.notify([order.buyerId, order.sellerId], 'dispute_resolved', 'Dispute resolved', `The dispute on "${order.title}" was resolved.`, dispute.id);
+        dispute.status = DisputeStatus.IN_REVIEW;
+        await manager.save(dispute);
 
-      return dispute;
-    }
+        // order state
+        order.status = OrderStatus.DISPUTED;
+        order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
+        await manager.save(order);
 
-    if (next === DisputeStatus.CLOSE_NO_ACTION) {
-      if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException('Only administrators can close dispute');
+        await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "in_review" on "${order.title}".`, dispute.id);
 
-      dispute.status = DisputeStatus.CLOSE_NO_ACTION;
-      await this.disputeRepository.save(dispute);
+        return dispute;
+      }
 
-      order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
+      if (next === DisputeStatus.OPEN) {
+        // If going RESOLVED → OPEN, reverse funds first
+        dispute.status = DisputeStatus.OPEN;
+        await manager.save(dispute);
 
-      order.status = OrderStatus.ACCEPTED;
-      await this.orderRepository.save(order);
+        order.status = OrderStatus.DISPUTED;
+        order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
+        await manager.save(order);
 
-      await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "close without action" on "${order.title}".`, dispute.id);
+        await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "open" on "${order.title}".`, dispute.id);
 
-      return dispute;
-    }
+        return dispute;
+      }
 
-    if (next === DisputeStatus.REJECTED) {
-      if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException('Only administrators can reject');
-      dispute.status = DisputeStatus.REJECTED;
-      await this.disputeRepository.save(dispute);
+      if (next === DisputeStatus.RESOLVED) {
+        const { sellerAmount, buyerRefund, note } = this.getAmountsFromBodyOrResolution(body, dispute);
+        if (sellerAmount < 0 || buyerRefund < 0) throw new BadRequestException('Amounts must be >= 0');
 
-      order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
-      order.status = OrderStatus.ACCEPTED;
-      await this.orderRepository.save(order);
+        if (!(user.role === 'admin' || hasPermission)) {
+          if (prev !== DisputeStatus.IN_REVIEW || !dispute.resolution) {
+            throw new ForbiddenException('Only admin can directly resolve without a pending resolution');
+          }
+        }
 
-      await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "rejected" on "${order.title}".`, dispute.id);
+        if (user.role === 'admin' || hasPermission) {
+          // Save/overwrite the proposed resolution if admin provided amounts
+          if (typeof body?.sellerAmount === 'number' || typeof body?.buyerRefund === 'number' || body?.note) {
+            dispute.resolution = JSON.stringify({ sellerAmount, buyerRefund, note });
+          }
+        }
 
-      return dispute;
-    }
+        // 💸 Release from escrow
+        const tx = await this.accountingService.releaseEscrowSplit(order.id, sellerAmount, buyerRefund, manager);
+        const { sellerPayoutTxId = null, buyerRefundTxId = null } = tx || {};
 
-    throw new BadRequestException('Unsupported status');
+        dispute.status = DisputeStatus.RESOLVED;
+        dispute.resolutionApplied = true;
+        dispute.sellerPayoutTxId = sellerPayoutTxId;
+        dispute.buyerRefundTxId = buyerRefundTxId;
+        await manager.save(dispute);
+
+        // Close order
+        const closeAs = body?.closeAs || 'completed';
+        order.status = closeAs === 'cancelled' ? OrderStatus.CANCELLED : OrderStatus.COMPLETED;
+        if (closeAs !== 'cancelled') order.completedAt = new Date();
+        order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'payout_released', by: userId, sellerAmount, buyerRefund }, { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
+        await manager.save(order);
+
+        await this.notify([order.buyerId, order.sellerId], 'dispute_resolved', 'Dispute resolved', `The dispute on "${order.title}" was resolved.`, dispute.id);
+
+        return dispute;
+      }
+
+      if (next === DisputeStatus.CLOSE_NO_ACTION) {
+        if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException('Only administrators can close dispute');
+
+        dispute.status = DisputeStatus.CLOSE_NO_ACTION;
+        await manager.save(dispute);
+
+        order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
+
+        order.status = OrderStatus.ACCEPTED;
+        await manager.save(order);
+
+        await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "close without action" on "${order.title}".`, dispute.id);
+
+        return dispute;
+      }
+
+      if (next === DisputeStatus.REJECTED) {
+
+        dispute.status = DisputeStatus.REJECTED;
+        await manager.save(dispute);
+
+        order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
+        order.status = OrderStatus.ACCEPTED;
+        await manager.save(order);
+
+        await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "rejected" on "${order.title}".`, dispute.id);
+
+        return dispute;
+      }
+
+      throw new BadRequestException('Unsupported status');
+    });
   }
 
   // Accept/admin propose — supports string JSON or structured body
@@ -700,47 +704,47 @@ export class DisputesService {
     return savedDispute;
   }
 
-  private async reverseIfResolved(dispute: Dispute, actorId: string) {
-    if (dispute.status !== DisputeStatus.RESOLVED || !dispute.resolutionApplied) return;
+  // private async reverseIfResolved(dispute: Dispute, actorId: string) {
+  //   if (dispute.status !== DisputeStatus.RESOLVED || !dispute.resolutionApplied) return;
 
-    const order = await this.orderRepository.findOne({ where: { id: dispute.orderId } });
-    if (!order) throw new NotFoundException('Order not found for dispute');
+  //   const order = await this.orderRepository.findOne({ where: { id: dispute.orderId } });
+  //   if (!order) throw new NotFoundException('Order not found for dispute');
 
-    const parsed = this.tryParse(dispute.resolution) || {};
-    const sellerAmount = Number(parsed.sellerAmount || 0);
-    const buyerRefund = Number(parsed.buyerRefund || 0);
+  //   const parsed = this.tryParse(dispute.resolution) || {};
+  //   const sellerAmount = Number(parsed.sellerAmount || 0);
+  //   const buyerRefund = Number(parsed.buyerRefund || 0);
 
-    // Move funds back to platform escrow + wallet, and undo seller/buyer movements
-    await this.accountingService.reverseResolution({
-      orderId: order.id,
-      sellerId: order.sellerId,
-      buyerId: order.buyerId,
-      sellerAmount,
-      buyerRefund,
-      sellerPayoutTxId: dispute.sellerPayoutTxId,
-      buyerRefundTxId: dispute.buyerRefundTxId,
-    });
+  //   // Move funds back to platform escrow + wallet, and undo seller/buyer movements
+  //   await this.accountingService.reverseResolution({
+  //     orderId: order.id,
+  //     sellerId: order.sellerId,
+  //     buyerId: order.buyerId,
+  //     sellerAmount,
+  //     buyerRefund,
+  //     sellerPayoutTxId: dispute.sellerPayoutTxId,
+  //     buyerRefundTxId: dispute.buyerRefundTxId,
+  //   });
 
-    // Clear payout flags so we don't double-reverse
-    dispute.resolutionApplied = false;
-    dispute.sellerPayoutTxId = null;
-    dispute.buyerRefundTxId = null;
-    await this.disputeRepository.save(dispute);
+  //   // Clear payout flags so we don't double-reverse
+  //   dispute.resolutionApplied = false;
+  //   dispute.sellerPayoutTxId = null;
+  //   dispute.buyerRefundTxId = null;
+  //   await this.disputeRepository.save(dispute);
 
-    // Put order back into DISPUTED and log
-    order.status = OrderStatus.DISPUTED;
-    order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'payout_reversed', by: actorId }];
-    await this.orderRepository.save(order);
+  //   // Put order back into DISPUTED and log
+  //   order.status = OrderStatus.DISPUTED;
+  //   order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'payout_reversed', by: actorId }];
+  //   await this.orderRepository.save(order);
 
-    // Notify both parties
-    await this.notify([order.buyerId, order.sellerId], 'dispute_reopened', 'Dispute reopened', `Funds were moved back to escrow for "${order.title}".`, dispute.id);
-  }
+  //   // Notify both parties
+  //   await this.notify([order.buyerId, order.sellerId], 'dispute_reopened', 'Dispute reopened', `Funds were moved back to escrow for "${order.title}".`, dispute.id);
+  // }
 
   async rejectResolution(userId: string, disputeId: string) {
-    const dispute = await this.getDispute(userId, 'user', disputeId);
+    const dispute = await this.getDispute(userId, disputeId);
     if (dispute.status !== DisputeStatus.IN_REVIEW) throw new BadRequestException('Resolution is not pending acceptance');
 
-    dispute.status = DisputeStatus.OPEN;
+    dispute.status = DisputeStatus.REJECTED;
     const saved = await this.disputeRepository.save(dispute);
 
     // notify platform
@@ -772,59 +776,61 @@ export class DisputesService {
   }
 
   async acceptResolution(userId: string, disputeId: string) {
-    const dispute = await this.getDispute(userId, 'user', disputeId);
-    if (dispute.status !== DisputeStatus.IN_REVIEW) throw new BadRequestException('Resolution is not pending acceptance');
-    const isInvolved = dispute.order.buyerId === userId || dispute.order.sellerId === userId;
-    if (!isInvolved) throw new ForbiddenException('You are not involved in this dispute');
+    return await this.dataSource.transaction(async (manager) => {
+      const dispute = await this.getDispute(userId, disputeId, manager);
+      if (dispute.status !== DisputeStatus.IN_REVIEW) throw new BadRequestException('Resolution is not pending acceptance');
+      const isInvolved = dispute.order.buyerId === userId || dispute.order.sellerId === userId;
+      if (!isInvolved) throw new ForbiddenException('You are not involved in this dispute');
 
-    let sellerAmount = 0,
-      buyerRefund = 0;
-    try {
-      const parsed = JSON.parse(dispute.resolution || '{}');
-      sellerAmount = Number(parsed.sellerAmount || 0);
-      buyerRefund = Number(parsed.buyerRefund || 0);
-    } catch {
-      throw new BadRequestException('Resolution format invalid. Expected JSON with sellerAmount & buyerRefund.');
-    }
+      let sellerAmount = 0,
+        buyerRefund = 0;
+      try {
+        const parsed = JSON.parse(dispute.resolution || '{}');
+        sellerAmount = Number(parsed.sellerAmount || 0);
+        buyerRefund = Number(parsed.buyerRefund || 0);
+      } catch {
+        throw new BadRequestException('Resolution format invalid. Expected JSON with sellerAmount & buyerRefund.');
+      }
 
-    await this.accountingService.releaseEscrowSplit(dispute.orderId, sellerAmount, buyerRefund);
+      await this.accountingService.releaseEscrowSplit(dispute.orderId, sellerAmount, buyerRefund, manager);
 
-    dispute.status = DisputeStatus.RESOLVED;
-    await this.disputeRepository.save(dispute);
+      dispute.status = DisputeStatus.RESOLVED;
+      await manager.save(dispute);
 
-    const order = await this.orderRepository.findOne({ where: { id: dispute.orderId } });
-    if (order && order.status !== OrderStatus.COMPLETED) {
-      order.status = OrderStatus.COMPLETED;
-      (order as any).completedAt = new Date();
-      order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_resolved', by: userId }];
-      await this.orderRepository.save(order);
-    }
+      const order = await manager.findOne(Order, { where: { id: dispute.orderId } });
+      if (order && order.status !== OrderStatus.COMPLETED) {
+        order.status = OrderStatus.COMPLETED;
+        (order as any).completedAt = new Date();
+        order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_resolved', by: userId }];
+        await manager.save(order);
+      }
 
-    // notify buyer, seller, platform
-    const settings = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
-    const platformUserId = settings?.[0]?.platformAccountUserId;
+      // notify buyer, seller, platform
+      const settings = await manager.find(Setting, { take: 1, order: { created_at: 'DESC' } });
+      const platformUserId = settings?.[0]?.platformAccountUserId;
 
-    const notifs = [
-      { userId: order.buyerId, title: 'Dispute resolved', message: `Resolution accepted for "${order.title}".` },
-      { userId: order.sellerId, title: 'Dispute resolved', message: `Resolution accepted for "${order.title}".` },
-    ];
-    if (platformUserId) notifs.push({ userId: platformUserId, title: 'Dispute resolved', message: `Order "${order.title}" dispute was resolved.` });
+      const notifs = [
+        { userId: order.buyerId, title: 'Dispute resolved', message: `Resolution accepted for "${order.title}".` },
+        { userId: order.sellerId, title: 'Dispute resolved', message: `Resolution accepted for "${order.title}".` },
+      ];
+      if (platformUserId) notifs.push({ userId: platformUserId, title: 'Dispute resolved', message: `Order "${order.title}" dispute was resolved.` });
 
-    await this.notificationRepository.save(
-      notifs.map(
-        n =>
-          this.notificationRepository.create({
-            userId: n.userId,
-            type: 'dispute_resolved',
-            title: n.title,
-            message: n.message,
-            relatedEntityType: 'dispute',
-            relatedEntityId: dispute.id,
-          }) as any,
-      ),
-    );
+      await manager.save(Notification,
+        notifs.map(
+          n =>
+            manager.create(Notification, {
+              userId: n.userId,
+              type: 'dispute_resolved',
+              title: n.title,
+              message: n.message,
+              relatedEntityType: 'dispute',
+              relatedEntityId: dispute.id,
+            }) as any,
+        ),
+      );
 
-    return dispute;
+      return dispute;
+    });
   }
 
   async getDisputeMessages(userId: string, userRole: string, disputeId: string, page: number = 1, limit: number = 50) {
@@ -881,6 +887,7 @@ export class DisputesService {
 
   // --- Admin: resolve and payout immediately (atomic)
   async resolveAndPayout(userId: string, userRole: string, disputeId: string, payload: { sellerAmount: number; buyerRefund: number; note?: string; closeAs: 'completed' | 'cancelled' }) {
+
     const user = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
@@ -907,7 +914,7 @@ export class DisputesService {
 
     await this.dataSource.transaction(async manager => {
       // release escrow
-      await this.accountingService.releaseEscrowSplit(dispute.orderId, sAmt, bRef);
+      await this.accountingService.releaseEscrowSplit(dispute.orderId, sAmt, bRef, manager);
 
       // close dispute
       dispute.status = DisputeStatus.RESOLVED;

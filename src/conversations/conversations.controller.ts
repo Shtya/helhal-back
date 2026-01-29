@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Param, UseGuards, Req, Query, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { ConversationsService } from './conversations.service';
-import { CreateConversationDto, SendMessageDto } from 'dto/conversation.dto';
+import { CreateConversationDto } from 'dto/conversation.dto';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)

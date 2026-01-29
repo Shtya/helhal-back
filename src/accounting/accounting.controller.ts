@@ -89,6 +89,18 @@ export class AccountingController {
   }
 
 
+  @Get('admin/wallet')
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'finance',
+      value: Permissions.Finance.View
+    }
+  })
+  async getPlatformWallet() {
+    return this.accountingService.getPlatformWallet();
+  }
+
   @Get('transactions')
   @UseGuards(JwtAuthGuard)
   async getTransactions(

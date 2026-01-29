@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Not, Repository } from 'typeorm';
-import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Wallet, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest, UserRelatedAccount, PaymentMethod, PaymentMethodType, Transaction, TransactionStatus } from 'entities/global.entity';
+import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest, UserRelatedAccount, PaymentMethod, PaymentMethodType, Transaction, TransactionStatus, TransactionType } from 'entities/global.entity';
 import { AccountingService } from 'src/accounting/accounting.service';
 import { randomBytes } from 'crypto';
 import { CRUD } from 'common/crud.service';
@@ -365,7 +365,7 @@ export class OrdersService {
         amount: invoice.totalAmount,
         status: TransactionStatus.PENDING, // completeOrderPayment will move this to COMPLETED
         currencyId: 'SAR',
-        type: 'escrow_deposit',
+        type: TransactionType.ESCROW_DEPOSIT,
         description: `Manual Admin Finalization - Order #${order.id} - Price: ${invoice.totalAmount} SAR`,
       }),
     );
@@ -456,8 +456,9 @@ export class OrdersService {
     };
   }
 
-  async getOrder(userId: string, userRole: string, orderId: string, req: any) {
-    const order = await this.orderRepository.findOne({
+  async getOrder(userId: string, userRole: string, orderId: string, req: any, manager?: EntityManager) {
+    const orderRepo = manager ? manager.getRepository(Order) : this.orderRepository;
+    const order = await orderRepo.findOne({
       where: { id: orderId },
       relations: {
         service: {
@@ -490,147 +491,179 @@ export class OrdersService {
   }
 
   async createOrderCheckout(userId: string, createOrderDto: any) {
-    const { serviceId, packageType, quantity, requirementsAnswers, notes } = createOrderDto;
-    const s = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
+    return await this.dataSource.transaction(async (manager) => {
 
-    const service = await this.serviceRepository.findOne({ where: { id: serviceId, status: 'Active' } } as any);
-    if (!service) throw new NotFoundException('Service not found or not available');
+      const { serviceId, packageType, quantity, requirementsAnswers, notes } = createOrderDto;
+      const s = await manager.find(Setting, { take: 1, order: { created_at: 'DESC' } });
 
-    const relation = await this.userAccountsRepo.findOne({ where: { mainUserId: userId, subUserId: service.sellerId } })
-    if (relation) {
-      throw new ConflictException('You cannot place an order because you’re already linked to this seller');
-    }
+      const service = await manager.findOne(Service, { where: { id: serviceId, status: 'Active' } } as any);
+      if (!service) throw new NotFoundException('Service not found or not available');
 
-    const seller = await this.userRepository.findOne({ where: { id: service.sellerId } });
-    if (!seller) throw new NotFoundException('Seller not found');
+      const relation = await manager.findOne(UserRelatedAccount, { where: { mainUserId: userId, subUserId: service.sellerId } })
+      if (relation) {
+        throw new ConflictException('You cannot place an order because you’re already linked to this seller');
+      }
+
+      const seller = await manager.findOne(User, { where: { id: service.sellerId } });
+      if (!seller) throw new NotFoundException('Seller not found');
 
 
-    const packageData = service.packages.find((pkg: any) => pkg.type === packageType);
-    if (!packageData) throw new BadRequestException('Invalid package type');
+      const packageData = service.packages.find((pkg: any) => pkg.type === packageType);
+      if (!packageData) throw new BadRequestException('Invalid package type');
 
-    const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
-    const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);
-    const subtotal = packageData.price * quantity;
-    const totalAmount = subtotal + platformPercent;
+      const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
+      const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);
+      const subtotal = packageData.price * quantity;
+      const totalAmount = subtotal + platformPercent;
 
-    const order = this.orderRepository.create({
-      buyerId: userId,
-      sellerId: service.sellerId,
-      serviceId,
-      title: service.title,
-      quantity,
-      totalAmount,
-      sellerServiceFee,
-      packageType,
-      requirementsAnswers,
-      status: OrderStatus.PENDING, // waiting for payment
-      orderDate: new Date(),
-      deliveryTime: packageData.deliveryTime,
-      notes: notes
+      const order = manager.create(Order, {
+        buyerId: userId,
+        sellerId: service.sellerId,
+        serviceId,
+        title: service.title,
+        quantity,
+        totalAmount,
+        sellerServiceFee,
+        packageType,
+        requirementsAnswers,
+        status: OrderStatus.PENDING, // waiting for payment
+        orderDate: new Date(),
+        deliveryTime: packageData.deliveryTime,
+        notes: notes
+      });
+
+      const savedOrder = await manager.save(order);
+
+      // ---- Invoice
+      const checkoutToken = randomBytes(16).toString('hex');
+
+      const invoice = manager.create(Invoice, {
+        invoiceNumber: `INV-${Date.now()}-${savedOrder.id.slice(-6)}`,
+        orderId: savedOrder.id,
+        order: savedOrder,
+        subtotal,
+        sellerServiceFee,
+        platformPercent,
+        totalAmount,
+        issuedAt: new Date(),
+        paymentStatus: PaymentStatus.PENDING,
+      });
+
+      await manager.save(invoice);
+
+      const notifRepo = manager.getRepository(Notification);
+      const sellerNotif = notifRepo.create({
+        userId: service.sellerId,
+        type: 'order',
+        title: 'New Order Received',
+        message: `You have received a new order for your service "${service.title}".`,
+        relatedEntityType: 'order',
+        relatedEntityId: savedOrder.id,
+      });
+
+      await notifRepo.save(sellerNotif);
+
+      const paymentUrl = `${process.env.FRONTEND_URL}/payment?orderId=${savedOrder.id}&invoice=${invoice.invoiceNumber}&token=${checkoutToken}`;
+
+      // Return order + simulated checkout link
+      return {
+        order: savedOrder,
+        paymentUrl,
+      };
     });
-
-    const savedOrder = await this.orderRepository.save(order);
-
-    // ---- Invoice
-    const checkoutToken = randomBytes(16).toString('hex');
-
-    const invoice = this.invoiceRepository.create({
-      invoiceNumber: `INV-${Date.now()}-${savedOrder.id.slice(-6)}`,
-      orderId: savedOrder.id,
-      order: savedOrder,
-      subtotal,
-      sellerServiceFee,
-      platformPercent,
-      totalAmount,
-      issuedAt: new Date(),
-      paymentStatus: PaymentStatus.PENDING,
-    });
-
-    await this.invoiceRepository.save(invoice);
-
-    const paymentUrl = `${process.env.FRONTEND_URL}/payment?orderId=${savedOrder.id}&invoice=${invoice.invoiceNumber}&token=${checkoutToken}`;
-
-    // Return order + simulated checkout link
-    return {
-      order: savedOrder,
-      paymentUrl,
-    };
   }
 
   async createOrder(userId: string, createOrderDto: any) {
     const { serviceId, packageType, quantity, requirementsAnswers } = createOrderDto;
 
-    const service = await this.serviceRepository.findOne({
-      where: { id: serviceId, status: 'Active' },
-    } as any);
+    return await this.dataSource.transaction(async (manager) => {
 
-    if (!service) {
-      throw new NotFoundException('Service not found or not available');
-    }
+      const service = await manager.findOne(Service, {
+        where: { id: serviceId, status: 'Active' },
+      } as any);
 
-    const seller = await this.userRepository.findOne({
-      where: { id: service.sellerId },
+      if (!service) {
+        throw new NotFoundException('Service not found or not available');
+      }
+
+      const seller = await manager.findOne(User, {
+        where: { id: service.sellerId },
+      });
+
+      if (!seller) {
+        throw new NotFoundException('Seller not found');
+      }
+
+      // Calculate total amount based on package type
+      const packageData = service.packages.find((pkg: any) => pkg.type === packageType);
+      if (!packageData) {
+        throw new BadRequestException('Invalid package type');
+      }
+      const s = await manager.find(Setting, { take: 1, order: { created_at: 'DESC' } });
+      const platformPercent = Number(s?.[0]?.platformPercent ?? 10);;
+      const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);;
+      const subtotal = packageData.price * quantity;
+      const totalAmount = subtotal + platformPercent;
+
+      const order = manager.create(Order, {
+        buyerId: userId,
+        sellerId: service.sellerId,
+        serviceId,
+        title: service.title,
+        quantity,
+        totalAmount,
+        sellerServiceFee,
+        packageType,
+        requirementsAnswers,
+        status: OrderStatus.PENDING,
+        orderDate: new Date(),
+        deliveryTime: packageData.deliveryTime,
+      });
+
+      const savedOrder = await manager.save(order);
+
+      // Create invoice
+
+      const invoice = manager.create(Invoice, {
+        invoiceNumber: `INV-${Date.now()}-${savedOrder.id.slice(-6)}`,
+        orderId: savedOrder.id,
+        subtotal,
+        sellerServiceFee,
+        platformPercent,
+        totalAmount,
+        issuedAt: new Date(),
+        paymentStatus: PaymentStatus.PENDING,
+      });
+
+      await manager.save(invoice);
+      //send notification to seller
+      const notifRepo = manager.getRepository(Notification);
+      const sellerNotif = notifRepo.create({
+        userId: service.sellerId,
+        type: 'order',
+        title: 'New Order Received',
+        message: `You have received a new order for your service "${service.title}".`,
+        relatedEntityType: 'order',
+        relatedEntityId: savedOrder.id,
+      });
+
+      await notifRepo.save(sellerNotif);
+      return savedOrder;
     });
-
-    if (!seller) {
-      throw new NotFoundException('Seller not found');
-    }
-
-    // Calculate total amount based on package type
-    const packageData = service.packages.find((pkg: any) => pkg.type === packageType);
-    if (!packageData) {
-      throw new BadRequestException('Invalid package type');
-    }
-    const s = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
-    const platformPercent = Number(s?.[0]?.platformPercent ?? 10);;
-    const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);;
-    const subtotal = packageData.price * quantity;
-    const totalAmount = subtotal + platformPercent;
-
-    const order = this.orderRepository.create({
-      buyerId: userId,
-      sellerId: service.sellerId,
-      serviceId,
-      title: service.title,
-      quantity,
-      totalAmount,
-      sellerServiceFee,
-      packageType,
-      requirementsAnswers,
-      status: OrderStatus.PENDING,
-      orderDate: new Date(),
-      deliveryTime: packageData.deliveryTime,
-    });
-
-    const savedOrder = await this.orderRepository.save(order);
-
-    // Create invoice
-
-    const invoice = this.invoiceRepository.create({
-      invoiceNumber: `INV-${Date.now()}-${savedOrder.id.slice(-6)}`,
-      orderId: savedOrder.id,
-      subtotal,
-      sellerServiceFee,
-      platformPercent,
-      totalAmount,
-      issuedAt: new Date(),
-      paymentStatus: PaymentStatus.PENDING,
-    });
-
-    await this.invoiceRepository.save(invoice);
-
-    return savedOrder;
   }
 
-  private async updateSellerStats(order: Order) {
-    const seller = await this.userRepository.findOne({ where: { id: order.sellerId } });
+  private async updateSellerStats(order: Order, manager?: EntityManager) {
+    const userRepo = manager ? manager.getRepository(User) : this.userRepository;
+    const orderRepo = manager ? manager.getRepository(Order) : this.orderRepository;
+
+    const seller = await userRepo.findOne({ where: { id: order.sellerId } });
     if (!seller) return;
 
     // Increase completed orders
     seller.ordersCompleted = (seller.ordersCompleted || 0) + 1;
 
     // Check if this buyer is first-time
-    const previousOrders = await this.orderRepository.count({
+    const previousOrders = await orderRepo.count({
       where: {
         sellerId: seller.id,
         buyerId: order.buyerId,
@@ -643,13 +676,14 @@ export class OrdersService {
       seller.repeatBuyers = (seller.repeatBuyers || 0) + 1;
     }
 
-    await this.userRepository.save(seller);
+    await userRepo.save(seller);
   }
 
   // Helper: Send notifications to both parties to rate each other
-  private async sendRatingNotifications(order: Order) {
+  private async sendRatingNotifications(order: Order, manager?: EntityManager) {
+    const notificationRepo = manager ? manager.getRepository(Notification) : this.notifRepo;
     // 1. Notify Buyer
-    const buyerNotif = this.notifRepo.create({
+    const buyerNotif = notificationRepo.create({
       userId: order.buyerId,
       type: 'rating', // specific type for frontend routing
       title: 'Order Completed',
@@ -659,7 +693,7 @@ export class OrdersService {
     });
 
     // 2. Notify Seller
-    const sellerNotif = this.notifRepo.create({
+    const sellerNotif = notificationRepo.create({
       userId: order.sellerId,
       type: 'rating',
       title: 'Order Completed',
@@ -669,7 +703,7 @@ export class OrdersService {
     });
 
     // Save both in one transaction
-    await this.notifRepo.save([buyerNotif, sellerNotif]);
+    await notificationRepo.save([buyerNotif, sellerNotif]);
   }
 
 
@@ -722,57 +756,60 @@ export class OrdersService {
     submissionData: { message?: string; files?: { filename: string; url: string }[] },
     req: any
   ) {
-    const order = await this.getOrder(userId, UserRole.SELLER, orderId, req);
+    return await this.dataSource.transaction(async (manager) => {
 
-    if (order.status !== OrderStatus.ACCEPTED && order.status !== OrderStatus.ChangeRequested) {
-      throw new BadRequestException('Order must be accepted before delivery');
-    }
+      const order = await this.getOrder(userId, UserRole.SELLER, orderId, req, manager);
 
-    // Block if dispute exists
-    const hasDispute = await this.disputeRepo.exist({
-      where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
+      if (order.status !== OrderStatus.ACCEPTED && order.status !== OrderStatus.ChangeRequested) {
+        throw new BadRequestException('Order must be accepted before delivery');
+      }
+
+      // Block if dispute exists
+      const hasDispute = await this.disputeRepo.exist({
+        where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
+      });
+      if (hasDispute) throw new BadRequestException('Order is in dispute');
+
+
+      // --- Add submission ---
+      const submission = manager.create(OrderSubmission, {
+        orderId,
+        sellerId: userId,
+        message: submissionData.message || null,
+        files: submissionData.files || [],
+      });
+      await manager.save(submission);
+
+      order.submissionDate = new Date();
+      order.deliveryTime = this.SUBMISSIO_AFTER_DAYS;
+      // timeline
+      order.timeline = [
+        ...(order.timeline || []),
+        {
+          type: 'delivered',
+          at: new Date().toISOString(),
+          by: 'seller',
+        },
+      ];
+
+      order.status = OrderStatus.DELIVERED;
+      order.deliveredAt = new Date();
+      const saved = await manager.save(order);
+
+      // 🔔 notify buyer
+      await manager.save(Notification,
+        manager.create(Notification, {
+          userId: order.buyerId,
+          type: 'order_delivered',
+          title: 'Order delivered',
+          message: `The seller delivered "${order.title}". Please review and confirm receipt.`,
+          relatedEntityType: 'order',
+          relatedEntityId: order.id,
+        }) as any,
+      );
+
+      return saved;
     });
-    if (hasDispute) throw new BadRequestException('Order is in dispute');
-
-
-    // --- Add submission ---
-    const submission = this.submissionRepo.create({
-      orderId,
-      sellerId: userId,
-      message: submissionData.message || null,
-      files: submissionData.files || [],
-    });
-    await this.submissionRepo.save(submission);
-
-    order.submissionDate = new Date();
-    order.deliveryTime = this.SUBMISSIO_AFTER_DAYS;
-    // timeline
-    order.timeline = [
-      ...(order.timeline || []),
-      {
-        type: 'delivered',
-        at: new Date().toISOString(),
-        by: 'seller',
-      },
-    ];
-
-    order.status = OrderStatus.DELIVERED;
-    order.deliveredAt = new Date();
-    const saved = await this.orderRepository.save(order);
-
-    // 🔔 notify buyer
-    await this.notifRepo.save(
-      this.notifRepo.create({
-        userId: order.buyerId,
-        type: 'order_delivered',
-        title: 'Order delivered',
-        message: `The seller delivered "${order.title}". Please review and confirm receipt.`,
-        relatedEntityType: 'order',
-        relatedEntityId: order.id,
-      }) as any,
-    );
-
-    return saved;
   }
 
   async getLastSubmission(userId: string, orderId: string) {
@@ -812,139 +849,165 @@ export class OrdersService {
     changeData: { message?: string; files?: { filename: string; url: string }[]; newDeliveryTime?: number },
     req: any
   ) {
-    // Fetch order
-    const order = await this.getOrder(userId, UserRole.BUYER, orderId, req);
+    return await this.dataSource.transaction(async (manager) => {
 
-    if (![OrderStatus.DELIVERED].includes(order.status)) {
-      throw new BadRequestException('Cannot request changes for this order at its current status');
-    }
+      // Fetch order
+      const order = await this.getOrder(userId, UserRole.BUYER, orderId, req, manager);
 
-    // Create OrderChangeRequest
-    const changeRequest = this.changeRepo.create({
-      orderId,
-      buyerId: userId,
-      message: changeData.message || null,
-      files: changeData.files || [],
-    });
+      if (![OrderStatus.DELIVERED].includes(order.status)) {
+        throw new BadRequestException('Cannot request changes for this order at its current status');
+      }
 
-    await this.changeRepo.save(changeRequest);
-
-    // Update order
-    order.status = OrderStatus.ChangeRequested;
-    order.deliveryTime = 14;
-    order.submissionDate = new Date();
-
-    // Update timeline
-    order.timeline = [
-      ...(order.timeline || []),
-      {
-        type: 'change_requested',
-        at: new Date().toISOString(),
-        by: 'buyer',
+      // Create OrderChangeRequest
+      const changeRequest = manager.create(OrderChangeRequest, {
+        orderId,
+        buyerId: userId,
         message: changeData.message || null,
-      },
-    ];
+        files: changeData.files || [],
+      });
 
-    const savedOrder = await this.orderRepository.save(order);
+      await manager.save(changeRequest);
 
-    // Notify seller
-    await this.notifRepo.save(
-      this.notifRepo.create({
-        userId: order.sellerId,
-        type: 'order_change_requested',
-        title: `Change requested for "${order.title}"`,
-        message: changeData.message || 'Buyer requested changes',
-        relatedEntityType: 'order',
-        relatedEntityId: order.id,
-      }) as any,
-    );
+      // Update order
+      order.status = OrderStatus.ChangeRequested;
+      order.deliveryTime = 14;
+      order.submissionDate = new Date();
 
-    return {
-      order: savedOrder,
-      changeRequest,
-    };
+      // Update timeline
+      order.timeline = [
+        ...(order.timeline || []),
+        {
+          type: 'change_requested',
+          at: new Date().toISOString(),
+          by: 'buyer',
+          message: changeData.message || null,
+        },
+      ];
+
+      const savedOrder = await manager.save(order);
+
+      // Notify seller
+      await manager.save(Notification,
+        manager.create(Notification, {
+          userId: order.sellerId,
+          type: 'order_change_requested',
+          title: `Change requested for "${order.title}"`,
+          message: changeData.message || 'Buyer requested changes',
+          relatedEntityType: 'order',
+          relatedEntityId: order.id,
+        }) as any,
+      );
+
+      return {
+        order: savedOrder,
+        changeRequest,
+      };
+    });
   }
 
 
   async cancelOrder(userId: string, userRole: string, orderId: string, req: any, reason?: string) {
-    const order = await this.getOrder(userId, userRole, orderId, req);
+    return await this.dataSource.transaction(async (manager) => {
 
-    // Only the buyer can cancel the order
-    if (order.buyerId !== userId) {
-      throw new ForbiddenException('Only the buyer can cancel this order');
-    }
+      const order = await this.getOrder(userId, userRole, orderId, req, manager);
 
+      // Only the buyer can cancel the order
+      if (order.buyerId !== userId) {
+        throw new ForbiddenException('Only the buyer can cancel this order');
+      }
 
-    if (![OrderStatus.PENDING, OrderStatus.ACCEPTED].includes(order.status)) {
-      throw new BadRequestException('Order cannot be cancelled at this stage');
-    }
+      if (![OrderStatus.PENDING, OrderStatus.WAITING].includes(order.status)) {
+        throw new BadRequestException('Order cannot be cancelled at this stage');
+      }
 
-    order.status = OrderStatus.CANCELLED;
-    order.cancelledAt = new Date();
+      order.status = OrderStatus.CANCELLED;
+      order.cancelledAt = new Date();
 
-    // timeline
-    order.timeline = [
-      ...(order.timeline || []),
-      {
-        type: 'canceled',
-        at: new Date().toISOString(),
-        by: 'buyer',
-      },
-    ];
+      // timeline
+      order.timeline = [
+        ...(order.timeline || []),
+        {
+          type: 'canceled',
+          at: new Date().toISOString(),
+          by: 'buyer',
+        },
+      ];
+      const invoiceRepo = manager.getRepository(Invoice);
+      // Process refund if payment was made
+      const invoice = await invoiceRepo.findOne({
+        where: { orderId },
+      });
 
-    // Process refund if payment was made
-    const invoice = await this.invoiceRepository.findOne({
-      where: { orderId },
+      if (invoice && invoice.paymentStatus === PaymentStatus.PAID) {
+        await this.accountingService.refundEscrowToBuyer(orderId, manager);
+      }
+
+      await manager.save(
+        manager.create(Notification, {
+          userId: order.sellerId,
+          type: "order_cancelled",
+          title: "Order Cancelled",
+          message: "The buyer has cancelled the order.",
+          relatedEntityType: 'order',
+          relatedEntityId: orderId,
+        }),
+      );
+
+      return manager.save(order);
     });
-
-    if (invoice && invoice.paymentStatus === PaymentStatus.PAID) {
-      // Process refund (implement your refund logic here)
-      invoice.paymentStatus = PaymentStatus.FAILED; // Mark as refunded
-      await this.invoiceRepository.save(invoice);
-    }
-
-    return this.orderRepository.save(order);
   }
 
 
   async rejectOrder(userId: string, userRole: string, orderId: string, req: any, reason?: string) {
-    const order = await this.getOrder(userId, userRole, orderId, req);
+    return await this.dataSource.transaction(async (manager) => {
 
-    // Only the buyer can cancel the order
-    if (order.sellerId !== userId) {
-      throw new ForbiddenException('Only the seller can reject this order');
-    }
+      const order = await this.getOrder(userId, userRole, orderId, req, manager);
 
+      // Only the buyer can cancel the order
+      if (order.sellerId !== userId) {
+        throw new ForbiddenException('Only the seller can reject this order');
+      }
 
-    if (![OrderStatus.PENDING, OrderStatus.ACCEPTED].includes(order.status)) {
-      throw new BadRequestException('Order cannot be rejected at this stage');
-    }
+      if (![OrderStatus.PENDING, OrderStatus.WAITING].includes(order.status)) {
+        throw new BadRequestException('Order cannot be rejected at this stage');
+      }
 
-    order.status = OrderStatus.REJECTED;
-    order.cancelledAt = new Date();
+      order.status = OrderStatus.REJECTED;
+      order.cancelledAt = new Date();
 
-    // timeline
-    order.timeline = [
-      ...(order.timeline || []),
-      {
-        type: 'rejected',
-        at: new Date().toISOString(),
-        by: 'seller',
-      },
-    ];
+      // timeline
+      order.timeline = [
+        ...(order.timeline || []),
+        {
+          type: 'rejected',
+          at: new Date().toISOString(),
+          by: 'seller',
+        },
+      ];
 
-    // Process refund if payment was made
-    const invoice = await this.invoiceRepository.findOne({
-      where: { orderId },
+      const invoiceRepo = manager.getRepository(Invoice);
+      // Process refund if payment was made
+      const invoice = await invoiceRepo.findOne({
+        where: { orderId },
+      });
+
+      if (invoice && invoice.paymentStatus === PaymentStatus.PAID) {
+        await this.accountingService.refundEscrowToBuyer(orderId, manager);
+      }
+
+      await manager.save(
+        manager.create(Notification, {
+          userId: order.buyerId,
+          type: "order_rejected",
+          title: "Order Rejected",
+          message: "Your order has been rejected by the seller.",
+          relatedEntityType: 'order',
+          relatedEntityId: orderId,
+        }),
+      );
+
+      return manager.save(order);
     });
-
-    if (invoice && invoice.paymentStatus === PaymentStatus.PAID) {
-      // Process refund (implement your refund logic here)
-      invoice.paymentStatus = PaymentStatus.FAILED; // Mark as refunded
-      await this.invoiceRepository.save(invoice);
-    }
-
-    return this.orderRepository.save(order);
   }
 
   async acceptOrder(userId: string, userRole: string, orderId: string, req: any, reason?: string) {
@@ -972,119 +1035,168 @@ export class OrdersService {
       },
     ];
 
+
+    await this.notifRepo.save(
+      this.notifRepo.create({
+        userId: order.buyerId,
+        type: "order_accepted",
+        title: "Order Accepted",
+        message: "Your order has been accepted by the seller.",
+        relatedEntityType: 'order',
+        relatedEntityId: orderId,
+      }),
+    );
+
     return this.orderRepository.save(order);
   }
 
   async autoCancel(orderId: string) {
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-      relations: {
-        service: {
-          seller: { person: true } // If the service object also needs the seller's profile
-        },
-        buyer: {
-          person: true            // Essential for buyer's name/email
-        },
-        seller: {
-          person: true            // Essential for seller's name/email
-        },
-        invoices: {
-          payments: true          // Keeps your invoice and payment history
+    return await this.dataSource.transaction(async (manager) => {
+      const order = await manager.findOne(Order, {
+        where: { id: orderId },
+        relations: {
+          service: {
+            seller: { person: true } // If the service object also needs the seller's profile
+          },
+          buyer: {
+            person: true            // Essential for buyer's name/email
+          },
+          seller: {
+            person: true            // Essential for seller's name/email
+          },
+          invoices: {
+            payments: true          // Keeps your invoice and payment history
+          }
         }
+      });
+
+      if (![OrderStatus.ChangeRequested].includes(order.status)) {
+        throw new BadRequestException('Order cannot be cancelled at this stage');
       }
+
+      order.status = OrderStatus.CANCELLED;
+      order.cancelledAt = new Date();
+
+      // timeline
+      order.timeline = [
+        ...(order.timeline || []),
+        {
+          type: 'canceled',
+          at: new Date().toISOString(),
+          by: 'automatically',
+        },
+      ];
+
+      // Process refund if payment was made
+      const invoice = await manager.findOne(Invoice, {
+        where: { orderId },
+      });
+
+      if (invoice && invoice.paymentStatus === PaymentStatus.PAID) {
+        await this.accountingService.refundEscrowToBuyer(orderId, manager);
+      }
+      const notifications = [
+        // Notify Buyer
+        manager.create(Notification, {
+          userId: order.buyerId,
+          type: 'order_cancelled',
+          title: 'Order Automatically Cancelled',
+          message: `Your order for "${order.title}" was cancelled and funds have been refunded to your wallet.`,
+          relatedEntityType: 'order',
+          relatedEntityId: order.id,
+        }),
+        // Notify Seller
+        manager.create(Notification, {
+          userId: order.sellerId,
+          type: 'order_cancelled',
+          title: 'Order Cancelled (System)',
+          message: `Order "${order.title}" was cancelled because the change request period expired.`,
+          relatedEntityType: 'order',
+          relatedEntityId: order.id,
+        })
+      ];
+
+      // 6. Save all changes atomically
+      await manager.save([order, ...notifications]);
+      return manager.save(order);
     });
-
-    if (![OrderStatus.ChangeRequested].includes(order.status)) {
-      throw new BadRequestException('Order cannot be cancelled at this stage');
-    }
-
-    order.status = OrderStatus.CANCELLED;
-    order.cancelledAt = new Date();
-
-    // timeline
-    order.timeline = [
-      ...(order.timeline || []),
-      {
-        type: 'canceled',
-        at: new Date().toISOString(),
-        by: 'automatically',
-      },
-    ];
-
-    // Process refund if payment was made
-    const invoice = await this.invoiceRepository.findOne({
-      where: { orderId },
-    });
-
-    if (invoice && invoice.paymentStatus === PaymentStatus.PAID) {
-      // Process refund (implement your refund logic here)
-      invoice.paymentStatus = PaymentStatus.FAILED; // Mark as refunded
-      await this.invoiceRepository.save(invoice);
-    }
-
-    return this.orderRepository.save(order);
   }
 
   async autoComplete(orderId: string) {
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId },
-      relations: {
-        service: {
-          seller: { person: true } // If the service object also needs the seller's profile
-        },
-        buyer: {
-          person: true            // Essential for buyer's name/email
-        },
-        seller: {
-          person: true            // Essential for seller's name/email
-        },
-        invoices: {
-          payments: true          // Keeps your invoice and payment history
+    return await this.dataSource.transaction(async (manager) => {
+      const order = await manager.findOne(Order, {
+        where: { id: orderId },
+        relations: {
+          service: {
+            seller: { person: true } // If the service object also needs the seller's profile
+          },
+          buyer: {
+            person: true            // Essential for buyer's name/email
+          },
+          seller: {
+            person: true            // Essential for seller's name/email
+          },
+          invoices: {
+            payments: true          // Keeps your invoice and payment history
+          }
         }
+      });
+      if (order.status !== OrderStatus.DELIVERED) {
+        throw new BadRequestException('Order must be delivered before completion');
       }
+
+      // Block if dispute exists
+      const hasDispute = await this.disputeRepo.exist({
+        where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
+      });
+      if (hasDispute) throw new BadRequestException('Order is in dispute; completion is blocked');
+
+      // timeline
+      order.timeline = [
+        ...(order.timeline || []),
+        {
+          type: 'completed',
+          at: new Date().toISOString(),
+          by: 'automatically',
+        },
+      ];
+
+      order.status = OrderStatus.COMPLETED;
+      order.completedAt = new Date();
+      const saved = await this.orderRepository.save(order);
+
+      await this.accountingService.releaseEscrow(orderId, manager); // subtotal → seller
+
+      // Update seller stats
+      await this.updateSellerStats(order, manager);
+      await this.sendRatingNotifications(order, manager)
+      // 🔔 notify seller
+      const notifications = [
+        // Notify Seller: They got paid
+        manager.create(Notification, {
+          userId: order.sellerId,
+          type: 'order_completed',
+          title: 'Order Completed Automatically',
+          message: `The order "${order.title}" has been completed automatically. Your earnings are now available in your balance.`,
+          relatedEntityType: 'order',
+          relatedEntityId: order.id,
+        }),
+        // Notify Buyer: Transaction closed
+        manager.create(Notification, {
+          userId: order.buyerId,
+          type: 'order_completed',
+          title: 'Order Closed',
+          message: `Your order for "${order.title}" was automatically marked as completed after the delivery period.`,
+          relatedEntityType: 'order',
+          relatedEntityId: order.id,
+        })
+      ];
+
+      // 4. Save Order and Notifications together
+      await manager.save([order, ...notifications]);
+
+      return saved;
     });
-    if (order.status !== OrderStatus.DELIVERED) {
-      throw new BadRequestException('Order must be delivered before completion');
-    }
-
-    // Block if dispute exists
-    const hasDispute = await this.disputeRepo.exist({
-      where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
-    });
-    if (hasDispute) throw new BadRequestException('Order is in dispute; completion is blocked');
-
-    // timeline
-    order.timeline = [
-      ...(order.timeline || []),
-      {
-        type: 'completed',
-        at: new Date().toISOString(),
-        by: 'automatically',
-      },
-    ];
-
-    order.status = OrderStatus.COMPLETED;
-    order.completedAt = new Date();
-    const saved = await this.orderRepository.save(order);
-
-    await this.accountingService.releaseEscrow(orderId); // subtotal → seller
-
-    // Update seller stats
-    await this.updateSellerStats(order);
-    await this.sendRatingNotifications(order)
-    // 🔔 notify seller
-    await this.notifRepo.save(
-      this.notifRepo.create({
-        userId: order.sellerId,
-        type: 'order_completed',
-        title: 'Order completed',
-        message: `The buyer confirmed completion for "${order.title}". Payout is now available.`,
-        relatedEntityType: 'order',
-        relatedEntityId: order.id,
-      }) as any,
-    );
-
-    return saved;
   }
 
   // called by PaymentsService.confirmPayment
@@ -1167,49 +1279,52 @@ export class OrdersService {
   }
 
   async completeOrder(userId: string, orderId: string, req: any) {
-    const order = await this.getOrder(userId, UserRole.BUYER, orderId, req);
-    if (order.status !== OrderStatus.DELIVERED) {
-      throw new BadRequestException('Order must be delivered before completion');
-    }
+    return await this.dataSource.transaction(async (manager) => {
 
-    // Block if dispute exists
-    const hasDispute = await this.disputeRepo.exist({
-      where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
+      const order = await this.getOrder(userId, UserRole.BUYER, orderId, req, manager);
+      if (order.status !== OrderStatus.DELIVERED) {
+        throw new BadRequestException('Order must be delivered before completion');
+      }
+
+      // Block if dispute exists
+      const hasDispute = await this.disputeRepo.exist({
+        where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
+      });
+      if (hasDispute) throw new BadRequestException('Order is in dispute; completion is blocked');
+
+      // timeline
+      order.timeline = [
+        ...(order.timeline || []),
+        {
+          type: 'completed',
+          at: new Date().toISOString(),
+          by: 'buyer',
+        },
+      ];
+
+      order.status = OrderStatus.COMPLETED;
+      order.completedAt = new Date();
+      const saved = await this.orderRepository.save(order);
+
+      await this.accountingService.releaseEscrow(orderId, manager); // subtotal → seller
+
+      // Update seller stats
+      await this.updateSellerStats(order, manager);
+      await this.sendRatingNotifications(order, manager)
+      // 🔔 notify seller
+      await manager.save(Notification,
+        manager.create(Notification, {
+          userId: order.sellerId,
+          type: 'order_completed',
+          title: 'Order completed',
+          message: `The buyer confirmed completion for "${order.title}". Payout is now available.`,
+          relatedEntityType: 'order',
+          relatedEntityId: order.id,
+        }) as any,
+      );
+
+      return saved;
     });
-    if (hasDispute) throw new BadRequestException('Order is in dispute; completion is blocked');
-
-    // timeline
-    order.timeline = [
-      ...(order.timeline || []),
-      {
-        type: 'completed',
-        at: new Date().toISOString(),
-        by: 'buyer',
-      },
-    ];
-
-    order.status = OrderStatus.COMPLETED;
-    order.completedAt = new Date();
-    const saved = await this.orderRepository.save(order);
-
-    await this.accountingService.releaseEscrow(orderId); // subtotal → seller
-
-    // Update seller stats
-    await this.updateSellerStats(order);
-    await this.sendRatingNotifications(order)
-    // 🔔 notify seller
-    await this.notifRepo.save(
-      this.notifRepo.create({
-        userId: order.sellerId,
-        type: 'order_completed',
-        title: 'Order completed',
-        message: `The buyer confirmed completion for "${order.title}". Payout is now available.`,
-        relatedEntityType: 'order',
-        relatedEntityId: order.id,
-      }) as any,
-    );
-
-    return saved;
   }
 
 

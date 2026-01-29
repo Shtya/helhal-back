@@ -108,7 +108,11 @@ export class State extends CoreEntity {
 }
 
 @Entity('persons')
-@Index(['phone', 'countryCode'], { unique: true, where: `"phone" IS NOT NULL AND "phone" != '' AND "countryCode" IS NOT NULL AND "countryCode" != '{}'` })
+@Index('IDX_person_phone_country', ['phone', 'countryCode'], {
+  unique: true,
+  // Keep the exact string we fixed earlier
+  where: `((phone IS NOT NULL) AND ((phone)::text <> ''::text) AND ("countryCode" IS NOT NULL) AND ("countryCode" <> '{}'::jsonb))`
+})
 export class Person extends CoreEntity {
   @Column({ unique: true })
   username: string;
@@ -137,7 +141,8 @@ export class Person extends CoreEntity {
   // Add this for storing phone country code info
   @Column({
     type: 'jsonb',
-    default: () => `'{"code":"SA","dial_code":"+966"}'`
+    // Change from a function to a direct string literal
+    default: '{"code": "SA", "dial_code": "+966"}'
   })
   countryCode: { code: string; dial_code: string };
 
@@ -820,28 +825,19 @@ export class Setting extends CoreEntity {
   tiktok: string;
 }
 
-@Entity('wallets')
-@Unique(['userId'])
-export class Wallet {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+//A single-row entity that represents the "Master Vault." It tracks every cent currently sitting in your bank account/Paymob.
+@Entity('platform_wallet')
+export class PlatformWallet extends CoreEntity {
 
-  // Reference to a user OR "platform" for global wallet
-  @Column({ type: 'uuid', nullable: true })
-  userId: string | null;
-
-  // Wallet balance in smallest currency unit (or just decimal if simpler)
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0, transformer: decimalToNumberTransformer })
-  balance: number;
+  totalEscrowBalance: number; // Sum of all paid orders not yet released
 
-  @Column({ type: 'varchar', length: 3, default: 'USD' })
+  @Column({ type: 'decimal', precision: 15, scale: 2, default: 0, transformer: decimalToNumberTransformer })
+  platformProfit: number; // Fees collected by the platform
+
+  @Column({ type: 'varchar', length: 3, default: 'SAR' })
   currency: string;
 
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
 }
 
 // -----------------------------------------------------
@@ -1564,6 +1560,7 @@ export enum PaymentStatus {
   PENDING = 'pending',
   PAID = 'paid',
   FAILED = 'failed',
+  REFUNDED = 'refunded',
 }
 
 @Entity('invoices')
@@ -1580,10 +1577,10 @@ export class Invoice extends CoreEntity {
 
   @Column({ type: 'decimal', transformer: decimalToNumberTransformer })
   subtotal: number;
-
+  //percntages that applied for seller as 10%
   @Column({ name: 'service_fee', type: 'decimal', transformer: decimalToNumberTransformer })
   sellerServiceFee: number;
-
+  //static percentage that platform takes from each order as 10 SAR
   @Column({ name: 'platform_percent', type: 'decimal', transformer: decimalToNumberTransformer })
   platformPercent: number;
 
@@ -1621,8 +1618,31 @@ export enum TransactionStatus {
   PENDING = 'pending',
   COMPLETED = 'completed',
   FAILED = 'failed',
-  REFUNDED = 'refunded',
+  REJECTED = 'rejected',
+
+  REFUND_PENDING = 'refund_pending',
+  REFUND_COMPLETED = 'refund_completed',
+  REFUND_FAILED = 'refund_failed',
 }
+
+export enum TransactionType {
+  ESCROW_DEPOSIT = 'escrow_deposit',
+  ESCROW_RELEASE = 'escrow_release',
+
+  REFUND = 'refund',
+  REFUND_REVERSAL = 'refund_reversal',
+
+  EARNING = 'earning',
+  EARNING_REVERSAL = 'earning_reversal',
+
+  WITHDRAWAL = 'withdrawal',
+  COMMISSION = 'commission',
+
+  COMMISSION_WITHDRAWAL = 'commission_withdrawal',
+
+  REFERRAL_CREDIT = 'referral_credit'
+}
+
 
 @Entity('payments')
 export class Payment extends CoreEntity {
@@ -2067,6 +2087,7 @@ export class SupportTicket extends CoreEntity {
 // Accounting and Payments System
 // -----------------------------------------------------
 
+//tracks the multi-faceted financial status of a user (Strictly for users nto platform)
 @Entity('user_balances')
 export class UserBalance extends CoreEntity {
   @ManyToOne(() => User, user => user.balances)
@@ -2076,15 +2097,16 @@ export class UserBalance extends CoreEntity {
   @Column({ name: 'user_id', unique: true })
   userId: string;
 
+  //Tracks liquid funds that the user can currently withdraw
   @Column({ name: 'available_balance', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   availableBalance: number;
-
-  @Column({ type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
-  credits: number;
-
+  //used for promotional balances or internal compensation. (for statistical purposes, not directly withdrawable)
+  @Column({ name: 'promo_credits', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
+  promoCredits: number;
+  //cumulative, "all-time" tracker of every SAR the user has ever earned from completed orders. (for statistical purposes, not directly withdrawable)
   @Column({ name: 'earnings_to_date', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   earningsToDate: number;
-
+  //Specifically tracks funds returned to a buyer due to order cancellations (for statistical purposes, not directly withdrawable)
   @Column({ name: 'cancelled_orders_credit', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   cancelledOrdersCredit: number;
 }
@@ -2106,8 +2128,8 @@ export class Transaction extends CoreEntity {
   @Column({ name: 'external_order_id', nullable: true })
   externalOrderId: string;
 
-  @Column()
-  type: string;
+  @Column({ type: 'enum', enum: TransactionType })
+  type: TransactionType;
 
   @Column({ type: 'decimal', transformer: decimalToNumberTransformer })
   amount: number;
@@ -2118,8 +2140,9 @@ export class Transaction extends CoreEntity {
   @Column({ type: 'text' })
   description: string;
 
-  @Column()
-  status: string;
+
+  @Column({ type: 'enum', enum: TransactionStatus })
+  status: TransactionStatus;
 
   @ManyToOne(() => Order, order => order.invoices)
   @JoinColumn({ name: 'order_id' })

@@ -3,12 +3,13 @@ import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { NotificationService } from './notification.service';
 import { CRUD } from 'common/crud.service';
 
+
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
 export class NotificationController {
-  constructor(private notificationService: NotificationService) {}
+  constructor(private notificationService: NotificationService) { }
 
- @Get()
+  @Get()
   async getNotifications(@Query() query: any, @Req() req: any) {
     return CRUD.findAll(
       this.notificationService.notificationRepository,
@@ -20,11 +21,11 @@ export class NotificationController {
       query.sortOrder,
       [], // relation
       [], // search
-      { userId: req.user.id }, 
+      { userId: req.user.id },
     );
   }
 
-	@Get('admin')
+  @Get('admin')
   async getAdminFeed(@Query() query: any, @Req() req: any) {
     return this.notificationService.getAdminNotifications(req.user.id, query);
   }

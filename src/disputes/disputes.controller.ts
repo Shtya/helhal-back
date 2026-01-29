@@ -78,7 +78,7 @@ export class DisputesController {
   @Get(':id')
   @UseGuards(JwtAuthGuard)
   async getDispute(@Req() req, @Param('id') id: string) {
-    return this.disputesService.getDispute(req.user.id, req.user.role, id);
+    return this.disputesService.getDispute(req.user.id, id);
   }
 
   @Get(':id/activity')
@@ -122,21 +122,21 @@ export class DisputesController {
       setResolutionOnly?: boolean;
     },
   ) {
-    return this.disputesService.updateDisputeStatusSmart(req.user.id, req.user.role, id, body);
+    return this.disputesService.updateDisputeStatusSmart(req.user.id, id, body);
   }
 
-  @Put(':id/resolution')
-  @UseGuards(JwtAuthGuard, AccessGuard)
-  @RequireAccess({
-    roles: [UserRole.ADMIN],
-    permission: {
-      domain: 'disputes',
-      value: Permissions.Disputes.Propose
-    }
-  })
-  async proposeResolution(@Param('id') id: string, @Body() body: ProposeResolutionBody) {
-    return this.disputesService.proposeResolution(id, body);
-  }
+  // @Put(':id/resolution')
+  // @UseGuards(JwtAuthGuard, AccessGuard)
+  // @RequireAccess({
+  //   roles: [UserRole.ADMIN],
+  //   permission: {
+  //     domain: 'disputes',
+  //     value: Permissions.Disputes.Propose
+  //   }
+  // })
+  // async proposeResolution(@Param('id') id: string, @Body() body: ProposeResolutionBody) {
+  //   return this.disputesService.proposeResolution(id, body);
+  // }
 
   @Post(':id/resolve-payout')
   @UseGuards(JwtAuthGuard, AccessGuard)
@@ -151,15 +151,15 @@ export class DisputesController {
     return this.disputesService.resolveAndPayout(req.user.id, req.user.role, id, body);
   }
 
-  @Post(':id/accept-resolution')
-  @UseGuards(JwtAuthGuard)
-  async acceptResolution(@Req() req, @Param('id') id: string) {
-    return this.disputesService.acceptResolution(req.user.id, id);
-  }
+  // @Post(':id/accept-resolution')
+  // @UseGuards(JwtAuthGuard)
+  // async acceptResolution(@Req() req, @Param('id') id: string) {
+  //   return this.disputesService.acceptResolution(req.user.id, id);
+  // }
 
-  @Post(':id/reject-resolution')
-  @UseGuards(JwtAuthGuard)
-  async rejectResolution(@Req() req, @Param('id') id: string) {
-    return this.disputesService.rejectResolution(req.user.id, id);
-  }
+  // @Post(':id/reject-resolution')
+  // @UseGuards(JwtAuthGuard)
+  // async rejectResolution(@Req() req, @Param('id') id: string) {
+  //   return this.disputesService.rejectResolution(req.user.id, id);
+  // }
 }

@@ -178,47 +178,47 @@ export class PaymentsService {
 
   // Unchanged createPaymentIntent(...) if you still want client-secret flow
 
-  async confirmPayment(userId: string, paymentIntentId: string, orderId: string) {
-    const order = await this.orderRepository.findOne({
-      where: { id: orderId, buyerId: userId },
-      relations: ['invoices', 'proposal', 'job'],
-    });
-    if (!order) throw new NotFoundException('Order not found');
+  // async confirmPayment(userId: string, paymentIntentId: string, orderId: string) {
+  //   const order = await this.orderRepository.findOne({
+  //     where: { id: orderId, buyerId: userId },
+  //     relations: ['invoices', 'proposal', 'job'],
+  //   });
+  //   if (!order) throw new NotFoundException('Order not found');
 
-    const invoice = order.invoices?.[0];
-    if (!invoice) throw new NotFoundException('Invoice not found');
+  //   const invoice = order.invoices?.[0];
+  //   if (!invoice) throw new NotFoundException('Invoice not found');
 
-    // --- verify payment with provider here ---
+  //   // --- verify payment with provider here ---
 
-    // Record payment
-    const payment = this.paymentRepository.create({
-      invoiceId: invoice.id,
-      userId,
-      amount: Number(invoice.totalAmount),
-      currencyId: 'USD',
-      method: PaymentMethodType.CARD,
-      status: TransactionStatus.COMPLETED,
-      transactionId: paymentIntentId,
-      paidAt: new Date(),
-    });
-    await this.paymentRepository.save(payment);
+  //   // Record payment
+  //   const payment = this.paymentRepository.create({
+  //     invoiceId: invoice.id,
+  //     userId,
+  //     amount: Number(invoice.totalAmount),
+  //     currencyId: 'USD',
+  //     method: PaymentMethodType.CARD,
+  //     status: TransactionStatus.COMPLETED,
+  //     transactionId: paymentIntentId,
+  //     paidAt: new Date(),
+  //   });
+  //   await this.paymentRepository.save(payment);
 
-    // Invoice → PAID
-    invoice.paymentStatus = PaymentStatus.PAID;
-    invoice.paymentMethod = PaymentMethodType.CARD;
-    invoice.transactionId = paymentIntentId;
-    await this.invoiceRepository.save(invoice);
+  //   // Invoice → PAID
+  //   invoice.paymentStatus = PaymentStatus.PAID;
+  //   invoice.paymentMethod = PaymentMethodType.CARD;
+  //   invoice.transactionId = paymentIntentId;
+  //   await this.invoiceRepository.save(invoice);
 
-    // Order → ACCEPTED (paid/active)
-    order.status = OrderStatus.ACCEPTED;
-    await this.orderRepository.save(order);
+  //   // Order → ACCEPTED (paid/active)
+  //   order.status = OrderStatus.ACCEPTED;
+  //   await this.orderRepository.save(order);
 
-    // 1) finalize acceptance (proposal accepted, others rejected, job awarded)
-    await this.ordersService.finalizeOrderFromProposalPayment(order.id);
+  //   // 1) finalize acceptance (proposal accepted, others rejected, job awarded)
+  //   await this.ordersService.finalizeOrderFromProposalPayment(order.id);
 
-    // 2) hold funds in platform wallet (escrow)
-    await this.accountingService.holdEscrow(order.id);
+  //   // 2) hold funds in platform wallet (escrow)
+  //   await this.accountingService.holdEscrow(order.id);
 
-    return { success: true, message: 'Payment confirmed & order activated' };
-  }
+  //   return { success: true, message: 'Payment confirmed & order activated' };
+  // }
 }

@@ -1,7 +1,5 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Req, NotFoundException, Logger, Query, Res } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
+import { Controller, Get, Post, Body, Req, Logger, Query, Res } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
-import { Invoice, Order, OrderStatus, PaymentStatus, Wallet } from 'entities/global.entity';
 import { PaymobPaymentService } from './base/paymob.payment.service';
 
 @Controller('payments')

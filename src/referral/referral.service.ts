@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Referral, Affiliate, User, UserBalance, Transaction, TransactionStatus, ReferralStatus } from 'entities/global.entity';
+import { Referral, Affiliate, User, UserBalance, Transaction, TransactionStatus, ReferralStatus, TransactionType } from 'entities/global.entity';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -134,7 +134,7 @@ export class ReferralService {
     const skip = (page - 1) * limit;
 
     const [commissions, total] = await this.transactionRepository.findAndCount({
-      where: { userId, type: 'commission' },
+      where: { userId, type: TransactionType.COMMISSION },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
@@ -164,7 +164,7 @@ export class ReferralService {
     // Create withdrawal transaction
     const transaction = this.transactionRepository.create({
       userId,
-      type: 'commission_withdrawal',
+      type: TransactionType.COMMISSION_WITHDRAWAL,
       amount: -amount,
       currencyId: 'USD', // Ensure currencyId is valid or referenced
       description: 'Commission withdrawal',
@@ -247,7 +247,7 @@ export class ReferralService {
           referrerBalance = this.userBalanceRepository.create({
             userId: referrer.id,
             availableBalance: 0,
-            credits: 0,
+            promoCredits: 0,
             earningsToDate: 0,
             cancelledOrdersCredit: 0,
           });
@@ -260,7 +260,7 @@ export class ReferralService {
         // Create commission transaction
         const commissionTransaction = this.transactionRepository.create({
           userId: referrer.id,
-          type: 'commission',
+          type: TransactionType.COMMISSION,
           amount: commission,
           currencyId: 'USD', // Ensure currencyId is valid or referenced
           description: `Commission from referral: ${user.email}`,
@@ -354,13 +354,13 @@ export class ReferralService {
       userBalance = this.userBalanceRepository.create({
         userId,
         availableBalance: amount,
-        credits: amount,
+        promoCredits: amount,
         earningsToDate: amount,
         cancelledOrdersCredit: 0,
       });
     } else {
       userBalance.availableBalance += amount;
-      userBalance.credits += amount;
+      userBalance.promoCredits += amount;
       userBalance.earningsToDate += amount;
     }
 
@@ -369,7 +369,7 @@ export class ReferralService {
     // Create transaction record
     const transaction = this.transactionRepository.create({
       userId,
-      type: 'referral_credit',
+      type: TransactionType.REFERRAL_CREDIT,
       amount,
       currencyId: 'USD',
       description: `Referral credit from ${userId}`,

@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, forwardRef, Inject, Injectable, InternalServerErrorException, Logger, NotFoundException, PreconditionFailedException, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import axios from "axios";
-import { Invoice, Order, Transaction, TransactionBillingInfo, TransactionStatus, UserSavedCard } from "entities/global.entity";
+import { Invoice, Order, Transaction, TransactionBillingInfo, TransactionStatus, TransactionType, UserSavedCard } from "entities/global.entity";
 import { AccountingService } from "src/accounting/accounting.service";
 import { DataSource, In, Repository } from "typeorm";
 import { EVENT_TTL_SECONDS, getPaymobIntegrationId, PAYMENT_TIMING, UnifiedCheckout } from "./payment.constant";
@@ -60,7 +60,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
                 amount: invoice.totalAmount,
                 status: TransactionStatus.PENDING,
                 currencyId: this.DEFAULT_CURRENCY,
-                type: 'escrow_deposit', // Added type
+                type: TransactionType.ESCROW_DEPOSIT, // Added type
                 description: `Escrow deposit for order #${orderId} (Invoice #${invoice.id})`,
             });
             const savedTx = await manager.save(transaction);
@@ -96,10 +96,10 @@ export class PaymobPaymentService extends BasePaymentGateway {
                     country: snapshot.countryIso, // Captured in snapshot logic
                 },
                 special_reference: savedTx.id, // Our internal TX ID
-                notification_url: `${process.env.BACKEND_URL}/api/v1/payments/webhooks/paymob`,
-                redirection_url: `${process.env.BACKEND_URL}/api/v1/payments/paymob/callback`,
-                // notification_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/webhooks/paymob',
-                // redirection_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/paymob/callback',
+                // notification_url: `${process.env.BACKEND_URL}/api/v1/payments/webhooks/paymob`,
+                // redirection_url: `${process.env.BACKEND_URL}/api/v1/payments/paymob/callback`,
+                notification_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/webhooks/paymob',
+                redirection_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/paymob/callback',
             };
 
             // D. Call Paymob API
