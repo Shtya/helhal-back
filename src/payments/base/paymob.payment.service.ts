@@ -96,10 +96,10 @@ export class PaymobPaymentService extends BasePaymentGateway {
                     country: snapshot.countryIso, // Captured in snapshot logic
                 },
                 special_reference: savedTx.id, // Our internal TX ID
-                // notification_url: `${process.env.BACKEND_URL}/api/v1/payments/webhooks/paymob`,
-                // redirection_url: `${process.env.BACKEND_URL}/api/v1/payments/paymob/callback`,
-                notification_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/webhooks/paymob',
-                redirection_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/paymob/callback',
+                notification_url: `${process.env.BACKEND_URL}/api/v1/payments/webhooks/paymob`,
+                redirection_url: `${process.env.BACKEND_URL}/api/v1/payments/paymob/callback`,
+                // notification_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/webhooks/paymob',
+                // redirection_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/paymob/callback',
             };
 
             // D. Call Paymob API
