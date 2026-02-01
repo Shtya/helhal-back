@@ -81,12 +81,17 @@ export class ServicesController {
     return this.servicesService.createService(req.user.id, createServiceDto);
   }
 
-  // @Put(':id')
-  // @UseGuards(JwtAuthGuard, AccessGuard)
-  // @RequireAccess(UserRole.SELLER, UserRole.ADMIN)
-  // async updateService(@Req() req, @Param('id') id: string, @Body() updateServiceDto: any) {
-  //   return this.servicesService.updateService(req.user.id, id, updateServiceDto, req);
-  // }
+  @Put(':id')
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'services',
+      value: Permissions.Services.Edit
+    }
+  })
+  async updateService(@Req() req, @Param('id') id: string, @Body() updateServiceDto: any) {
+    return this.servicesService.updateService(req.user.id, id, updateServiceDto, req);
+  }
 
 
   @Put(':id/status')
@@ -211,11 +216,13 @@ export class ServicesController {
   @Get('check-title/:title')
   async checkTitle(
     @Param('title') title: string,
+    @Query('slug') slug: string,
     @Req() req: any
   ) {
     return this.servicesService.checkServiceTitleUniqueness(
       title,
-      req.user?.id
+      req.user?.id,
+      slug,
     );
   }
 

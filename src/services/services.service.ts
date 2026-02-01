@@ -681,9 +681,16 @@ export class ServicesService {
   }
   async checkServiceTitleUniqueness(
     title: string,
-    userId: string
+    userId: string,
+    oldSlug?: string,
   ) {
     const slug = this.createSlug(title);
+
+    if (oldSlug === slug) return {
+      isUnique: true,
+      ownedByCurrentUser: true,
+      message: 'Title is available',
+    };
 
     const existingService = await this.serviceRepository.findOne({
       where: { slug },
@@ -801,6 +808,24 @@ export class ServicesService {
       throw new NotFoundException('Service not found');
     }
 
+    const user = req?.user;
+
+
+    const hasPermission =
+      user?.role === 'admin' ||
+      PermissionBitmaskHelper.has(
+        user?.permissions?.services,
+        Permissions.Services.ChangeStatus
+      );
+
+    const isOwner = service.sellerId === userId;
+
+    if (!hasPermission && !isOwner) {
+      throw new ForbiddenException('You can only update your own services');
+    }
+
+
+
     // If title is being updated, generate new slug and check uniqueness
     if (updateServiceDto.title && updateServiceDto.title !== service.title) {
       const newSlug = this.createSlug(updateServiceDto.title);
@@ -814,14 +839,17 @@ export class ServicesService {
 
       service.slug = newSlug;
     }
-    const user = req?.user;
 
-    const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.services, Permissions.Services.ChangeStatus)
-    if (user?.role != 'admin' || !hasPermission)
-      if (service.sellerId !== userId) {
-        throw new ForbiddenException('You can only update your own services');
-      }
+    if (updateServiceDto.countryId) {
+      const country = await this.countryRepository.findOne({ where: { id: updateServiceDto.countryId } } as any);
+      if (!country) throw new NotFoundException('Country not found');
+    }
 
+
+    if (updateServiceDto.stateId) {
+      const state = await this.stateRepository.findOne({ where: { id: updateServiceDto.stateId, countryId: updateServiceDto.countryId } } as any);
+      if (!state) throw new NotFoundException('State not found or does not belong to the selected country');
+    }
 
     // Explicitly assign only allowed fields
     const allowedFields = [
@@ -831,11 +859,14 @@ export class ServicesService {
       'searchTags',
       'categoryId',
       'subcategoryId',
+      'countryId',
+      'stateId',
       'additionalRevision',
       'fastDelivery',
       'faq',
       'packages',
       'gallery',
+      'searchTags'
     ];
 
     for (const field of allowedFields) {
@@ -844,7 +875,8 @@ export class ServicesService {
       }
     }
 
-    service.status = ServiceStatus.PENDING;
+    const isHasPersmissions = user?.role === 'admin' || hasPermission;
+    service.status = isHasPersmissions ? service.status : ServiceStatus.PENDING;
     // Update service first
     const savedService = await this.serviceRepository.save(service);
 

@@ -52,6 +52,12 @@ export class OrdersController {
   @Post('admin/finalize-payment')
   @UseGuards(JwtAuthGuard, AccessGuard)
   @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'orders',
+      value: Permissions.Orders.MarkAsPayout
+    }
+  })
+  @RequireAccess({
     roles: [UserRole.ADMIN]
   })
   async adminFinalizeOrder(

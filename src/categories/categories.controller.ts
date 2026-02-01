@@ -22,17 +22,21 @@ export class CategoriesController {
 
   @Get()
   async getCategories(@Query() query) {
-    let parentFilter = {};
+    const { type, ...restFilters } = query.filters || {};
 
-    if (query.type === 'subcategory') {
-      parentFilter = { parentId: { isNull: false } };  // parentId IS NOT NULL
-    } else if (query.type === 'category') {
-      parentFilter = { parentId: { isNull: true } };        // parentId IS NULL
+    let parentFilter;
+
+    if (!type || type === 'subcategory') {
+      parentFilter = restFilters.parentId
+        ? { parentId: restFilters.parentId }
+        : undefined;
+    } else if (type === 'category') {
+      parentFilter = { parentId: { isNull: true } };
     }
 
     const filters = {
-      ...(query.filters || {}),
-      ...parentFilter,
+      ...restFilters,   // 👈 type is removed here
+      ...(parentFilter ?? {}),
     };
 
     return CRUD.findAll(

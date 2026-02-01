@@ -232,12 +232,12 @@ export class AccountingService {
   // ────────────────────────────────────────────────────────────────────────────
   // Escrow hold (into platform)
   // ────────────────────────────────────────────────────────────────────────────
-  async holdEscrow(orderId: string, manager?: EntityManager) {
-    const invoiceRepo = manager ? manager.getRepository(Invoice) : this.invoiceRepo;
-    const settingRepo = manager ? manager.getRepository(Setting) : this.settingRepo;
-    const platformWalletRepo = manager ? manager.getRepository(PlatformWallet) : this.platformWalletRepo;
-    const notifRepo = manager ? manager.getRepository(Notification) : this.notifRepo;
-    const transactionRepo = manager ? manager.getRepository(Transaction) : this.transactionRepository;
+  async holdEscrow(orderId: string, manager: EntityManager) {
+    const invoiceRepo = manager.getRepository(Invoice);
+    const settingRepo = manager.getRepository(Setting);
+    const platformWalletRepo = manager.getRepository(PlatformWallet);
+    const notifRepo = manager.getRepository(Notification);
+    const transactionRepo = manager.getRepository(Transaction);
 
     const inv = await invoiceRepo.findOne({
       where: { orderId },
