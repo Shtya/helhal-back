@@ -242,7 +242,6 @@ export class AccountingService {
     const inv = await invoiceRepo.findOne({
       where: { orderId },
       relations: ['order'],
-      lock: { mode: 'pessimistic_write' }
     });
     if (!inv || inv.paymentStatus !== PaymentStatus.PAID) {
       throw new BadRequestException('Invoice not paid');
@@ -290,7 +289,6 @@ export class AccountingService {
     const inv = await manager.findOne(Invoice, {
       where: { orderId },
       relations: ['order'],
-      lock: { mode: 'pessimistic_write' }
     });
     if (!inv) throw new NotFoundException('Invoice not found');
 
@@ -345,7 +343,6 @@ export class AccountingService {
     const inv = await manager.findOne(Invoice, {
       where: { orderId },
       relations: ['order'],
-      lock: { mode: 'pessimistic_write' }
     });
 
     if (!inv) throw new NotFoundException('Invoice not found');
@@ -422,7 +419,6 @@ export class AccountingService {
     const inv = await manager.findOne(Invoice, {
       where: { orderId },
       relations: ['order'],
-      lock: { mode: 'pessimistic_write' }
     });
     if (!inv) throw new NotFoundException('Invoice not found');
 

@@ -612,13 +612,11 @@ export class JobsService {
       const settingRepo = manager.getRepository(Setting);
       const proposal = await proposalRepo.findOne({
         where: { id: proposalId },
-        lock: { mode: 'pessimistic_write' },
       });
       if (!proposal) throw new NotFoundException('Proposal not found');
 
       const job = await jobRepo.findOne({
         where: { id: proposal.jobId },
-        lock: { mode: 'pessimistic_write' },
       });
       if (!job) throw new NotFoundException('Job not found');
 
@@ -662,7 +660,6 @@ export class JobsService {
       if (status === ProposalStatus.ACCEPTED && opts?.checkout) {
         let order: any = await orderRepo.findOne({
           where: { jobId: job.id, proposalId: proposal.id },
-          lock: { mode: 'pessimistic_write' },
         });
 
         if (!order) {
@@ -686,7 +683,6 @@ export class JobsService {
         // ensure invoice
         let inv: any = await invoiceRepo.findOne({
           where: { orderId: order.id },
-          lock: { mode: 'pessimistic_write' },
         });
         if (!inv) {
           const totalAmount = order.totalAmount;

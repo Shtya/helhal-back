@@ -158,7 +158,6 @@ export class OrdersService {
 
         const transaction = await manager.findOne(Transaction, {
           where: { id: transactionId },
-          lock: { mode: 'pessimistic_write' } // Prevents concurrent webhook processing
         });
 
         if (!transaction) throw new NotFoundException('Transaction not found');
@@ -1205,7 +1204,6 @@ export class OrdersService {
       const order = await m.getRepository(Order).findOne({
         where: { id: orderId },
         relations: ['proposal', 'job'],
-        lock: { mode: 'pessimistic_write' },
       });
       if (!order?.proposal || !order?.job) throw new NotFoundException('Order context invalid');
 
@@ -1216,7 +1214,6 @@ export class OrdersService {
       const job = order.job;
       const acceptedProposal = await proposalRepo.findOne({
         where: { id: order.proposalId },
-        lock: { mode: 'pessimistic_write' },
       });
       if (!acceptedProposal) throw new NotFoundException('Proposal not found');
 
