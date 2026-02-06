@@ -19,6 +19,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
     private readonly publicKey: string = process.env.PAYMOB_PUBLIC_KEY!;
     private readonly apiKey: string = process.env.PAYMOB_API_KEY!;
     private readonly hmacSecret: string = process.env.PAYMOB_HMAC_SECRET!;
+    private readonly basePayoutUrl: string = process.env.PAYMOB_PAYOUT_URL!;
 
 
     constructor(
@@ -316,7 +317,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
         // 2. If no token, use a temporary lock to prevent "Cache Stampede"
         // This ensures only ONE request refreshes the token if 100 people click pay at once
         const lockKey = 'lock:paymob_auth_refresh';
-        const lockAcquired = await this.redisService.redisClient.set(lockKey, 'locked', 'EX', 10, 'NX');
+        const lockAcquired = await this.redisService.setNxWithTtl(lockKey, 'locked', 10);
 
         if (!lockAcquired) {
             // If we didn't get the lock, wait a moment and try Redis again
@@ -327,8 +328,12 @@ export class PaymobPaymentService extends BasePaymentGateway {
         this.logger.log('🔐 Refreshing Paymob Auth Token in Redis...');
 
         try {
-            const response = await axios.post('https://accept.paymob.com/api/auth/tokens', {
-                api_key: this.apiKey
+            const response = await axios.post(`${this.basePayoutUrl}/o/token/`, {
+                client_id: this.apiKey,
+                client_secret: this.apiKey,
+                username: this.apiKey,
+                password: this.apiKey,
+                scope: this.apiKey
             });
 
             const token = response.data.token;

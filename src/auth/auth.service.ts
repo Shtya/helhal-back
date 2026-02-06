@@ -1513,7 +1513,7 @@ export class AuthService {
 
     const { success, details } = await this.smsService.sendOTP(user.phone, user.countryCode.dial_code, otpCode, this.CODE_EXPIRY_MINUTES);
     if (!success) {
-      throw new BadRequestException('Failed to send OTP')
+      throw new BadRequestException(details || 'Failed to send OTP')
     }
 
     await this.personRepository.update(user.personId, {

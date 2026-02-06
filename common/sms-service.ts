@@ -49,12 +49,22 @@ export class SmsService {
             if (success) {
                 return { success: true, details: responseData };
             } else {
-                throw new BadRequestException('Failed to send OTP via provider');
+                // 1. Trim the response to remove leading whitespace as requested
+                const rawResponse = typeof responseData === 'string' ? responseData.trim() : '';
+
+                // 2. Use regex to replace the leading status code and first comma (e.g., "0,") with an empty string
+                // ^\d+, matches digits at the start of the string followed by a comma
+                const cleanedMessage = rawResponse.replace(/^\d+,/, '');
+
+                const finalErrorMessage = cleanedMessage || 'Failed to send OTP via provider';
+
+                this.logger.warn(`SMS Provider Error: ${rawResponse}`);
+                throw new BadRequestException(finalErrorMessage);
             }
 
         } catch (err) {
             this.logger.error(`SMS Multi-Structure Error: ${err.message}`);
-            return { success: false };
+            return { success: false, details: err.message };
         }
     }
 
