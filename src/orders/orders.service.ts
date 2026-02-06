@@ -1283,6 +1283,10 @@ export class OrdersService {
         throw new BadRequestException('Order must be delivered before completion');
       }
 
+      if (order.buyerId !== userId) {
+        throw new NotFoundException('Order not found');
+      }
+
       // Block if dispute exists
       const hasDispute = await this.disputeRepo.exist({
         where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },

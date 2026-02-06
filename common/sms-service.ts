@@ -39,7 +39,7 @@ export class SmsService {
 
         try {
             // Log and Test Structure(POST JSON)
-            this.logger.log(`Attempting to send OTP to ${fullNumber.replace(/.(?=.{4})/g, '*')}`);
+            this.logger.log(`Attempting to send OTP to ${fullNumber.replace(/.(?=.{4})/g, '*')} with payload: ${postPayload}, phone: ${phone}, dialCode: ${dialCode}`);
             const resp = await axios.post(this.smsParamUrl, postPayload);
             this.logger.log(`Structure  Response: ${JSON.stringify(resp.data)}`);
             const responseData = resp.data;
