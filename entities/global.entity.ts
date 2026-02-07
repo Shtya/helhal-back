@@ -740,16 +740,16 @@ export class Setting extends CoreEntity {
   @Column({ name: 'site_logo' })
   siteLogo: string;
 
-  @Column({ name: 'privacy_policy_en', type: 'text' })
+  @Column({ name: 'privacy_policy_en', type: 'jsonb', nullable: true })
   privacyPolicy_en: string;
 
-  @Column({ name: 'terms_of_service_en', type: 'text' })
+  @Column({ name: 'terms_of_service_en', type: 'jsonb', nullable: true })
   termsOfService_en: string;
 
-  @Column({ name: 'privacy_policy_ar', type: 'text' })
+  @Column({ name: 'privacy_policy_ar', type: 'jsonb', nullable: true })
   privacyPolicy_ar: string;
 
-  @Column({ name: 'terms_of_service_ar', type: 'text' })
+  @Column({ name: 'terms_of_service_ar', type: 'jsonb', nullable: true })
   termsOfService_ar: string;
 
   @Column({ name: 'contact_email' })

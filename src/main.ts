@@ -6,12 +6,14 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { LoggingValidationPipe } from 'common/translationPipe';
 import { ConfigService } from '@nestjs/config';
 import { QueryFailedErrorFilter } from 'common/QueryFailedErrorFilter';
+import { json } from 'express';
 
 async function bootstrap() {
 	const app = await NestFactory.create<NestExpressApplication>(AppModule);
 	const port = process.env.PORT || 3030;
 
 	app.useGlobalFilters(app.get(QueryFailedErrorFilter));
+	app.use(json({ limit: '10mb' }));
 	app.useStaticAssets(join(__dirname, '..', '..', '/uploads'), { prefix: '/uploads/' });
 
 	app.enableCors({
