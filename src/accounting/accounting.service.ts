@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, DataSource, In, EntityManager } from 'typeorm';
 import { UserBalance, Transaction, PaymentMethod, User, Order, TransactionStatus, PaymentStatus, Invoice, Setting, Notification, UserBillingInfo, UserBankAccount, Country, TransactionBillingInfo, State, TransactionType, PlatformWallet } from 'entities/global.entity';
+import { PaymentGatewayFactory } from 'src/payments/base/payment.gateway.factory';
 
 type ReverseResolutionInput = {
   orderId: string;
@@ -39,6 +40,7 @@ export class AccountingService {
     @InjectRepository(UserBankAccount)
     private userBankAccountRepository: Repository<UserBankAccount>,
     private readonly dataSource: DataSource,
+    private readonly gatewayFactory: PaymentGatewayFactory,
   ) { }
 
   async getBillingInformation(userId: string) {
@@ -145,7 +147,7 @@ export class AccountingService {
     }
 
     Object.assign(bankAccount, bankAccountData);
-
+    bankAccount.userId = userId;
     return this.userBankAccountRepository.save(bankAccount);
   }
 
@@ -224,6 +226,7 @@ export class AccountingService {
       userId: balance.userId,
       earningsToDate: balance.earningsToDate,
       availableBalance: balance.availableBalance,
+      reservedBalance: balance.reservedBalance,
       promoCredits: balance.promoCredits,
       cancelledOrdersCredit: balance.cancelledOrdersCredit,
     };
@@ -792,36 +795,99 @@ export class AccountingService {
   }
 
 
-  async withdrawFunds(userId: string, amount: number, paymentMethodId: string) {
-    if (amount <= 0) throw new BadRequestException('Invalid withdrawal amount');
+  // accounting.service.ts
 
-    const balance = await this.getUserBalance(userId);
-    if (balance.availableBalance < amount) throw new BadRequestException('Insufficient funds');
+  async withdrawFunds(userId: string, amount: number) {
+    if (amount < 112) throw new BadRequestException('Minimum withdrawal amount is 112 EGP');
 
-    const paymentMethod = await this.paymentMethodRepository.findOne({ where: { id: paymentMethodId, userId } });
-    if (!paymentMethod) throw new NotFoundException('Payment method not found');
+    return await this.dataSource.transaction(async (manager) => {
+      // 1. Check for Pending Withdrawal
+      const existingPending = await manager.findOne(Transaction, {
+        where: { userId, type: TransactionType.WITHDRAWAL, status: TransactionStatus.PENDING }
+      });
 
-    const transaction = this.transactionRepository.create({
-      userId,
-      type: TransactionType.WITHDRAWAL,
-      amount: -amount,
-      description: `Withdrawal to ${paymentMethod.methodType}`,
-      status: TransactionStatus.PENDING,
+      if (existingPending) {
+        throw new BadRequestException('You already have a pending withdrawal request.');
+      }
+
+      // 2. Lock & Get Balance
+      const balance = await this.getUserBalanceTx(manager, userId);
+      if (!balance || Number(balance.availableBalance) < amount) {
+        throw new BadRequestException('Insufficient available balance');
+      }
+
+      // 3. Get Default Bank Account
+      const bankAccount = await manager.findOne(UserBankAccount, {
+        where: { userId, isDefault: true }
+      });
+
+      if (!bankAccount) throw new NotFoundException('No default bank account found.');
+
+      // 4. Create Transaction Record (Internal)
+      let transaction = manager.create(Transaction, {
+        userId,
+        type: TransactionType.WITHDRAWAL,
+        amount: -amount,
+        description: `Withdrawal to IBAN: ${bankAccount.iban}`,
+        status: TransactionStatus.PENDING,
+        currencyId: 'EGP', // Ensure this matches Paymob setup
+      });
+
+      // 5. Update Balances
+      balance.availableBalance = Number(balance.availableBalance) - amount;
+      balance.reservedBalance = Number(balance.reservedBalance) + amount;
+
+      await manager.save(balance);
+      transaction = await manager.save(transaction); // Save to get internal ID for client_reference_id
+
+      // 6. Call Gateway
+      const gateway = this.gatewayFactory.getGateway();
+      const payoutResponse = await gateway.disburseToBank({
+        amount: amount,
+        fullName: bankAccount.fullName,
+        iban: bankAccount.iban,
+        bankCode: bankAccount.bankCode,
+        clientReferenceId: transaction.id // Using internal DB ID as reference
+      });
+
+      // 7. Update External ID
+      transaction.externalTransactionId = payoutResponse.externalTransactionId;
+      return await manager.save(transaction);
     });
-
-    balance.availableBalance -= amount;
-    await this.userBalanceRepository.save(balance);
-
-    const savedTransaction = await this.transactionRepository.save(transaction);
-
-    setTimeout(async () => {
-      savedTransaction.status = TransactionStatus.COMPLETED;
-      await this.transactionRepository.save(savedTransaction);
-    }, 5000);
-
-    return { message: 'Withdrawal request submitted', transaction: savedTransaction };
   }
 
+  /**
+   * Called by the Background Service to finalize transactions
+   */
+  async updateWithdrawalStatus(transactionId: string, status: 'SUCCESS' | 'FAILED') {
+    return await this.dataSource.transaction(async (manager) => {
+      const tx = await manager.findOne(Transaction, { where: { id: transactionId } });
+      if (!tx || tx.status !== TransactionStatus.PENDING) return;
+
+      const balance = await this.getUserBalanceTx(manager, tx.userId)
+
+      const amount = Math.abs(Number(tx.amount)); // The withdrawn amount
+
+      if (status === 'SUCCESS') {
+        // SUCCESS: Money leaves the system entirely.
+        // Decrease Reserved. Do NOT touch Available (already deducted).
+        balance.reservedBalance = Math.max(0, Number(balance.reservedBalance) - amount);
+
+        tx.status = TransactionStatus.COMPLETED;
+      } else {
+        // FAILED: Refund the user.
+        // Decrease Reserved, Increase Available.
+        balance.reservedBalance = Math.max(0, Number(balance.reservedBalance) - amount);
+        balance.availableBalance = Number(balance.availableBalance) + amount;
+
+        tx.status = TransactionStatus.REJECTED;
+        tx.description = `${tx.description} [Failed/Reversed]`;
+      }
+
+      await manager.save(balance);
+      await manager.save(tx);
+    });
+  }
   async getUserPaymentMethods(userId: string) {
     return this.paymentMethodRepository.find({ where: { userId }, order: { isDefault: 'DESC', created_at: 'DESC' } });
   }

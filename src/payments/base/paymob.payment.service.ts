@@ -20,6 +20,10 @@ export class PaymobPaymentService extends BasePaymentGateway {
     private readonly apiKey: string = process.env.PAYMOB_API_KEY!;
     private readonly hmacSecret: string = process.env.PAYMOB_HMAC_SECRET!;
     private readonly basePayoutUrl: string = process.env.PAYMOB_PAYOUT_URL!;
+    private readonly client_id: string = process.env.PAYMOB_PAYOUT_CLIENT_ID!;
+    private readonly client_secret: string = process.env.PAYMOB_PAYOUT_CLIETN_SECRET!;
+    private readonly username: string = process.env.PAYMOB_PAYOUT_USERNAME!;
+    private readonly password: string = process.env.PAYMOB_PAYOUT_PASSWORD!;
 
 
     constructor(
@@ -306,49 +310,261 @@ export class PaymobPaymentService extends BasePaymentGateway {
     }
 
     private async getAuthToken(): Promise<string> {
-        const cacheKey = 'paymob_auth_token';
+        const accessKey = 'paymob_access_token';
+        const refreshKey = 'paymob_refresh_token';
+        const lockKey = 'lock:paymob_auth_refresh';
 
-        // 1. Try to get token from Redis
-        const cachedToken = await this.redisService.redisClient.get(cacheKey);
-        if (cachedToken) {
-            return cachedToken;
+        // 1. Try to get Access Token from Redis
+        const cachedAccessToken = await this.redisService.redisClient.get(accessKey);
+        if (cachedAccessToken) {
+            return cachedAccessToken.trim(); // Ensure it's trimmed per preference
         }
 
-        // 2. If no token, use a temporary lock to prevent "Cache Stampede"
-        // This ensures only ONE request refreshes the token if 100 people click pay at once
-        const lockKey = 'lock:paymob_auth_refresh';
+        // 2. Prevent Cache Stampede with a lock
         const lockAcquired = await this.redisService.setNxWithTtl(lockKey, 'locked', 10);
-
         if (!lockAcquired) {
-            // If we didn't get the lock, wait a moment and try Redis again
             await new Promise(resolve => setTimeout(resolve, 1000));
             return this.getAuthToken();
         }
 
-        this.logger.log('🔐 Refreshing Paymob Auth Token in Redis...');
+        this.logger.log('🔐 Access token expired. Checking for Refresh Token...');
 
         try {
-            const response = await axios.post(`${this.basePayoutUrl}/o/token/`, {
-                client_id: this.apiKey,
-                client_secret: this.apiKey,
-                username: this.apiKey,
-                password: this.apiKey,
-                scope: this.apiKey
-            });
+            const cachedRefreshToken = await this.redisService.redisClient.get(refreshKey);
+            let response;
 
-            const token = response.data.token;
+            if (cachedRefreshToken) {
+                // 3. Attempt to Refresh the Token
+                try {
+                    this.logger.log('🔄 Attempting Refresh Token grant...');
+                    response = await this.callPaymobAuth({
+                        grant_type: 'refresh_token',
+                        refresh_token: cachedRefreshToken.trim(),
+                    });
+                } catch (err) {
+                    this.logger.warn('⚠️ Refresh token invalid/expired. Falling back to password grant.');
+                }
+            }
 
-            // 3. Store in Redis with TTL (e.g., 50 minutes = 3000 seconds)
-            // Paymob tokens usually last 1 hour, so we refresh 10 mins early
-            await this.redisService.redisClient.set(cacheKey, token, 'EX', 3000);
+            // 4. Fallback to Password Grant if refresh failed or didn't exist
+            if (!response) {
+                this.logger.log('🔑 Performing full Password Grant login...');
+                response = await this.callPaymobAuth({
+                    grant_type: 'password',
+                    username: this.username.trim(),
+                    password: this.password.trim(),
+                });
+            }
 
-            return token;
+            const { access_token, refresh_token, expires_in } = response.data;
+
+            // 5. Save both tokens with TTL
+            // Access token: Refresh 10 mins early (expires_in - 600)
+            const accessTtl = expires_in > 600 ? expires_in - 600 : 3000;
+            await this.redisService.redisClient.set(accessKey, access_token, 'EX', accessTtl);
+
+            // Refresh token: Usually lasts longer (e.g., 7 days)
+            await this.redisService.redisClient.set(refreshKey, refresh_token, 'EX', 604800);
+
+            return access_token;
+
         } catch (error) {
-            this.logger.error(`Failed to authenticate with Paymob: ${error.message}`, error.response?.data);
+            this.logger.error(`❌ Paymob Auth Failed: ${error.message}`, error.response?.data);
             throw new UnauthorizedException('Could not generate Paymob Auth Token');
         } finally {
-            // 4. Release the lock
             await this.redisService.redisClient.del(lockKey);
+        }
+    }
+
+    /**
+     * Helper to centralize the axios call with trimmed credentials
+     */
+    private async callPaymobAuth(extraParams: Record<string, string>) {
+        const params = new URLSearchParams();
+        params.append('client_id', this.client_id.trim());
+        params.append('client_secret', this.client_secret.trim());
+
+        for (const [key, value] of Object.entries(extraParams)) {
+            params.append(key, value);
+        }
+
+        return axios.post(`${this.basePayoutUrl}/o/token/`, params.toString(), {
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        });
+    }
+
+    /**
+ * Bulk Transaction Inquiry for Payouts
+ * Implements Paymob Throttling: 5 requests per minute
+ * Pagination: 50 objects per request
+ */
+    async getPayoutTransactions(lookupIds: string[]) {
+        if (!lookupIds || lookupIds.length === 0) return [];
+
+        try {
+            const token = await this.getAuthToken();
+
+            // 1. Prepare the payload based on your provided documentation
+            const payload = {
+                transactions_ids_list: lookupIds,
+                // Assuming these are bank payouts based on previous context
+                bank_transactions: true
+            };
+
+            // 2. Call the inquiry endpoint
+            // Using axios(config) because standard axios.get doesn't always accept a body
+            const response = await axios({
+                method: 'GET',
+                url: `${this.basePayoutUrl}/transaction/inquire/`,
+                data: payload,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const results = response.data.results || [];
+
+            // 3. Map Paymob's disbursement_status to our internal flags
+            return results.map(res => ({
+                id: res.transaction_id,
+                success: res.disbursement_status === 'successful',
+                pending: res.disbursement_status === 'pending' || res.disbursement_status === 'processing',
+                failed: res.disbursement_status === 'failed' || res.disbursement_status === 'rejected',
+                // Included for logging/debugging if needed
+                statusDescription: res.status_description
+            }));
+
+        } catch (error) {
+            this.logger.error(
+                `❌ Paymob Bulk Inquiry Failed: ${error.message}`,
+                error.response?.data
+            );
+            // Return empty array so the cleanup service doesn't crash
+            return [];
+        }
+    }
+    async processPayoutWebhook(body: any) {
+        const paymobTrxId = body.transaction_id?.toString();
+        const status = body.disbursement_status; // e.g., 'successful' or 'failed'
+        const statusDescription = body.status_description;
+
+        this.logger.log(`[Payout Webhook] Received for Paymob ID: ${paymobTrxId} | Status: ${status}`);
+
+        if (!paymobTrxId) {
+            this.logger.error('[Payout Webhook] Missing transaction_id in body');
+            return;
+        }
+
+        // 1. Deduplication: Check if this Paymob transaction was already processed
+        const processedKey = `paymob_payout:processed:${paymobTrxId}`;
+        const alreadyHandled = await this.redisService.get(processedKey);
+        if (alreadyHandled) {
+            this.logger.log(`[Payout Webhook] Skipping already processed payout: ${paymobTrxId}`);
+            return;
+        }
+
+        // 2. Find the internal transaction record using the external ID
+        const transaction = await this.transactionRepo.findOne({
+            where: { externalTransactionId: paymobTrxId },
+            select: ['id', 'status', 'userId'] // Fetch minimal fields for performance
+        });
+
+        if (!transaction) {
+            this.logger.warn(`[Payout Webhook] No internal transaction found for Paymob ID: ${paymobTrxId}`);
+            return;
+        }
+
+        // 3. Update the Ledger based on status
+        try {
+            if (status === 'successful') {
+                await this.accountingService.updateWithdrawalStatus(transaction.id, 'SUCCESS');
+                this.logger.log(`✅ Payout Successful: Internal TX ${transaction.id}`);
+            } else if (status === 'failed') {
+                // Log the reason for failure (e.g., 'Invalid bank code')
+                this.logger.warn(`❌ Payout Failed: Internal TX ${transaction.id} | Reason: ${statusDescription}`);
+                await this.accountingService.updateWithdrawalStatus(transaction.id, 'FAILED');
+            }
+
+            // 4. Mark as processed for 72 hours to prevent duplicate processing
+            await this.redisService.set(processedKey, 'true', 259200);
+
+        } catch (error) {
+            this.logger.error(`[Payout Webhook Error] Failed to update ledger for TX ${transaction.id}: ${error.message}`);
+            throw error; // Rethrow so the controller can return a 500 and Paymob can retry later
+        }
+    }
+
+    // paymob.payment.service.ts
+
+    async disburseToBank({
+        amount,
+        fullName,
+        iban,
+        bankCode,
+        clientReferenceId
+    }) {
+        const token = await this.getAuthToken();
+
+        try {
+            const requestBody = {
+                issuer: "instant_bank",
+                amount: Number(amount), // Force number type
+                full_name: fullName.trim(),
+                bank_card_number: iban.trim(),
+                bank_code: bankCode.trim(),
+                customer_bears_fees: true,
+                client_reference_id: clientReferenceId.toString().trim()
+            };
+
+            const response = await axios.post(
+                `${this.basePayoutUrl}/disburse/`,
+                requestBody,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            const data = response.data;
+
+            // Throw error if Paymob explicitly returns a failed status
+            if (data.disbursement_status === 'failed') {
+                throw new BadRequestException(`Paymob Disbursement Failed: ${data.status_description}`);
+            }
+
+            return {
+                externalTransactionId: data.transaction_id.toString()
+            };
+        } catch (error) {
+            // 1. Log the full object for server-side debugging
+            this.logger.error(`Paymob Payout Error: ${error.message}`, error.response?.data);
+
+            const errorData = error.response?.data;
+            let finalMessage = 'Failed to initiate payout with provider';
+
+            if (errorData && errorData.status_description) {
+                const desc = errorData.status_description;
+
+                // 2. Handle Object Case: { "bank_card_number": ["Ensure this value..."] }
+                if (typeof desc === 'object' && desc !== null) {
+                    finalMessage = Object.entries(desc)
+                        .map(([field, messages]) => {
+                            const m = Array.isArray(messages) ? messages.join(', ') : messages;
+                            return `${field}: ${m}`;
+                        })
+                        .join(' | ');
+                }
+                // 3. Handle String Case: "Process stopped during an internal error..."
+                else if (typeof desc === 'string') {
+                    finalMessage = desc;
+                }
+            }
+
+            // 4. Throw the specific message caught
+            throw new BadRequestException(finalMessage);
         }
     }
 
@@ -445,6 +661,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
             return `${process.env.FRONTEND_URL}/payment/fail?${params.toString()}`;
         }
     }
+
     private normalizeError = (msg?: string, queryObj?: any) => {
         if (!msg) {
             // fallback to acq response or txn code if available

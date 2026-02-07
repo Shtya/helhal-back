@@ -26,6 +26,22 @@ export class PaymentsController {
     }
   }
 
+  @Post('webhooks/paymobPayout')
+  async handlePaymobPayoutWebhook(
+    @Body() body: any,
+    @Query('hmac') queryHmac: string,
+    @Req() req: any
+  ) {
+
+    try {
+      await this.paymobService.processPayoutWebhook(body);
+      return { status: 'success' };
+    } catch (error) {
+      this.logger.error(`Webhook processing failed: ${error.message}`);
+      throw error;
+    }
+  }
+
   @Get('paymob/callback')
   async handlePaymobCallback(@Query() query: any, @Res() res: any) {
     const redirectUrl = await this.paymobService.handleRedirection(query);
@@ -33,6 +49,7 @@ export class PaymentsController {
     // Perform the actual browser redirect to your frontend
     return res.redirect(redirectUrl);
   }
+
 
   // @UseGuards(JwtAuthGuard)
   // @Post('create-payment-intent')

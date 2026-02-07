@@ -69,6 +69,28 @@ export abstract class BasePaymentGateway {
         transactionId: string;
         orderId: string;
     }>;
+    abstract getPayoutTransactions(lookupIds: string[]): Promise<{
+        id: string;
+        success: boolean;
+        pending: boolean;
+        failed: boolean;
+    }[]>;
+
+
+    // BasePaymentGateway.ts
+    abstract disburseToBank({
+        amount,
+        fullName,
+        iban,
+        bankCode,
+        clientReferenceId
+    }: {
+        amount: number;
+        fullName: string;
+        iban: string;
+        bankCode: string;
+        clientReferenceId: string;
+    }): Promise<{ externalTransactionId: string }>;
 
     protected async finalizeOrder(txId: string, success: boolean, method: string, extTxId: string, extOrderId: string) {
         return await this.ordersService.completeOrderPayment(txId, success, method, extTxId, extOrderId);

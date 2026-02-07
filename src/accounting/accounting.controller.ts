@@ -32,7 +32,6 @@ export class AccountingController {
     return this.accountingService.createBankAccount(req.user.id, bankAccountData);
   }
 
-
   @Put('bank-accounts/:id')
   async updateBankAccount(@Req() req, @Param('id') id: string, @Body() bankAccountData: any) {
     return this.accountingService.updateBankAccount(req.user.id, id, bankAccountData);
@@ -119,8 +118,8 @@ export class AccountingController {
   }
 
   @Post('withdraw')
-  async withdrawFunds(@Req() req, @Body() body: { amount: number; paymentMethodId: string }) {
-    return this.accountingService.withdrawFunds(req.user.id, body.amount, body.paymentMethodId);
+  async withdrawFunds(@Req() req, @Body() body: { amount: number; }) {
+    return this.accountingService.withdrawFunds(req.user.id, body.amount);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -129,10 +128,10 @@ export class AccountingController {
     return this.accountingService.listWithdrawalsAdmin(Number(page), status);
   }
 
-  @Put('withdrawals/:id')
-  async processWithdrawalAdmin(@Param('id') id: string, @Body() body: { action: 'approve' | 'reject' }) {
-    return this.accountingService.processWithdrawalAdmin(id, body.action);
-  }
+  // @Put('withdrawals/:id')
+  // async processWithdrawalAdmin(@Param('id') id: string, @Body() body: { action: 'approve' | 'reject' }) {
+  //   return this.accountingService.processWithdrawalAdmin(id, body.action);
+  // }
 
   @Get('payment-methods')
   async getPaymentMethods(@Req() req) {

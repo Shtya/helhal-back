@@ -2100,6 +2100,9 @@ export class UserBalance extends CoreEntity {
   //Tracks liquid funds that the user can currently withdraw
   @Column({ name: 'available_balance', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   availableBalance: number;
+  //Show pending balances that are waiting for bank accept.
+  @Column({ name: 'reserved_balance', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
+  reservedBalance: number;
   //used for promotional balances or internal compensation. (for statistical purposes, not directly withdrawable)
   @Column({ name: 'promo_credits', type: 'decimal', default: 0, transformer: decimalToNumberTransformer })
   promoCredits: number;
@@ -2139,7 +2142,6 @@ export class Transaction extends CoreEntity {
 
   @Column({ type: 'text' })
   description: string;
-
 
   @Column({ type: 'enum', enum: TransactionStatus })
   status: TransactionStatus;
@@ -2293,29 +2295,11 @@ export class UserBankAccount extends CoreEntity {
   @Column({ name: 'iban' })
   iban: string;
 
-  @Column({ name: 'client_id', nullable: true })
-  clientId: string;
-
-  @Column({ name: 'client_secret', nullable: true, select: false })
-  clientSecret: string;
-
-  @Column({ name: 'country' })
-  country: string;
-
-  @Column({ name: 'state' })
-  state: string;
-
-  @Column({ name: 'mobile_number' })
-  mobileNumber: string;
-
   @Column({ name: 'is_default', default: false })
   isDefault: boolean;
 
-  @Column({ name: 'bank_name', nullable: true })
-  bankName: string;
-
-  @Column({ name: 'account_number', nullable: true })
-  accountNumber: string;
+  @Column({ name: 'bank_code' })
+  bankCode: string; // e.g., 'CIB', 'NBE'
 
   @ManyToOne(() => User, user => user.paymentMethods)
   @JoinColumn({ name: 'user_id' })

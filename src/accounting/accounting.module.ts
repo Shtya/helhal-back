@@ -1,11 +1,14 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { AccountingService } from './accounting.service';
 import { AccountingController } from './accounting.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserBalance, Transaction, PaymentMethod, User, Order, Invoice, Setting, PlatformWallet, Notification, UserBillingInfo, UserBankAccount, Country, State, TransactionBillingInfo } from 'entities/global.entity';
+import { WithdrawalCleanupService } from 'backgroundServices/withdrawal-cleanup-service';
+import { PaymentsModule } from 'src/payments/payments.module';
 
 @Module({
   imports: [
+    forwardRef(() => PaymentsModule),
     TypeOrmModule.forFeature([
       UserBalance,
       Transaction,
@@ -24,7 +27,7 @@ import { UserBalance, Transaction, PaymentMethod, User, Order, Invoice, Setting,
     ]),
   ],
   controllers: [AccountingController],
-  providers: [AccountingService],
+  providers: [AccountingService, WithdrawalCleanupService],
   exports: [AccountingService],
 })
 export class AccountingModule { }
