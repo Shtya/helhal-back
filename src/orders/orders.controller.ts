@@ -32,7 +32,7 @@ export class OrdersController {
     }
   })
   async getOrdersAdmin(@Query('') query: any) {
-    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'seller', 'service', 'invoices'], ['title'], { status: query.status == 'all' ? '' : query.status });
+    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'seller', 'service', 'invoices', 'offlineContract'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
 
 
@@ -84,15 +84,8 @@ export class OrdersController {
       userId,
       billingInfo,
     };
-    const idempotencyKey = `pay:${userId}-${orderId}`;
-    // The service now handles the logic based on the method
-    return this.idempotencyService.runWithIdempotency(
-      idempotencyKey,
-      () => this.ordersService.processOrderPayment(checkoutDto, orderId),
-      PAYMENT_TIMING.CACHE_TTL,
-      PAYMENT_TIMING.LOCK_TTL,
-      PAYMENT_TIMING.TIMEOUT_MS,
-    );
+
+    return this.ordersService.processOrderPayment(checkoutDto, orderId);
   }
   @Get(':id')
   async getOrder(@Req() req, @Param('id') id: string) {

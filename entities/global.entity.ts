@@ -1059,6 +1059,9 @@ export class Service extends CoreEntity {
   fastDelivery: boolean;
 
   @Column({ default: false })
+  payOnDelivery: boolean;
+
+  @Column({ default: false })
   additionalRevision: boolean;
 
   @Column({ name: 'popular', default: false })
@@ -1096,6 +1099,9 @@ export class Service extends CoreEntity {
 
   @OneToMany(() => ServiceRequirement, requirement => requirement.service)
   requirements: ServiceRequirement[];
+
+  @OneToMany(() => OrderOfflineContract, contract => contract.service)
+  offlineContracts: OrderOfflineContract[];
 
   @OneToMany(() => Order, order => order.service)
   orders: Order[];
@@ -1435,6 +1441,10 @@ export class Order extends CoreEntity {
   @JoinColumn({ name: 'service_id' })
   service: Service;
 
+
+  @OneToOne('OrderOfflineContract', (contract: OrderOfflineContract) => contract.order)
+  offlineContract: Relation<OrderOfflineContract>;
+
   @Column({ name: 'service_id', nullable: true })
   serviceId: string;
 
@@ -1516,6 +1526,45 @@ export class Order extends CoreEntity {
   notes: string;
 }
 
+@Entity('order_offline_contracts')
+export class OrderOfflineContract extends CoreEntity {
+  @Column()
+  orderId: string;
+
+  @OneToOne(() => Order, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'orderId' })
+  order: Order;
+
+  @Column()
+  buyerId: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'buyerId' })
+  buyer: User;
+
+  @Column()
+  sellerId: string;
+
+  @ManyToOne(() => User)
+  @JoinColumn({ name: 'sellerId' })
+  seller: User;
+
+  @Column({ nullable: true })
+  serviceId: string;
+
+  @ManyToOne(() => Service, { nullable: true })
+  @JoinColumn({ name: 'serviceId' })
+  service: Service;
+
+  // --- Financial Details ---
+
+  @Column({ type: 'decimal', precision: 12, scale: 2 })
+  amountToPayAtDoor: number; // The "Real" subtotal the buyer owes the seller
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  platformFeePaidOnline: number; // The fee already paid to your platform
+}
+
 @Entity('order_submissions')
 export class OrderSubmission extends CoreEntity {
   @ManyToOne(() => Order, order => order.submissions)
@@ -1595,6 +1644,9 @@ export class Invoice extends CoreEntity {
 
   @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.PENDING })
   paymentStatus: PaymentStatus;
+
+  @Column({ default: false })
+  payOnDelivery: boolean;
 
   @Column({ name: 'payment_method', nullable: true })
   paymentMethod: string;

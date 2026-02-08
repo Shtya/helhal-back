@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException, forwardRef, Inject, ConflictException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Not, Repository } from 'typeorm';
-import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest, UserRelatedAccount, PaymentMethod, PaymentMethodType, Transaction, TransactionStatus, TransactionType } from 'entities/global.entity';
+import { Order, Service, User, Invoice, Payment, OrderStatus, UserRole, PaymentStatus, Job, Proposal, Setting, ProposalStatus, JobStatus, Notification, Dispute, DisputeStatus, OrderSubmission, OrderChangeRequest, UserRelatedAccount, PaymentMethod, PaymentMethodType, Transaction, TransactionStatus, TransactionType, OrderOfflineContract } from 'entities/global.entity';
 import { AccountingService } from 'src/accounting/accounting.service';
 import { randomBytes } from 'crypto';
 import { CRUD } from 'common/crud.service';
@@ -83,6 +83,7 @@ export class OrdersService {
       .leftJoinAndSelect('order.invoices', 'invoices')
       // 6. Join and select specific Rating/Review fields for the flow logic
       .leftJoin('order.rating', 'rating')
+      .leftJoin('order.offlineContract', 'offlineContract')
       .addSelect([
         'rating.isPublic',
         'rating.buyer_rated_at',
@@ -357,6 +358,7 @@ export class OrdersService {
 
     // 2. Create the Manual Transaction Record
     // We do this first so that completeOrderPayment has a transaction to lock onto
+
     const transaction = await this.transactionRepo.save(
       this.transactionRepo.create({
         userId: order.buyerId,
@@ -471,7 +473,8 @@ export class OrdersService {
         },
         invoices: {
           payments: true          // Keeps your invoice and payment history
-        }
+        },
+        offlineContract: true
       }
     });
 
@@ -512,8 +515,9 @@ export class OrdersService {
 
       const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
       const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);
+      const isPOD = service.payOnDelivery;
       const subtotal = packageData.price * quantity;
-      const totalAmount = subtotal + platformPercent;
+      const totalAmount = isPOD ? platformPercent : subtotal + platformPercent;
 
       const order = manager.create(Order, {
         buyerId: userId,
@@ -540,13 +544,24 @@ export class OrdersService {
         invoiceNumber: `INV-${Date.now()}-${savedOrder.id.slice(-6)}`,
         orderId: savedOrder.id,
         order: savedOrder,
-        subtotal,
+        subtotal: isPOD ? 0 : subtotal,
         sellerServiceFee,
         platformPercent,
         totalAmount,
+        payOnDelivery: service.payOnDelivery,
         issuedAt: new Date(),
         paymentStatus: PaymentStatus.PENDING,
       });
+
+      if (isPOD) {
+        await manager.save(OrderOfflineContract, {
+          orderId: order.id,
+          buyerId: userId,
+          sellerId: service.sellerId,
+          amountToPayAtDoor: subtotal, // e.g. 500 SAR
+          platformFeePaidOnline: platformPercent,
+        });
+      }
 
       await manager.save(invoice);
 
@@ -602,7 +617,8 @@ export class OrdersService {
       const platformPercent = Number(s?.[0]?.platformPercent ?? 10);;
       const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);;
       const subtotal = packageData.price * quantity;
-      const totalAmount = subtotal + platformPercent;
+      const isPOD = service.payOnDelivery;
+      const totalAmount = isPOD ? platformPercent : subtotal + platformPercent;
 
       const order = manager.create(Order, {
         buyerId: userId,
@@ -626,13 +642,24 @@ export class OrdersService {
       const invoice = manager.create(Invoice, {
         invoiceNumber: `INV-${Date.now()}-${savedOrder.id.slice(-6)}`,
         orderId: savedOrder.id,
-        subtotal,
+        subtotal: isPOD ? 0 : subtotal,
         sellerServiceFee,
         platformPercent,
         totalAmount,
+        payOnDelivery: service.payOnDelivery,
         issuedAt: new Date(),
         paymentStatus: PaymentStatus.PENDING,
       });
+
+      if (isPOD) {
+        await manager.save(OrderOfflineContract, {
+          orderId: order.id,
+          buyerId: userId,
+          sellerId: service.sellerId,
+          amountToPayAtDoor: subtotal, // e.g. 500 SAR
+          platformFeePaidOnline: platformPercent,
+        });
+      }
 
       await manager.save(invoice);
       //send notification to seller
@@ -685,8 +712,8 @@ export class OrdersService {
     const buyerNotif = notificationRepo.create({
       userId: order.buyerId,
       type: 'rating', // specific type for frontend routing
-      title: 'Order Completed',
-      message: `Order “${order.title}” is complete. Please rate the freelancer to share your experience.`,
+      title: 'How was your experience?',
+      message: `Your order "${order.title}" is complete! Please take a moment to review the freelancer's work to help others in the community.`,
       relatedEntityType: 'order',
       relatedEntityId: order.id,
     });
@@ -695,8 +722,8 @@ export class OrdersService {
     const sellerNotif = notificationRepo.create({
       userId: order.sellerId,
       type: 'rating',
-      title: 'Order Completed',
-      message: `Order “${order.title}” is complete. Please rate the client to share your experience.`,
+      title: 'Share your feedback',
+      message: `The order "${order.title}" is finished. Please rate your experience working with this client to complete the process.`,
       relatedEntityType: 'order',
       relatedEntityId: order.id,
     });

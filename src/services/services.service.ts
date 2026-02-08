@@ -384,6 +384,7 @@ export class ServicesService {
         'service.additionalRevision',
         'service.maxPrice',
         'service.minPrice',
+        'service.payOnDelivery',
       ])
       .leftJoin('service.seller', 'seller')
       .leftJoin('seller.person', 'person')
@@ -868,7 +869,8 @@ export class ServicesService {
       'faq',
       'packages',
       'gallery',
-      'searchTags'
+      'searchTags',
+      'payOnDelivery'
     ];
 
     for (const field of allowedFields) {

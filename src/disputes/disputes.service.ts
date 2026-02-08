@@ -888,6 +888,7 @@ export class DisputesService {
   // --- Admin: resolve and payout immediately (atomic)
   async resolveAndPayout(userId: string, userRole: string, disputeId: string, payload: { sellerAmount: number; buyerRefund: number; note?: string; closeAs: 'completed' | 'cancelled' }) {
 
+
     const user = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
@@ -918,7 +919,6 @@ export class DisputesService {
 
       // close dispute
       dispute.status = DisputeStatus.RESOLVED;
-      dispute.resolution = JSON.stringify({ sellerAmount: sAmt, buyerRefund: bRef, note: payload.note || '', decidedBy: 'admin' });
       dispute.resolutionApplied = true;
       await manager.getRepository(Dispute).save(dispute);
 
@@ -987,8 +987,8 @@ export class DisputesService {
     const buyerNotif = this.notificationRepository.create({
       userId: order.buyerId,
       type: 'rating', // specific type for frontend routing
-      title: 'Order Completed',
-      message: `Order “${order.title}” is complete. Please rate the freelancer to share your experience.`,
+      title: 'How was your experience?',
+      message: `Your order "${order.title}" is complete! Please take a moment to review the freelancer's work to help others in the community.`,
       relatedEntityType: 'order',
       relatedEntityId: order.id,
     });
@@ -997,8 +997,8 @@ export class DisputesService {
     const sellerNotif = this.notificationRepository.create({
       userId: order.sellerId,
       type: 'rating',
-      title: 'Order Completed',
-      message: `Order “${order.title}” is complete. Please rate the client to share your experience.`,
+      title: 'Share your feedback',
+      message: `The order "${order.title}" is finished. Please rate your experience working with this client to complete the process.`,
       relatedEntityType: 'order',
       relatedEntityId: order.id,
     });

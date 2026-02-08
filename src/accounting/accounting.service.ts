@@ -276,7 +276,7 @@ export class AccountingService {
     );
 
     let platformWallet = await this.getPlatformWalletTx(manager);
-    platformWallet.totalEscrowBalance = Number(platformWallet.totalEscrowBalance) + amount;
+    platformWallet.totalEscrowBalance = Number(platformWallet.totalEscrowBalance) + inv.subtotal;
     await platformWalletRepo.save(platformWallet);
 
     await notifRepo.save(
@@ -305,12 +305,13 @@ export class AccountingService {
     const settings = await manager.find(Setting, { take: 1, order: { created_at: 'DESC' } });
     const platformUserId = settings?.[0]?.platformAccountUserId;
     if (!platformUserId) throw new BadRequestException('Platform account is not configured');
+    const amount = Number(inv.subtotal);
 
-    const fees = (Number(inv.subtotal) * (Number(inv.sellerServiceFee) / 100));
-    const netEarnings = Number(inv.subtotal) - fees;
+    const fees = (amount * (Number(inv.sellerServiceFee) / 100));
+    const netEarnings = amount - fees;
 
     let platformWallet = await this.getPlatformWalletTx(manager);
-    platformWallet.totalEscrowBalance = Number(platformWallet.totalEscrowBalance) - netEarnings;
+    platformWallet.totalEscrowBalance = Number(platformWallet.totalEscrowBalance) - amount;
     platformWallet.platformProfit = Number(platformWallet.platformProfit) + fees + inv.platformPercent;
     // 2) credit seller
     const sellerBalance = await this.getUserBalanceTx(manager, inv.order.sellerId);
@@ -455,10 +456,10 @@ export class AccountingService {
     const totalRequiredFromEscrow = Number(buyerRefund + sellerNetPay);
     // 4. Update Platform Wallet (Treasury)
     const platformWallet = await this.getPlatformWalletTx(manager);
-    if (Number(platformWallet.totalEscrowBalance) < totalRequiredFromEscrow) throw new BadRequestException('Escrow insufficient');
+    if (Number(platformWallet.totalEscrowBalance) < (buyerRefund + sellerAmount)) throw new BadRequestException('Escrow insufficient');
 
     // Remove the full original subtotal from Escrow
-    platformWallet.totalEscrowBalance = Number(platformWallet.totalEscrowBalance) - totalRequiredFromEscrow;
+    platformWallet.totalEscrowBalance = Number(platformWallet.totalEscrowBalance) - (buyerRefund + sellerAmount)
     // The platform keeps the fee from the seller's portion as profit
     platformWallet.platformProfit = Number(platformWallet.platformProfit) + platformFeeOnSellerPart + inv.platformPercent;
 
