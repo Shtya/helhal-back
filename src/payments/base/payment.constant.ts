@@ -1,6 +1,4 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString } from "class-validator";
-import { TIMEOUT } from "dns";
-import { PaymentMethodType } from "entities/global.entity";
+import { IsEmail, IsNotEmpty, IsOptional, IsString } from "class-validator";
 
 export class BillingInfoDto {
     @IsString() @IsNotEmpty() firstName: string;

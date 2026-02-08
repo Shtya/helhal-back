@@ -135,7 +135,7 @@ export class AccountingController {
     return this.idempotencyService.runWithIdempotency(
       idempotencyKey,
       () => this.accountingService.withdrawFunds(req.user.id, body.amount),
-      PAYMENT_TIMING.CACHE_TTL,
+      0,
       PAYMENT_TIMING.LOCK_TTL,
       PAYMENT_TIMING.TIMEOUT_MS,
     );
