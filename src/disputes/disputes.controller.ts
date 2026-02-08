@@ -5,12 +5,16 @@ import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { DisputesService } from './disputes.service';
 import { Permissions } from 'entities/permissions';
+import { IdempotencyService } from 'common/IdempotencyService';
 
 type ProposeResolutionBody = { resolution: string } | { sellerAmount: number; buyerRefund: number; note?: string };
 
 @Controller('disputes')
 export class DisputesController {
-  constructor(private disputesService: DisputesService) { }
+  constructor
+    (private disputesService: DisputesService,
+      private readonly idempotencyService: IdempotencyService,
+    ) { }
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -122,7 +126,12 @@ export class DisputesController {
       setResolutionOnly?: boolean;
     },
   ) {
-    return this.disputesService.updateDisputeStatusSmart(req.user.id, id, body);
+    const idempotencyKey = `order:smartDisbuteUpdate:${id}`;
+    return this.idempotencyService.runWithIdempotency(
+      idempotencyKey,
+      () => this.disputesService.updateDisputeStatusSmart(req.user.id, id, body),
+    );
+    return;
   }
 
   // @Put(':id/resolution')
@@ -148,7 +157,11 @@ export class DisputesController {
     }
   })
   async resolveAndPayout(@Req() req, @Param('id') id: string, @Body() body: { sellerAmount: number; buyerRefund: number; note?: string; closeAs: 'completed' | 'cancelled' }) {
-    return this.disputesService.resolveAndPayout(req.user.id, req.user.role, id, body);
+    const idempotencyKey = `order:resolveAndPayout:${id}`;
+    return this.idempotencyService.runWithIdempotency(
+      idempotencyKey,
+      () => this.disputesService.resolveAndPayout(req.user.id, req.user.role, id, body),
+    );
   }
 
   // @Post(':id/accept-resolution')

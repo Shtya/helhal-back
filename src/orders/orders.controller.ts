@@ -63,7 +63,11 @@ export class OrdersController {
   async adminFinalizeOrder(
     @Body('orderId') orderId: string,
   ) {
-    return await this.ordersService.adminManualFinalize(orderId);
+    const idempotencyKey = `order:adminManualFinalize:${orderId}`;
+    return this.idempotencyService.runWithIdempotency(
+      idempotencyKey,
+      () => this.ordersService.adminManualFinalize(orderId)
+    );
   }
 
   @Post(':orderId/pay')
@@ -80,7 +84,7 @@ export class OrdersController {
       userId,
       billingInfo,
     };
-    const idempotencyKey = `${userId}-${orderId}`;
+    const idempotencyKey = `pay:${userId}-${orderId}`;
     // The service now handles the logic based on the method
     return this.idempotencyService.runWithIdempotency(
       idempotencyKey,
@@ -141,12 +145,20 @@ export class OrdersController {
 
   @Post(':id/complete')
   async completeOrder(@Req() req, @Param('id') id: string) {
-    return this.ordersService.completeOrder(req.user.id, id, req);
+    const idempotencyKey = `order:complete:${id}`;
+    return this.idempotencyService.runWithIdempotency(
+      idempotencyKey,
+      () => this.ordersService.completeOrder(req.user.id, id, req),
+    );
   }
 
   @Post(':id/cancel')
   async cancelOrder(@Req() req, @Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.ordersService.cancelOrder(req.user.id, req.user.role, id, req, body.reason);
+    const idempotencyKey = `order:cancel:${id}`;
+    return this.idempotencyService.runWithIdempotency(
+      idempotencyKey,
+      () => this.ordersService.cancelOrder(req.user.id, req.user.role, id, req, body.reason),
+    );
   }
 
   @Post(':id/accept')
@@ -156,6 +168,11 @@ export class OrdersController {
 
   @Post(':id/reject')
   async rejectOrder(@Req() req, @Param('id') id: string, @Body() body: { reason?: string }) {
-    return this.ordersService.rejectOrder(req.user.id, req.user.role, id, req, body.reason);
+    const idempotencyKey = `order:reject:${id}`;
+    return this.idempotencyService.runWithIdempotency(
+      idempotencyKey,
+      () => this.ordersService.rejectOrder(req.user.id, req.user.role, id, req, body.reason),
+    );
+    return
   }
 }

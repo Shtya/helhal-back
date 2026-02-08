@@ -10,9 +10,9 @@ export class IdempotencyService {
     async runWithIdempotency<T>(
         key: string,
         handler: () => Promise<T>,
-        ttl = 300, // s- default result cache TTL 5 minutes
+        ttl = 0, // Changed to 0: No result storage by default
         lockttl = 10, // s-  default lock TTL 10 seconds
-        timeout = 10000, //ms - default wait timeout 5 seconds
+        timeout = 10000, //ms - default wait timeout 10 seconds
     ): Promise<T> {
         const resultKey = `result:${key}`;
         const lockKey = `lock:${key}`;
@@ -50,7 +50,9 @@ export class IdempotencyService {
 
         try {
             const result = await handler();
-            await this.redisService.set(resultKey, result, ttl);
+            if (ttl > 0) {
+                await this.redisService.set(resultKey, result, ttl);
+            }
             return result;
         } finally {
             await this.redisService.del(lockKey);
