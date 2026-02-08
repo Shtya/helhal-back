@@ -372,6 +372,7 @@ export class AccountingService {
     // 4. Update Platform Wallet
     // Deduct the full amount from the escrow pool
     platformWallet.totalEscrowBalance = Number(platformWallet.totalEscrowBalance) - refundAmount;
+    platformWallet.platformProfit = Number(platformWallet.platformProfit) + inv.platformPercent;
 
     // 5. Update Buyer Balance
     // Money goes to availableBalance so they can withdraw or reuse it

@@ -230,7 +230,8 @@ export class ServicesService {
             SELECT lang.value #>> '{}' AS language, COUNT(*) AS count_lang
             FROM services s
             INNER JOIN users u ON u.id = s.seller_id AND u.deleted_at IS NULL
-            LEFT JOIN LATERAL jsonb_array_elements(u.languages) AS lang(value) ON TRUE
+            INNER JOIN persons pr ON pr.id = u.person_id
+            LEFT JOIN LATERAL jsonb_array_elements(pr.languages) AS lang(value) ON TRUE
             WHERE s.status = 'Active'
               AND s.deleted_at IS NULL
               ${categoryId ? 'AND s.category_id = :categoryId' : ''}
@@ -256,7 +257,8 @@ export class ServicesService {
              SELECT c.name AS key, COUNT(*) AS count
             FROM services s
             INNER JOIN users u ON u.id = s.seller_id AND u.deleted_at IS NULL
-             INNER JOIN countries c ON c.id = u.country_id 
+            INNER JOIN persons pr ON pr.id = u.person_id
+             INNER JOIN countries c ON c.id = pr.country_id 
             WHERE s.status = 'Active'
               AND s.deleted_at IS NULL
               ${categoryId ? 'AND s.category_id = :categoryId' : ''}
