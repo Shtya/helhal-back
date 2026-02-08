@@ -169,7 +169,15 @@ export class OrdersService {
         if (transaction.status !== TransactionStatus.PENDING) {
           throw new BadRequestException('Transaction already processed');
         }
+        const payment = await manager.findOne(Payment, {
+          where: { transactionId: transactionId }
+        });
 
+        if (payment) {
+          payment.status = isSuccess ? PaymentStatus.PAID : PaymentStatus.FAILED;
+          payment.paidAt = isSuccess ? new Date() : null
+          await manager.save(payment);
+        }
         await manager.update(Transaction, transactionId, {
           externalTransactionId: externalTxId?.toString(),
           externalOrderId: paymobOrderId?.toString(),
@@ -223,7 +231,7 @@ export class OrdersService {
         await this.accountingService.holdEscrow(order.id, manager)
 
         // 6. Create Notifications
-        const amount = Number(invoice.totalAmount ?? order.totalAmount);
+        const amount = Number(invoice.totalAmount);
         const currency = 'SAR';
 
 
@@ -289,7 +297,7 @@ export class OrdersService {
   //     await manager.save(order);
 
   //     // Buyer & Seller notifications inside TX (guaranteed with payment state)
-  //     const amount = Number(invoice.totalAmount ?? order.totalAmount);
+  //     const amount = Number(invoice.totalAmount);
   //     const currency = 'SAR';
   //     const txId = invoice.transactionId ?? '';
   //     const notifRepo = manager.getRepository(Notification);
@@ -474,7 +482,14 @@ export class OrdersService {
         invoices: {
           payments: true          // Keeps your invoice and payment history
         },
-        offlineContract: true
+        offlineContract: {
+          buyer: {
+            person: true            // Essential for buyer's name/email
+          },
+          seller: {
+            person: true            // Essential for seller's name/email
+          },
+        }
       }
     });
 
@@ -525,7 +540,7 @@ export class OrdersService {
         serviceId,
         title: service.title,
         quantity,
-        totalAmount,
+        totalAmount: subtotal + platformPercent,
         sellerServiceFee,
         packageType,
         requirementsAnswers,
@@ -626,7 +641,7 @@ export class OrdersService {
         serviceId,
         title: service.title,
         quantity,
-        totalAmount,
+        totalAmount: subtotal + platformPercent,
         sellerServiceFee,
         packageType,
         requirementsAnswers,

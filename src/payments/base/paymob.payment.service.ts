@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, forwardRef, Inject, Injectable, InternalServerErrorException, Logger, NotFoundException, PreconditionFailedException, UnauthorizedException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import axios from "axios";
-import { Invoice, Order, Transaction, TransactionBillingInfo, TransactionStatus, TransactionType, UserSavedCard } from "entities/global.entity";
+import { Invoice, Order, Payment, PaymentStatus, Transaction, TransactionBillingInfo, TransactionStatus, TransactionType, UserSavedCard } from "entities/global.entity";
 import { AccountingService } from "src/accounting/accounting.service";
 import { DataSource, In, Repository } from "typeorm";
 import { EVENT_TTL_SECONDS, getPaymobIntegrationId, PAYMENT_TIMING, UnifiedCheckout } from "./payment.constant";
@@ -36,7 +36,9 @@ export class PaymobPaymentService extends BasePaymentGateway {
         @InjectRepository(UserSavedCard) private savedCardRepo: Repository<UserSavedCard>,
         private readonly redisService: RedisService,
         @Inject(forwardRef(() => OrdersService))
-        protected readonly ordersService: OrdersService
+        protected readonly ordersService: OrdersService,
+        @InjectRepository(Payment)
+        private paymentRepo: Repository<Payment>,
     ) {
         super(dataSource, accountingService, orderRepo, transactionBillingRepo, ordersService);
     }
@@ -50,7 +52,31 @@ export class PaymobPaymentService extends BasePaymentGateway {
 
         const { userId, billingInfo } = data;
         const orderId = order.id;
+        // 🟢 1. CHECK FOR EXISTING ACTIVE ATTEMPT
+        // We look for an attempt that hasn't expired yet
+        const existing = await this.paymentRepo.findOne({
+            where: {
+                invoiceId: invoice.id,
+                status: PaymentStatus.PENDING
+            },
+        });
 
+        if (existing) {
+            // Verify the linked transaction is still PENDING (Double safety)
+            const linkedTx = await this.dataSource.getRepository(Transaction).findOne({
+                where: { id: existing.transactionId }
+            });
+
+            if (linkedTx && linkedTx.status === TransactionStatus.PENDING) {
+                this.logger.log(`♻️ Reusing existing payment intention for Order ${orderId}`);
+
+                return {
+                    paymentUrl: `https://accept.paymob.com/unifiedcheckout/?publicKey=${this.publicKey}&clientSecret=${existing.clientSecret}`,
+                    transactionId: existing.transactionId,
+                    orderId: orderId
+                };
+            }
+        }
         // 2. Update the main billing profile first (Standardizing the user's current data)
         await this.accountingService.updateBillingInformation(userId, billingInfo);
         // const savedCards = await this.savedCardRepo.find({ where: { userId } }); // 💢for saved card logic 
@@ -100,7 +126,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
                     state: snapshot.stateName, // Captured in snapshot logic
                     country: snapshot.countryIso, // Captured in snapshot logic
                 },
-                special_reference: orderId, // Our internal order ID
+                special_reference: savedTx.id, // Our internal order ID
                 notification_url: `${process.env.BACKEND_URL}/api/v1/payments/webhooks/paymob`,
                 redirection_url: `${process.env.BACKEND_URL}/api/v1/payments/paymob/callback`,
                 // notification_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/webhooks/paymob',
@@ -119,13 +145,22 @@ export class PaymobPaymentService extends BasePaymentGateway {
                 await manager.update(Transaction, savedTx.id, {
                     externalOrderId: intentionData.intention_order_id.toString(), // The 458204104 ID
                 });
+                const clientSecret = response.data.client_secret;
 
-
+                const attempt = manager.create(Payment, {
+                    invoiceId: invoice.id,
+                    transactionId: savedTx.id,
+                    clientSecret: clientSecret,
+                    userId: order.buyerId,
+                    status: PaymentStatus.PENDING,
+                    amount: savedTx.amount,
+                    currencyId: "SAR"
+                });
+                await manager.save(attempt);
                 // LOG THE INTENTION SUCCESS (Log with Timestamp & Parameters)
                 this.logger.log(
                     `Paymob Intention Created | Order: ${orderId} | User: ${userId} | TransactionId: ${savedTx.id} | PaymobOrderId: ${intentionData.intention_order_id}`,
                 );
-                const clientSecret = response.data.client_secret;
                 const paymentUrl = `https://accept.paymob.com/unifiedcheckout/?publicKey=${this.publicKey}&clientSecret=${clientSecret}`;
                 // Return unified response to frontend
                 return {
@@ -134,6 +169,10 @@ export class PaymobPaymentService extends BasePaymentGateway {
                     orderId: order.id
                 };
             } catch (error) {
+                await manager.update(Transaction, savedTx.id, {
+                    status: TransactionStatus.FAILED,
+                });
+
                 this.logger.error(
                     `Paymob Intention Failed | Order: ${orderId} | User: ${userId} | TransactionId: ${savedTx.id}`,
                     JSON.stringify({

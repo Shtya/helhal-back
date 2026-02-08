@@ -84,8 +84,15 @@ export class OrdersController {
       userId,
       billingInfo,
     };
-
-    return this.ordersService.processOrderPayment(checkoutDto, orderId);
+    const idempotencyKey = `pay:${userId}-${orderId}`;
+    // The service now handles the logic based on the method
+    return this.idempotencyService.runWithIdempotency(
+      idempotencyKey,
+      () => this.ordersService.processOrderPayment(checkoutDto, orderId),
+      0,
+      PAYMENT_TIMING.LOCK_TTL,
+      PAYMENT_TIMING.TIMEOUT_MS,
+    );
   }
   @Get(':id')
   async getOrder(@Req() req, @Param('id') id: string) {

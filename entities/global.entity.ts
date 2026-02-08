@@ -1718,11 +1718,11 @@ export class Payment extends CoreEntity {
   @Column({ name: 'currency_id' })
   currencyId: string;
 
-  @Column({ type: 'enum', enum: PaymentMethodType })
-  method: PaymentMethodType;
+  @Column({ name: 'client_secret', nullable: true })
+  clientSecret: string;
 
-  @Column({ type: 'enum', enum: TransactionStatus, default: TransactionStatus.PENDING })
-  status: TransactionStatus;
+  @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.PENDING })
+  status: PaymentStatus;
 
   @Column({ name: 'transaction_id', unique: true })
   transactionId: string;
