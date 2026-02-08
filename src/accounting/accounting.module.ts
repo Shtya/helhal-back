@@ -5,9 +5,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserBalance, Transaction, PaymentMethod, User, Order, Invoice, Setting, PlatformWallet, Notification, UserBillingInfo, UserBankAccount, Country, State, TransactionBillingInfo } from 'entities/global.entity';
 import { WithdrawalCleanupService } from 'backgroundServices/withdrawal-cleanup-service';
 import { PaymentsModule } from 'src/payments/payments.module';
+import { SharedModule } from 'common/shared.module';
 
 @Module({
   imports: [
+    forwardRef(() => SharedModule),
     forwardRef(() => PaymentsModule),
     TypeOrmModule.forFeature([
       UserBalance,

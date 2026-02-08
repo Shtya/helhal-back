@@ -5,11 +5,15 @@ import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { AccessGuard } from 'src/auth/guard/access.guard';
 import { Permissions } from 'entities/permissions';
+import { IdempotencyService } from 'common/IdempotencyService';
+import { PAYMENT_TIMING } from 'src/payments/base/payment.constant';
 
 @Controller('accounting')
 @UseGuards(JwtAuthGuard)
 export class AccountingController {
-  constructor(private accountingService: AccountingService) { }
+  constructor(
+    private accountingService: AccountingService,
+    private readonly idempotencyService: IdempotencyService) { }
 
   @Get('billing-information')
   async getBillingInformation(@Req() req) {
@@ -25,6 +29,11 @@ export class AccountingController {
   @Get('bank-accounts')
   async getBankAccounts(@Req() req) {
     return this.accountingService.getBankAccounts(req.user.id);
+  }
+
+  @Get('default-bank-account')
+  async getDefaultBankAccount(@Req() req) {
+    return this.accountingService.getDefaultBankAccount(req.user.id);
   }
 
   @Post('bank-accounts')
@@ -119,7 +128,17 @@ export class AccountingController {
 
   @Post('withdraw')
   async withdrawFunds(@Req() req, @Body() body: { amount: number; }) {
-    return this.accountingService.withdrawFunds(req.user.id, body.amount);
+
+    const userId = req.user.id;
+    const idempotencyKey = `WITHDRAW:${userId}-${body.amount}`;
+    // The service now handles the logic based on the method
+    return this.idempotencyService.runWithIdempotency(
+      idempotencyKey,
+      () => this.accountingService.withdrawFunds(req.user.id, body.amount),
+      PAYMENT_TIMING.CACHE_TTL,
+      PAYMENT_TIMING.LOCK_TTL,
+      PAYMENT_TIMING.TIMEOUT_MS,
+    );
   }
 
   @UseGuards(JwtAuthGuard)

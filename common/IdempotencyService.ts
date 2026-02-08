@@ -12,7 +12,7 @@ export class IdempotencyService {
         handler: () => Promise<T>,
         ttl = 300, // s- default result cache TTL 5 minutes
         lockttl = 10, // s-  default lock TTL 10 seconds
-        timeout = 5000, //ms - default wait timeout 5 seconds
+        timeout = 10000, //ms - default wait timeout 5 seconds
     ): Promise<T> {
         const resultKey = `result:${key}`;
         const lockKey = `lock:${key}`;
