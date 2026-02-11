@@ -248,7 +248,7 @@ export class OrdersService {
             userId: order.sellerId,
             type: 'payment',
             title: 'Order Paid',
-            message: `The order “${order.title}” has been paid. Start working now!`,
+            message: `The order “${order.title}” has been paid.`,
             relatedEntityType: 'order',
             relatedEntityId: order.id,
           })

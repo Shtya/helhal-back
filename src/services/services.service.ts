@@ -912,6 +912,18 @@ export class ServicesService {
     }
 
     service.status = status;
+
+    const notification = this.notificationRepository.create({
+      userId: service.sellerId,
+      type: 'service_status_update',
+      title: 'Service Status Changed',
+      message: `The service "${service.title}" status has been updated to "${status}".`,
+      relatedEntityType: 'service',
+      relatedEntityId: service.id,
+    });
+
+    await this.notificationRepository.save(notification);
+
     return this.serviceRepository.save(service);
   }
 

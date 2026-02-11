@@ -14,7 +14,7 @@ export class SavedSearchesService {
     private userRepository: Repository<User>,
     @InjectRepository(Notification)
     private notificationRepository: Repository<Notification>,
-  ) {}
+  ) { }
 
   async getUserSavedSearches(userId: string) {
     return this.savedSearchRepository.find({
@@ -61,7 +61,7 @@ export class SavedSearchesService {
 
   async getSearchNotifications(userId: string, searchId: string, page: number = 1) {
     const savedSearch = await this.getSavedSearch(userId, searchId);
-    
+
     const limit = 20;
     const skip = (page - 1) * limit;
 
@@ -96,7 +96,7 @@ export class SavedSearchesService {
       if (!search.notify) continue;
 
       const services = await this.findMatchingServices(search);
-      
+
       for (const service of services) {
         // Check if notification already exists for this service and search
         const existingNotification = await this.notificationRepository.findOne({
@@ -106,7 +106,7 @@ export class SavedSearchesService {
             relatedEntityType: 'service',
             relatedEntityId: service.id,
           },
-        }as any);
+        } as any);
 
         if (!existingNotification) {
           // Create notification
@@ -117,7 +117,7 @@ export class SavedSearchesService {
             message: `A new service "${service.title}" matches your saved search "${search.query}"`,
             relatedEntityType: 'service',
             relatedEntityId: service.id,
-          }as any);
+          } as any);
 
           await this.notificationRepository.save(notification);
           newServices.push(service);
@@ -172,7 +172,7 @@ export class SavedSearchesService {
   async runScheduledSearchChecks() {
     // This would be called by a scheduled task (cron job)
     const allUsers = await this.userRepository.find();
-    
+
     for (const user of allUsers) {
       await this.checkForNewServices(user.id);
     }
