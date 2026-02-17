@@ -561,7 +561,8 @@ export class AuthController {
     try {
 
       //fix this 
-      const { code, state, user } = req.body;
+      const res = req.body;
+      const { code, state, user } = res;
       let name: string | null = null;
 
       if (user && typeof user === 'object' && user.name) {
@@ -590,7 +591,8 @@ export class AuthController {
       const decoded: any = this.jwtService.decode(id_token);
       const appleUserId = decoded?.sub;
       const profile = { ...user, name, id: appleUserId }
-      this.logger.warn(`Apple login: id_token: ${id_token}, decoded: ${decoded}, user: ${user}, profile: ${profile}`)
+      this.logger.warn(`Apple login: id_token: ${id_token}, decoded: ${JSON.stringify(decoded)}, user: ${JSON.stringify(user)}, profile: ${JSON.stringify(profile)}
+      res: ${JSON.stringify(res)}`)
       const result: any = await this.oauthService.handleAppleCallback(profile, state, res);
       return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
     } catch (e) {
