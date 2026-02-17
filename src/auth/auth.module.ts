@@ -33,6 +33,7 @@ import { SettingsService } from 'src/settings/settings.service';
 import { SmsService } from 'common/sms-service';
 import { NafathService } from 'common/nafath-service';
 import { ConversationsModule } from 'src/conversations/conversations.module';
+import { SharedModule } from 'common/shared.module';
 @Module({
   imports: [
     ConfigModule.forRoot(),
@@ -49,6 +50,7 @@ import { ConversationsModule } from 'src/conversations/conversations.module';
       Notification,
       Setting
     ]),
+    forwardRef(() => SharedModule),
     forwardRef(() => ConversationsModule),
     forwardRef(() => ReferralModule),
     PassportModule,

@@ -87,6 +87,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   emitNewMessage(otherUserId: string, message: any, sender: any) {
     const cleanMessage = instanceToPlain(message, { enableCircularCheck: true });
+    console.log(this.connectedUsers)
     console.log(`User ${sender.username} send message to ${otherUserId}`);
     this.server
       .to(`user_${otherUserId}`)

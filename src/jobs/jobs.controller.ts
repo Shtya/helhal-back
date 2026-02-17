@@ -4,7 +4,7 @@ import { AccessGuard } from '../auth/guard/access.guard';
 import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { JobsService } from './jobs.service';
-import { CreateJobDto } from 'dto/job.dto';
+import { CreateJobDto, UpdateJobDto } from 'dto/job.dto';
 import { CRUD } from 'common/crud.service';
 import { Permissions } from 'entities/permissions';
 
@@ -78,6 +78,19 @@ export class JobsController {
     return this.jobsService.createJob(req.user.id, createJobDto);
   }
 
+
+  @Put(":id")
+  @UseGuards(JwtAuthGuard, AccessGuard)
+  @RequireAccess({
+    roles: [UserRole.ADMIN], permission: {
+      domain: 'jobs',
+      value: Permissions.Jobs.Edit
+    }
+  })
+  async updateJob(@Req() req, @Param('id') id: string, @Body() UpdateJobDto: UpdateJobDto) {
+    return this.jobsService.updateJob(req.user.id, id, UpdateJobDto);
+  }
+
   @Put(':id/status')
   @UseGuards(JwtAuthGuard, AccessGuard)
   @RequireAccess({
@@ -87,8 +100,8 @@ export class JobsController {
       value: Permissions.Jobs.Edit
     }
   })
-  async updateJob(@Req() req, @Param('id') id: string, @Query('status') status: string) {
-    return this.jobsService.updateJob(req.user.id, id, status);
+  async updateJobStatus(@Req() req, @Param('id') id: string, @Query('status') status: string) {
+    return this.jobsService.updateJobStatus(req.user.id, id, status);
   }
 
   @Delete(':id')

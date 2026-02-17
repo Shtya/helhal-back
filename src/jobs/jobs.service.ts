@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException, BadRequestException,
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Like, In, DataSource } from 'typeorm';
 import { Job, Proposal, User, Category, Order, Notification, JobStatus, ProposalStatus, UserRole, OrderStatus, Setting, PaymentStatus, PackageType, Invoice, UserRelatedAccount, Country, State } from 'entities/global.entity';
-import { CreateJobDto } from 'dto/job.dto';
+import { CreateJobDto, UpdateJobDto } from 'dto/job.dto';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { Permissions } from 'entities/permissions';
 import { formatSearchTerm } from 'utils/search.helper';
@@ -283,9 +283,22 @@ export class JobsService {
       throw new NotFoundException('Job not found');
     }
 
-    if (job.buyerId != userId && job.status != JobStatus.PUBLISHED) {
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
+
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.jobs, Permissions.Jobs.Edit)
+
+    if (!(user?.role === UserRole.ADMIN || hasPermission || job.buyerId === userId)) {
+      throw new ForbiddenException('You can only update your own jobs');
+    } else if (job.status === JobStatus.PUBLISHED) {
       throw new NotFoundException('Job not found');
     }
+
 
     return job;
   }
@@ -321,12 +334,13 @@ export class JobsService {
 
 
     // Always read latest settings
-    const settingsRows = await this.settingRepository.find({ take: 1, order: { created_at: 'DESC' } });
-    const latestSetting = settingsRows[0] ?? null;
-    const requireApproval = latestSetting?.jobsRequireApproval ?? true;
+    // const settingsRows = await this.settingRepository.find({ take: 1, order: { created_at: 'DESC' } });
+    // const latestSetting = settingsRows[0] ?? null;
+    // const requireApproval = latestSetting?.jobsRequireApproval ?? true;
 
     // Decide server-side. Never trust client-provided status on create.
-    const initialStatus = requireApproval ? JobStatus.PENDING : JobStatus.PUBLISHED;
+    // const initialStatus = requireApproval ? JobStatus.PENDING : JobStatus.PUBLISHED;
+    const initialStatus = JobStatus.PUBLISHED;
 
     // Prevent bypass: strip status if provided
     const { status: _clientStatus, ...cleanDto } = createJobDto as any;
@@ -340,28 +354,112 @@ export class JobsService {
 
     const saved: any = await this.jobRepository.save(job);
 
-    if (requireApproval) {
-      // notify admins to review
-      const admins = await this.userRepository.find({ where: { role: UserRole.ADMIN as any } });
-      if (admins.length) {
-        const notes = admins.map(a =>
-          this.notificationRepository.create({
-            userId: a.id,
-            type: 'job_review_required',
-            title: 'New Job Pending Approval',
-            message: `A new job "${saved.title}" is awaiting approval.`,
-            relatedEntityType: 'job',
-            relatedEntityId: saved.id,
-          }),
-        );
-        await this.notificationRepository.save(notes as any);
-      }
-    }
+    // if (requireApproval) {
+    //   // notify admins to review
+    //   const admins = await this.userRepository.find({ where: { role: UserRole.ADMIN as any } });
+    //   if (admins.length) {
+    //     const notes = admins.map(a =>
+    //       this.notificationRepository.create({
+    //         userId: a.id,
+    //         type: 'job_review_required',
+    //         title: 'New Job Pending Approval',
+    //         message: `A new job "${saved.title}" is awaiting approval.`,
+    //         relatedEntityType: 'job',
+    //         relatedEntityId: saved.id,
+    //       }),
+    //     );
+    //     await this.notificationRepository.save(notes as any);
+    //   }
+    // }
 
     return saved;
   }
 
-  async updateJob(userId: string, jobId: string, status: any) {
+
+  async updateJob(userId: string, jobId: string, updateJobDto: UpdateJobDto) {
+
+    const user = await this.userRepository
+      .createQueryBuilder('user')
+      .leftJoinAndSelect('user.person', 'person')
+      .addSelect('person.permissions')
+      .where('user.id = :id', { id: userId })
+      .getOne();
+
+    if (!user) throw new NotFoundException('User not found');
+
+    const hasPermission = PermissionBitmaskHelper.has(user.permissions?.jobs, Permissions.Jobs.Edit)
+
+    const job = await this.jobRepository.findOne({
+      where: { id: jobId },
+      relations: {
+        buyer: {
+          person: true
+        },
+      },
+    });
+    if (!job) throw new NotFoundException('Job not found');
+
+    if (!(user?.role === UserRole.ADMIN || hasPermission)) {
+      throw new ForbiddenException('You can only update your own jobs');
+    }
+
+
+    if (updateJobDto.categoryId) {
+      const category = await this.categoryRepository.findOne({ where: { id: updateJobDto.categoryId } } as any);
+      if (!category) throw new NotFoundException('Category not found');
+    }
+
+
+    if (updateJobDto.subcategoryId) {
+      const subcategory = await this.categoryRepository.findOne({ where: { id: updateJobDto.subcategoryId } } as any);
+      if (!subcategory) throw new NotFoundException('Subcategory not found or does not belong to the selected category');
+    } else {
+      delete updateJobDto.subcategoryId;
+    }
+
+
+    if (updateJobDto.countryId) {
+      const country = await this.countryRepository.findOne({ where: { id: updateJobDto.countryId } });
+      if (!country) throw new NotFoundException('Country not found');
+    }
+
+
+    if (updateJobDto.stateId) {
+      const state = await this.stateRepository.findOne({
+        where: {
+          id: updateJobDto.stateId,
+          countryId: updateJobDto.countryId || job.countryId
+        }
+      });
+      if (!state) throw new NotFoundException('State not found or does not belong to the selected country');
+    }
+
+    const { status: _clientStatus, buyerId, attachments, ...cleanDto } = updateJobDto as any;
+
+    const currentAttachments = job.attachments || [];
+
+    const uniqueNewAttachments = (attachments || [])
+      .filter((newAttr: any) =>
+        // Only keep if the name DOES NOT exist in current attachments
+        !currentAttachments.some((existing: any) => existing.name === newAttr.name)
+      )
+      .map((a: any) => ({
+        ...a,
+        uploadedAt: new Date(),
+      }));
+
+    // 3. Merge only the unique new attachments
+    if (uniqueNewAttachments.length > 0) {
+      job.attachments = [...currentAttachments, ...uniqueNewAttachments];
+    }
+
+    Object.assign(job, cleanDto);
+
+    return await this.jobRepository.save(job);
+  }
+
+
+  async updateJobStatus(userId: string, jobId: string, status: any) {
     const actor = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')

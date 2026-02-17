@@ -74,9 +74,6 @@ export class CreateJobDto {
   @Min(1, { message: 'Minimum 1 day' })
   @Max(1200, { message: 'Maximum delivery time is 1200 days' })
   preferredDeliveryDays: number;
-
-  @IsEnum(JobStatus)
-  status: JobStatus;
 }
 
 export class UpdateJobDto extends PartialType(CreateJobDto) {

@@ -243,6 +243,77 @@ export class ConversationsService {
     }));
   }
 
+  async getAdminConversations(page: number = 1, searchQuery?: string) {
+    const limit = 20;
+    const validPage = Math.max(1, parseInt(page as any) || 1);
+    const skip = (validPage - 1) * limit;
+    const q = (searchQuery || '').trim();
+
+    const qb = this.conversationRepository
+      .createQueryBuilder('conv')
+      .leftJoinAndSelect('conv.buyer', 'buyer')
+      .leftJoinAndSelect('buyer.person', 'buyerPerson')
+      .leftJoinAndSelect('conv.seller', 'seller')
+      .leftJoinAndSelect('seller.person', 'sellerPerson')
+      .leftJoinAndSelect('conv.service', 'service')
+      .leftJoinAndSelect('conv.order', 'order')
+      .orderBy('conv.lastMessageAt', 'DESC');
+
+    if (q && q.length >= 2) {
+      const term = `%${q}%`;
+      qb.andWhere(
+        '(LOWER(buyerPerson.username) LIKE LOWER(:term) OR LOWER(buyerPerson.email) LIKE LOWER(:term) OR LOWER(sellerPerson.username) LIKE LOWER(:term) OR LOWER(sellerPerson.email) LIKE LOWER(:term))',
+        { term }
+      );
+    }
+
+    const [conversations, total] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    const plain = conversations.map((c) => instanceToPlain(c, { enableCircularCheck: true }));
+
+    return {
+      conversations: plain,
+      pagination: {
+        page: validPage,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getAdminConversationMessages(conversationId: string, page: number = 1) {
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversation not found');
+    }
+
+    const limit = 50;
+    const validPage = Math.max(1, parseInt(page as any) || 1);
+    const skip = (validPage - 1) * limit;
+
+    const [messages, total] = await this.messageRepository.findAndCount({
+      where: { conversationId },
+      relations: { sender: { person: true } },
+      order: { created_at: 'DESC' as any },
+      skip,
+      take: limit,
+    });
+
+    return {
+      messages: messages.reverse(),
+      pagination: {
+        page: validPage,
+        limit,
+        total,
+        pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   async getUserConversations(userId: string, page: number = 1) {
     const limit = 20;
     const validPage = Math.max(1, parseInt(page as any) || 1);

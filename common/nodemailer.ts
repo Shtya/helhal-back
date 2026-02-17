@@ -8,11 +8,14 @@ import * as path from 'path';
 @Injectable()
 export class MailService {
     private transporter = nodemailer.createTransport({
-        service: 'gmail',
+        host: process.env.Email_HOST, // اسم الخادم الصادر
+        port: process.env.Email_PORT,             // المنفذ
+        secure: false,         // false for STARTTLS (TLS)
+        requireTLS: true,      // force TLS
         auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS,
-        },
+            user: process.env.EMAIL_USER, // بريدك الإلكتروني Zoho
+            pass: process.env.EMAIL_PASS, // كلمة مرور التطبيق App Password
+        }
     });
 
     constructor(
@@ -21,16 +24,9 @@ export class MailService {
 
     private buildFrom(settings?: Setting): string {
         const siteName = settings?.siteName ?? process.env.PROJECT_NAME ?? 'No-Reply';
-        const contact =
-            settings?.contactEmail ??
-            process.env.EMAIL_USER ??
-            process.env.EMAIL_FROM ??
-            '';
 
-        if (contact) {
-            return `"${siteName}" <${contact}>`;
-        }
-        return `${siteName} <no-reply@localhost>`;
+
+        return `${siteName} <${process.env.EMAIL_USER}>`;
     }
     getSiteLogo(settings?: Setting): string | null {
         if (!settings?.siteLogo) return null;

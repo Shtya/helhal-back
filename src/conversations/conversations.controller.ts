@@ -1,5 +1,8 @@
 import { Controller, Get, Post, Body, Param, UseGuards, Req, Query, BadRequestException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
+import { AccessGuard } from '../auth/guard/access.guard';
+import { RequireAccess } from 'decorators/access.decorator';
+import { UserRole } from 'entities/global.entity';
 import { ConversationsService } from './conversations.service';
 import { CreateConversationDto } from 'dto/conversation.dto';
 
@@ -7,6 +10,20 @@ import { CreateConversationDto } from 'dto/conversation.dto';
 @UseGuards(JwtAuthGuard)
 export class ConversationsController {
   constructor(private conversationsService: ConversationsService) { }
+
+  @Get('admin')
+  @UseGuards(AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
+  async getAdminConversations(@Req() req, @Query('page') page: number = 1, @Query('query') query?: string) {
+    return this.conversationsService.getAdminConversations(page, query);
+  }
+
+  @Get('admin/:id/messages')
+  @UseGuards(AccessGuard)
+  @RequireAccess({ roles: [UserRole.ADMIN] })
+  async getAdminConversationMessages(@Req() req, @Param('id') id: string, @Query('page') page: number = 1) {
+    return this.conversationsService.getAdminConversationMessages(id, page);
+  }
 
   @Get()
   async getConversations(@Req() req, @Query('page') page: number = 1) {

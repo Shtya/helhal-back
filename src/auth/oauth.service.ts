@@ -8,6 +8,7 @@ import { Person, User, UserRole, UserStatus } from 'entities/global.entity';
 import { AuthService } from './auth.service';
 import { randomBytes } from 'crypto';
 import { MailService } from 'common/nodemailer';
+import { RedisService } from 'common/RedisService';
 
 @Injectable()
 export class OAuthService {
@@ -20,7 +21,45 @@ export class OAuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     public emailService: MailService,
+
+    private readonly redisService: RedisService
   ) { }
+
+
+  public async getAppleClientSecret(): Promise<string> {
+    const cacheKey = `apple_client_secret:${process.env.APPLE_CLIENT_ID}`;
+    const cachedSecret = await this.redisService.get<string>(cacheKey);
+    if (cachedSecret) return cachedSecret;
+
+    const now = Math.floor(Date.now() / 1000); // iat must be in seconds
+
+    // Apple's max limit: 15777000 seconds (approx 182 days)
+    // We use 180 days to stay safely within the limit.
+    const expiresInSeconds = 180 * 24 * 60 * 60;
+
+    const secret = this.jwtService.sign(
+      {
+        iss: process.env.APPLE_TEAM_ID,     // issuer
+        iat: now,                          // issued at
+        exp: now + expiresInSeconds,       // expiration time
+        aud: 'https://appleid.apple.com',  // audience
+        sub: process.env.APPLE_CLIENT_ID,  // subject (Service ID)
+      },
+      {
+        secret: process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        algorithm: 'ES256',
+        header: {
+          alg: 'ES256',
+          kid: process.env.APPLE_KEY_ID,   // 10-char Key ID
+        },
+      },
+    );
+
+    // Cache in Redis (using the same 180-day TTL)
+    await this.redisService.set(cacheKey, secret, expiresInSeconds);
+
+    return secret;
+  }
 
   async processReferral(newUser: User, referralCodeUsed?: string): Promise<void> {
     if (!referralCodeUsed) return;

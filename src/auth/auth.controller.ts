@@ -18,11 +18,14 @@ import { Brackets, Repository } from 'typeorm';
 import { promises as fsp } from 'fs';
 import { join, normalize as pathNormalize } from 'path';
 import { Permissions } from 'entities/permissions';
+import { JwtService } from '@nestjs/jwt';
 
 
 @Controller('auth')
 export class AuthController {
   constructor(
+    private jwtService: JwtService,
+
     private authService: AuthService,
     private oauthService: OAuthService,
     @InjectRepository(User)
@@ -513,7 +516,7 @@ export class AuthController {
   @Get('google')
   googleAuth(@Query('redirect') redirect?: string, @Query('ref') ref?: string, @Query('type') type?: string) {
     const backendRedirectUri = `${process.env.BACKEND_URL}/api/v1/auth/google/callback`;
-    const state = this.oauthService.createOAuthState(redirect || 'http://localhost:3000', ref, type);
+    const state = this.oauthService.createOAuthState(redirect || process.env.FRONTEND_URL, ref, type);
     const url = `https://accounts.google.com/o/oauth2/v2/auth?redirect_uri=${encodeURIComponent(backendRedirectUri)}&response_type=code&client_id=${process.env.GOOGLE_CLIENT_ID}&scope=email%20profile&state=${encodeURIComponent(state)}&access_type=offline`;
     return { redirectUrl: url.replace(/\s+/g, '') };
   }
@@ -543,16 +546,49 @@ export class AuthController {
 
   @Get('apple')
   appleAuth(@Query('redirect') redirect?: string, @Query('ref') ref?: string, @Query('type') type?: string) {
-    const redirectUrl = redirect || 'http://localhost:3000';
-    const url = `https://appleid.apple.com/auth/authorize?redirect_uri=${redirectUrl}&response_type=code&client_id=${process.env.APPLE_CLIENT_ID}&scope=email&state=${this.oauthService.createOAuthState(redirectUrl, ref, type)}`;
-    return { redirectUrl: url };
+    const backendRedirectUri = `${process.env.BACKEND_URL}/api/v1/auth/apple/callback`;
+    const state = this.oauthService.createOAuthState(redirect || process.env.FRONTEND_URL, ref, type);
+    const url = `https://appleid.apple.com/auth/authorize?redirect_uri=${backendRedirectUri}&response_type=code&client_id=${process.env.APPLE_CLIENT_ID}&scope=name%20email&response_mode=form_post&state=${encodeURIComponent(state)}`;
+    return { redirectUrl: url.replace(/\s+/g, '') };
   }
+
 
   @Post('apple/callback')
   async appleCallback(@Req() req: any, @Res() res: any) {
     try {
-      const { state } = req.body;
-      const result: any = await this.oauthService.handleAppleCallback(req.user, state, res);
+
+      //fix this 
+      const { code, state, user } = req.body;
+      let name: string | null = null;
+
+      if (user && typeof user === 'object' && user.name) {
+        const { firstName, lastName } = user.name;
+        name = `${firstName ?? ''} ${lastName ?? ''}`.trim();
+      }
+
+      const APPLE_CLIENT_SECRET = await this.oauthService.getAppleClientSecret();
+
+      // Exchange code for tokens
+      const tokenResponse = await axios.post('https://appleid.apple.com/auth/token', new URLSearchParams({
+        client_id: process.env.APPLE_CLIENT_ID,
+        client_secret: APPLE_CLIENT_SECRET,
+        code,
+        grant_type: 'authorization_code',
+        redirect_uri: `${process.env.BACKEND_URL}/api/v1/auth/apple/callback`
+      }).toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+
+      if (!tokenResponse.data.id_token) {
+        throw new Error('Invalid token response from Apple');
+      }
+
+      const { id_token } = tokenResponse.data;
+      const decoded: any = this.jwtService.decode(id_token);
+      const appleUserId = decoded?.sub;
+
+      const profile = { ...user, name, id: appleUserId }
+      const result: any = await this.oauthService.handleAppleCallback(profile, state, res);
       return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
     } catch (e) {
       return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${e.message}`);
