@@ -22,6 +22,7 @@ async function bootstrap() {
 			'https://www.helhal.com',
 			'https://helhal.com',
 			'http://localhost:3000', // للتجارب
+			'https://binaural-taryn-unprecipitatively.ngrok-free.dev', // للتجارب
 
 		],
 		methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',

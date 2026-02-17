@@ -565,7 +565,7 @@ export class AuthController {
 
       const APPLE_CLIENT_SECRET = await this.oauthService.getAppleClientSecret();
 
-      // Exchange code for tokens
+      // // Exchange code for tokens
       const tokenResponse = await axios.post('https://appleid.apple.com/auth/token', new URLSearchParams({
         client_id: process.env.APPLE_CLIENT_ID,
         client_secret: APPLE_CLIENT_SECRET,
@@ -602,8 +602,6 @@ export class AuthController {
 
 
       const profile = { id: appleUserId, name, email };
-      this.logger.warn(`Apple login: id_token: ${id_token}, decoded: ${JSON.stringify(decoded)}, user: ${JSON.stringify(user)}, profile: ${JSON.stringify(profile)}
-      res: ${JSON.stringify(res)}`)
 
 
       const result: any = await this.oauthService.handleAppleCallback(profile, state, res);

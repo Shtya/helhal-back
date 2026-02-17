@@ -143,6 +143,21 @@ export class OrdersController {
     return this.ordersService.changeRequest(req.user.id, orderId);
   }
 
+  @Get(':id/timeline')
+  async getOrderTimeline(
+    @Req() req,
+    @Param('id') orderId: string,
+    @Query('limit') limit: number = 10,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.ordersService.getOrderActivityTimeline(
+      req.user.id,
+      orderId,
+      Number(limit),
+      cursor
+    );
+  }
+
   @Post(':id/complete')
   async completeOrder(@Req() req, @Param('id') id: string) {
     const idempotencyKey = `order:complete:${id}`;

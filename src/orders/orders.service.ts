@@ -467,31 +467,39 @@ export class OrdersService {
 
   async getOrder(userId: string, userRole: string, orderId: string, req: any, manager?: EntityManager) {
     const orderRepo = manager ? manager.getRepository(Order) : this.orderRepository;
-    const order = await orderRepo.findOne({
-      where: { id: orderId },
-      relations: {
-        service: {
-          seller: { person: true } // If the service object also needs the seller's profile
-        },
-        buyer: {
-          person: true            // Essential for buyer's name/email
-        },
-        seller: {
-          person: true            // Essential for seller's name/email
-        },
-        invoices: {
-          payments: true          // Keeps your invoice and payment history
-        },
-        offlineContract: {
-          buyer: {
-            person: true            // Essential for buyer's name/email
-          },
-          seller: {
-            person: true            // Essential for seller's name/email
-          },
-        }
-      }
-    });
+    const query = orderRepo.createQueryBuilder('order')
+      // 1. Core Relations (The ones you had before)
+      .leftJoinAndSelect('order.service', 'service')
+      .leftJoinAndSelect('service.seller', 'serviceSeller')
+      .leftJoinAndSelect('serviceSeller.person', 'serviceSellerPerson')
+
+      .leftJoinAndSelect('order.buyer', 'buyer')
+      .leftJoinAndSelect('buyer.person', 'buyerPerson')
+
+      .leftJoinAndSelect('order.seller', 'seller')
+      .leftJoinAndSelect('seller.person', 'sellerPerson')
+
+      .leftJoinAndSelect('order.invoices', 'invoices')
+      .leftJoinAndSelect('invoices.payments', 'payments')
+
+      // 2. The Offline Contract Relation (with its nested person data)
+      .leftJoinAndSelect('order.offlineContract', 'offlineContract')
+      .leftJoinAndSelect('offlineContract.buyer', 'ocBuyer')
+      .leftJoinAndSelect('ocBuyer.person', 'ocBuyerPerson')
+      .leftJoinAndSelect('offlineContract.seller', 'ocSeller')
+      .leftJoinAndSelect('ocSeller.person', 'ocSellerPerson')
+
+      // 3. The Rating Relation with specific fields
+      .leftJoin('order.rating', 'rating')
+      .addSelect([
+        'rating.isPublic',
+        'rating.buyer_rated_at',
+        'rating.seller_rated_at'
+      ])
+
+      // 4. Filters
+      .where('order.id = :id', { id: orderId });
+    const order = await query.getOne();
 
     const permissions = req.user.permissions;
     if (req.user?.role === 'admin' || PermissionBitmaskHelper.has(permissions?.[PermissionDomains.ORDERS], Permissions.Orders.View) ||
@@ -946,6 +954,73 @@ export class OrdersService {
     });
   }
 
+  async getOrderActivityTimeline(
+    userId: string,
+    orderId: string,
+    limit: number = 10,
+    cursor?: string
+  ) {
+    // 1. Authorization check
+    const order = await this.orderRepository.findOne({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.buyerId !== userId && order.sellerId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    // 2. Prepare the Cursor date (Fallback to current time if no cursor)
+    const cursorDate = cursor ? new Date(cursor) : new Date();
+
+    // 3. Execute Raw Query with positional parameters ($1, $2, etc.)
+    // We include "deleted_at IS NULL" to respect soft deletes
+    const rawResults = await this.dataSource.query(`
+    SELECT * FROM (
+      SELECT 
+        id, 
+        message, 
+        files, 
+        created_at AS "createdAt", 
+        'submission' AS type 
+      FROM order_submissions 
+      WHERE "order_id" = $1 AND "deleted_at" IS NULL
+
+      UNION ALL
+
+      SELECT 
+        id, 
+        message, 
+        files, 
+        created_at AS "createdAt", 
+        'change_request' AS type 
+      FROM order_change_requests 
+      WHERE "order_id" = $1 AND "deleted_at" IS NULL
+    ) AS timeline
+    WHERE "createdAt" < $2
+    ORDER BY "createdAt" DESC
+    LIMIT $3
+  `, [orderId, cursorDate, limit + 1]);
+
+    // 4. Calculate next cursor
+    const hasMore = rawResults.length > limit;
+
+    // 4. If we have an extra item, remove it from the data array
+    if (hasMore) {
+      rawResults.pop();
+    }
+
+    // 5. The next cursor is the timestamp of the last item in the (now cleaned) array
+    const nextCursor = rawResults.length > 0
+      ? rawResults[rawResults.length - 1].createdAt
+      : null;
+
+    return {
+      data: rawResults,
+      meta: {
+        nextCursor: hasMore ? nextCursor : null,
+        hasMore,
+        count: rawResults.length
+      },
+    };
+  }
 
   async cancelOrder(userId: string, userRole: string, orderId: string, req: any, reason?: string) {
     return await this.dataSource.transaction(async (manager) => {
