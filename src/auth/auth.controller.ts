@@ -1,5 +1,5 @@
 // --- File: auth/auth.controller.ts ---
-import { Controller, Post, Get, Body, Res, Req, UseGuards, Query, UnauthorizedException, BadRequestException, Put, Delete, Param, UseInterceptors, UploadedFile, NotFoundException, UploadedFiles } from '@nestjs/common';
+import { Controller, Post, Get, Body, Res, Req, UseGuards, Query, UnauthorizedException, BadRequestException, Put, Delete, Param, UseInterceptors, UploadedFile, NotFoundException, UploadedFiles, Logger } from '@nestjs/common';
 import { Request, Response } from 'express';
 import axios from 'axios';
 import { AuthService } from './auth.service';
@@ -23,6 +23,9 @@ import { JwtService } from '@nestjs/jwt';
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
+
   constructor(
     private jwtService: JwtService,
 
@@ -586,8 +589,8 @@ export class AuthController {
       const { id_token } = tokenResponse.data;
       const decoded: any = this.jwtService.decode(id_token);
       const appleUserId = decoded?.sub;
-
       const profile = { ...user, name, id: appleUserId }
+      this.logger.warn(`Apple login: id_token: ${id_token}, decoded: ${decoded}, user: ${user}, profile: ${profile}`)
       const result: any = await this.oauthService.handleAppleCallback(profile, state, res);
       return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
     } catch (e) {
