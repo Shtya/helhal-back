@@ -48,6 +48,7 @@ export class OAuthService {
       {
         secret: process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
         algorithm: 'ES256',
+        expiresIn: undefined,
         header: {
           alg: 'ES256',
           kid: process.env.APPLE_KEY_ID,   // 10-char Key ID
