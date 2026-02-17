@@ -41,14 +41,13 @@ export class OAuthService {
       {
         iss: process.env.APPLE_TEAM_ID,     // issuer
         iat: now,                          // issued at
-        exp: now + expiresInSeconds,       // expiration time
         aud: 'https://appleid.apple.com',  // audience
         sub: process.env.APPLE_CLIENT_ID,  // subject (Service ID)
       },
       {
         secret: process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
         algorithm: 'ES256',
-        expiresIn: undefined,
+        expiresIn: '180d',
         header: {
           alg: 'ES256',
           kid: process.env.APPLE_KEY_ID,   // 10-char Key ID
