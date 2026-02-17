@@ -560,9 +560,9 @@ export class AuthController {
   async appleCallback(@Req() req: any, @Res() res: any) {
     try {
 
-      //fix this 
-      const res = req.body;
-      const { code, state, user } = res;
+      //fix this
+      const { code, state, user } = req.body;
+
       const APPLE_CLIENT_SECRET = await this.oauthService.getAppleClientSecret();
 
       // Exchange code for tokens
