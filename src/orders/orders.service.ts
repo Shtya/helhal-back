@@ -515,6 +515,31 @@ export class OrdersService {
     throw new ForbiddenException('Access denied');
   }
 
+  async getActiveOrdersWithUser(currentUserId: string, otherUserId: string) {
+    return await this.orderRepository.find({
+      where: [
+        {
+          buyerId: currentUserId,
+          sellerId: otherUserId,
+          status: Not(In([OrderStatus.PENDING, OrderStatus.WAITING, OrderStatus.CANCELLED]))
+        },
+        {
+          buyerId: otherUserId,
+          sellerId: currentUserId,
+          status: Not(In([OrderStatus.PENDING, OrderStatus.WAITING, OrderStatus.CANCELLED]))
+        }
+      ],
+      // Only select requested fields + createdAt (mapped from created_at)
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        created_at: true,
+      },
+      order: { created_at: 'DESC' }
+    });
+  }
+
   async createOrderCheckout(userId: string, createOrderDto: any) {
     return await this.dataSource.transaction(async (manager) => {
 

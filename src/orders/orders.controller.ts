@@ -110,6 +110,15 @@ export class OrdersController {
     return this.ordersService.createOrder(req.user.id, createOrderDto);
   }
 
+  @Get('active-with-user/:otherUserId')
+  async getActiveOrdersWithUser(
+    @Req() req,
+    @Param('otherUserId') otherUserId: string
+  ) {
+    const currentUserId = req.user.id;
+    return this.ordersService.getActiveOrdersWithUser(currentUserId, otherUserId);
+  }
+
   // @Put(':id/status')
   // async updateOrderStatus(@Req() req, @Param('id') id: string, @Body() body: { status: string }) {
   //   return this.ordersService.updateOrderStatus(req.user.id, req.user.role, id, body.status, req);
