@@ -601,7 +601,7 @@ export class AuthController {
       }
 
 
-      const profile = { ...user, name, id: appleUserId }
+      const profile = { id: appleUserId, name, email };
       this.logger.warn(`Apple login: id_token: ${id_token}, decoded: ${JSON.stringify(decoded)}, user: ${JSON.stringify(user)}, profile: ${JSON.stringify(profile)}
       res: ${JSON.stringify(res)}`)
 
