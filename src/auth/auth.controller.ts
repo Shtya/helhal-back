@@ -563,13 +563,6 @@ export class AuthController {
       //fix this 
       const res = req.body;
       const { code, state, user } = res;
-      let name: string | null = null;
-
-      if (user && typeof user === 'object' && user.name) {
-        const { firstName, lastName } = user.name;
-        name = `${firstName ?? ''} ${lastName ?? ''}`.trim();
-      }
-
       const APPLE_CLIENT_SECRET = await this.oauthService.getAppleClientSecret();
 
       // Exchange code for tokens
@@ -586,13 +579,33 @@ export class AuthController {
       if (!tokenResponse.data.id_token) {
         throw new Error('Invalid token response from Apple');
       }
-
       const { id_token } = tokenResponse.data;
       const decoded: any = this.jwtService.decode(id_token);
       const appleUserId = decoded?.sub;
+
+      // Handle user info
+      let name: string | null = null;
+      let email: string | null = null;
+
+      if (user && typeof user === 'object') {
+        // First-time login
+        const { firstName, lastName } = user.name || {};
+        name = `${firstName ?? ''} ${lastName ?? ''}`.trim();
+        email = user.email;
+      } else {
+        // Subsequent logins: use id_token
+        email = decoded?.email;
+        if (email) {
+          name = email.split('@')[0]; // use first part of email as fallback name
+        }
+      }
+
+
       const profile = { ...user, name, id: appleUserId }
       this.logger.warn(`Apple login: id_token: ${id_token}, decoded: ${JSON.stringify(decoded)}, user: ${JSON.stringify(user)}, profile: ${JSON.stringify(profile)}
       res: ${JSON.stringify(res)}`)
+
+
       const result: any = await this.oauthService.handleAppleCallback(profile, state, res);
       return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
     } catch (e) {
