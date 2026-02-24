@@ -293,10 +293,8 @@ export class JobsService {
 
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.jobs, Permissions.Jobs.Edit)
 
-    if (!(user?.role === UserRole.ADMIN || hasPermission || job.buyerId === userId)) {
-      throw new ForbiddenException('You can only update your own jobs');
-    } else if (job.status === JobStatus.PUBLISHED) {
-      throw new NotFoundException('Job not found');
+    if (!(user?.role === UserRole.ADMIN || hasPermission || job.buyerId === userId) && job.status !== JobStatus.PUBLISHED) {
+      throw new ForbiddenException('The job not found or deleted');
     }
 
 
