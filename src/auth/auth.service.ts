@@ -356,7 +356,6 @@ export class AuthService {
       throw new UnauthorizedException('Incorrect email or password');
     }
 
-    await this.emailService.sendSellerFeePolicyEmail(user.email, user.username);
 
     if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
       throw new UnauthorizedException('Your account is inactive. Please contact support.');
