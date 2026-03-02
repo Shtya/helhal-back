@@ -23,6 +23,7 @@ export class SettingsController {
     return {
       privacyPolicy_en: settings.privacyPolicy_en,
       termsOfService_en: settings.termsOfService_en,
+      platformAccountUserId: settings.platformAccountUserId,
       privacyPolicy_ar: settings.privacyPolicy_ar,
       termsOfService_ar: settings.termsOfService_ar,
       contactEmail: settings.contactEmail,
@@ -32,6 +33,24 @@ export class SettingsController {
       inviteFaqs_ar: settings.inviteFaqs_ar,
       becomeSellerFaqs_en: settings.becomeSellerFaqs_en,
       becomeSellerFaqs_ar: settings.becomeSellerFaqs_ar,
+      siteName: settings.siteName,
+      siteLogo: settings.siteLogo,
+      facebook: settings.facebook,
+      twitter: settings.twitter,
+      instagram: settings.instagram,
+      linkedin: settings.linkedin,
+      pinterest: settings.pinterest,
+      sellerServiceFee: settings.sellerServiceFee,
+
+    };
+  }
+  @Get('preview')
+  async getPublicPreviewSettings() {
+    const settings = await this.settingsService.getSettings();
+
+    return {
+      platformAccountUserId: settings.platformAccountUserId,
+      contactEmail: settings.contactEmail,
       siteName: settings.siteName,
       siteLogo: settings.siteLogo,
       facebook: settings.facebook,

@@ -242,6 +242,7 @@ export class RatingsService {
                 'rating.buyer_rated_at',
                 'buyer.id',
                 'buyer.profileImage',
+                'buyer.role',
                 'buyerPerson.username',
                 'buyerPerson.email'
             ])
@@ -301,6 +302,7 @@ export class RatingsService {
             .addSelect([
                 'buyer.id',
                 'buyer.profileImage',
+                'buyer.role',
                 'buyerPerson.username',
                 'buyerPerson.email'
             ]);
@@ -312,6 +314,7 @@ export class RatingsService {
             .addSelect([
                 'seller.id',
                 'seller.profileImage',
+                'seller.role',
                 'sellerPerson.username',
                 'sellerPerson.email'
             ]);

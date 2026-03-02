@@ -69,12 +69,12 @@ export class OrdersService {
       // 2. Join and select specific fields for Buyer
       .leftJoin('order.buyer', 'buyer')
       .leftJoin('buyer.person', 'buyerPerson')
-      .addSelect(['buyer.id', 'buyer.profileImage', 'buyerPerson.username', 'buyerPerson.email'])
+      .addSelect(['buyer.role', 'buyer.id', 'buyer.profileImage', 'buyerPerson.username', 'buyerPerson.email'])
 
       // 3. Join and select specific fields for Seller
       .leftJoin('order.seller', 'seller')
       .leftJoin('seller.person', 'sellerPerson')
-      .addSelect(['seller.id', 'seller.profileImage', 'sellerPerson.username', 'sellerPerson.email'])
+      .addSelect(['seller.role', 'seller.id', 'seller.profileImage', 'sellerPerson.username', 'sellerPerson.email'])
 
       // 4. Join and select Disputes (all fields or specific ones)
       .leftJoinAndSelect('order.disputes', 'disputes')

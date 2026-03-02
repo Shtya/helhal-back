@@ -5,7 +5,7 @@ import axios from 'axios';
 import { AuthService } from './auth.service';
 import { OAuthService } from './oauth.service';
 import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, DeactivateAccountDto, UpdateUserPermissionsDto, PhoneRegisterDto, PhoneVerifyDto, NafazDto } from 'dto/user.dto';
-import { JwtAuthGuard } from './guard/jwt-auth.guard';
+import { JwtAuthGuard, OptionalJwtAuthGuard } from './guard/jwt-auth.guard';
 import { AccessGuard } from './guard/access.guard';
 import { RequireAccess } from 'decorators/access.decorator';
 import { SellerLevel, User, UserRole } from 'entities/global.entity';
@@ -67,10 +67,10 @@ export class AuthController {
   async getCurrentUser(@Req() req: any) {
     return this.authService.getCurrentUser(req.user.id);
   }
-
+  @UseGuards(OptionalJwtAuthGuard)
   @Get('user/:id')
-  async getUser(@Param('id') id: string) {
-    return this.authService.getUserInfo(id);
+  async getUser(@Param('id') id: string, @Req() req: any) {
+    return this.authService.getUserInfo(id, req.user);
   }
 
   @UseGuards(JwtAuthGuard)

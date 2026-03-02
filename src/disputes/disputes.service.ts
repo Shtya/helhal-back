@@ -180,7 +180,7 @@ export class DisputesService {
       messages: messages.map(m => ({
         id: m.id,
         parentId: (m as any).parentId || null,
-        sender: m.sender ? { id: m.sender.id, username: m.sender.username, profileImage: m.sender.profileImage } : { id: m.senderId },
+        sender: m.sender ? { id: m.sender.id, username: m.sender.username, profileImage: m.sender.profileImage, role: m.sender?.role } : { id: m.senderId },
         message: m.message,
         created_at: m.created_at,
       })),
@@ -867,7 +867,7 @@ export class DisputesService {
     const mapped = messages.map(m => ({
       id: m.id,
       parentId: (m as any).parentId || null,
-      sender: m.sender ? { id: m.sender.id, username: m.sender.username, profileImage: m.sender.profileImage } : { id: m.senderId },
+      sender: m.sender ? { id: m.sender.id, username: m.sender.username, profileImage: m.sender.profileImage, role: m.sender?.role } : { id: m.senderId },
       message: m.message,
       created_at: m.created_at,
     }));

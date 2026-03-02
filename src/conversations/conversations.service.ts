@@ -383,6 +383,7 @@ export class ConversationsService {
       .select([
         'user.id',
         'user.profileImage',
+        'user.role',
         'user.memberSince',
         'person.username',
         'person.email'

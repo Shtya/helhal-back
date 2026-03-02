@@ -434,8 +434,18 @@ export class AuthService {
     return this.serializeUser(user);
   }
 
+  canViewUserProfile(meRole: string, targetRole: string) {
+    if (meRole === UserRole.ADMIN) return true;
 
-  async getUserInfo(userId: string) {
+    if (meRole === UserRole.BUYER || meRole === UserRole.SELLER || !meRole) {
+      return targetRole === UserRole.SELLER || targetRole === UserRole.ADMIN;
+    }
+
+    return false;
+  }
+
+  async getUserInfo(userId: string, me: any) {
+
     const qb = this.userRepository.createQueryBuilder('user')
       .innerJoinAndSelect('user.person', 'person')
       .leftJoinAndSelect('person.country', 'country')
@@ -457,10 +467,24 @@ export class AuthService {
       .limit(10);
 
     const user = await qb.getOne();
+    let meRole: string | undefined;
 
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
+    if (me?.id) {
+      const meUser = await this.userRepository.findOne({
+        where: { id: me.id },
+        select: ['id', 'role'], // only what we need
+      });
+
+      meRole = meUser?.role;
+    }
+    const isSelf = me?.id === user.id;
+    if (!isSelf && !this.canViewUserProfile(meRole, user.role)) {
+      throw new ForbiddenException('You are not allowed to view this profile');
+    }
+
     const plainUser = instanceToPlain(user, {
       enableCircularCheck: true,
     })

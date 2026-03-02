@@ -392,6 +392,7 @@ export class ServicesService {
       .addSelect([
         'seller.id',
         'seller.profileImage',
+        'seller.role',
         'seller.sellerLevel',
         'seller.lastActivity',
         'seller.topRated',
