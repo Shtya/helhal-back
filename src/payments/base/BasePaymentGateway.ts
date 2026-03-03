@@ -16,7 +16,7 @@ export abstract class BasePaymentGateway {
         protected readonly ordersService: OrdersService
     ) { }
 
-    protected DEFAULT_CURRENCY = "EGP";
+    protected DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY || "SAR";
     protected DEFAULT_COUNTRY_ISO2 = "SA";
 
     // Common logic for all gateways
@@ -91,6 +91,10 @@ export abstract class BasePaymentGateway {
         bankCode: string;
         clientReferenceId: string;
     }): Promise<{ externalTransactionId: string }>;
+
+    protected abstract transactionInquiry(
+        params: { orderId?: string; }
+    ): Promise<any>;
 
     protected async finalizeOrder(txId: string, success: boolean, method: string, extTxId: string, extOrderId: string) {
         return await this.ordersService.completeOrderPayment(txId, success, method, extTxId, extOrderId);

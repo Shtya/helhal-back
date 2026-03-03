@@ -31,8 +31,7 @@ export class OrdersService {
     public userRepository: Repository<User>,
     @InjectRepository(Invoice)
     public invoiceRepository: Repository<Invoice>,
-    @InjectRepository(Payment)
-    public paymentRepository: Repository<Payment>,
+
 
     @InjectRepository(UserRelatedAccount)
     public userAccountsRepo: Repository<UserRelatedAccount>,
@@ -166,18 +165,19 @@ export class OrdersService {
         userId = transaction.userId;
         orderId = transaction.orderId;
         // 2. Skip if already processed
-        if (transaction.status !== TransactionStatus.PENDING) {
+        if (!(transaction.status === TransactionStatus.PENDING ||
+          transaction.status === TransactionStatus.FAILED)) {
           throw new BadRequestException('Transaction already processed');
         }
-        const payment = await manager.findOne(Payment, {
-          where: { transactionId: transactionId }
-        });
+        // const payment = await manager.findOne(Payment, {
+        //   where: { transactionId: transactionId }
+        // });
 
-        if (payment) {
-          payment.status = isSuccess ? PaymentStatus.PAID : PaymentStatus.FAILED;
-          payment.paidAt = isSuccess ? new Date() : null
-          await manager.save(payment);
-        }
+        // if (payment) {
+        //   payment.status = isSuccess ? PaymentStatus.PAID : PaymentStatus.FAILED;
+        //   payment.paidAt = isSuccess ? new Date() : null
+        //   await manager.save(payment);
+        // }
         await manager.update(Transaction, transactionId, {
           externalTransactionId: externalTxId?.toString(),
           externalOrderId: paymobOrderId?.toString(),

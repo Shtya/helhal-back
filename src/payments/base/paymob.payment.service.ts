@@ -4,7 +4,7 @@ import axios from "axios";
 import { Invoice, Order, Payment, PaymentStatus, Transaction, TransactionBillingInfo, TransactionStatus, TransactionType, UserSavedCard } from "entities/global.entity";
 import { AccountingService } from "src/accounting/accounting.service";
 import { DataSource, In, Repository } from "typeorm";
-import { EVENT_TTL_SECONDS, getPaymobIntegrationId, PAYMENT_TIMING, UnifiedCheckout } from "./payment.constant";
+import { EVENT_TTL_SECONDS, getPaymobIntegrationIds, PAYMENT_TIMING, UnifiedCheckout } from "./payment.constant";
 import { BasePaymentGateway } from "./BasePaymentGateway";
 import * as crypto from 'crypto';
 import { RedisService } from "common/RedisService";
@@ -14,6 +14,7 @@ import { OrdersService } from "src/orders/orders.service";
 
 @Injectable()
 export class PaymobPaymentService extends BasePaymentGateway {
+
     private readonly logger = new Logger(PaymobPaymentService.name);
     private readonly secretKey: string = process.env.PAYMOB_SECRET_KEY!;
     private readonly publicKey: string = process.env.PAYMOB_PUBLIC_KEY!;
@@ -24,6 +25,8 @@ export class PaymobPaymentService extends BasePaymentGateway {
     private readonly client_secret: string = process.env.PAYMOB_PAYOUT_CLIETN_SECRET!;
     private readonly username: string = process.env.PAYMOB_PAYOUT_USERNAME!;
     private readonly password: string = process.env.PAYMOB_PAYOUT_PASSWORD!;
+
+    private readonly baseUrl: string = process.env.BASE_PAYMOB_URL!;
 
 
     constructor(
@@ -54,29 +57,29 @@ export class PaymobPaymentService extends BasePaymentGateway {
         const orderId = order.id;
         // 🟢 1. CHECK FOR EXISTING ACTIVE ATTEMPT
         // We look for an attempt that hasn't expired yet
-        const existing = await this.paymentRepo.findOne({
-            where: {
-                invoiceId: invoice.id,
-                status: PaymentStatus.PENDING
-            },
-        });
+        // const existing = await this.paymentRepo.findOne({
+        //     where: {
+        //         invoiceId: invoice.id,
+        //         status: PaymentStatus.PENDING
+        //     },
+        // });
 
-        if (existing) {
-            // Verify the linked transaction is still PENDING (Double safety)
-            const linkedTx = await this.dataSource.getRepository(Transaction).findOne({
-                where: { id: existing.transactionId }
-            });
+        // if (existing) {
+        //     // Verify the linked transaction is still PENDING (Double safety)
+        //     const linkedTx = await this.dataSource.getRepository(Transaction).findOne({
+        //         where: { id: existing.transactionId }
+        //     });
 
-            if (linkedTx && linkedTx.status === TransactionStatus.PENDING) {
-                this.logger.log(`♻️ Reusing existing payment intention for Order ${orderId}`);
+        //     if (linkedTx && linkedTx.status === TransactionStatus.PENDING) {
+        //         this.logger.log(`♻️ Reusing existing payment intention for Order ${orderId}`);
 
-                return {
-                    paymentUrl: `https://accept.paymob.com/unifiedcheckout/?publicKey=${this.publicKey}&clientSecret=${existing.clientSecret}`,
-                    transactionId: existing.transactionId,
-                    orderId: orderId
-                };
-            }
-        }
+        //         return {
+        //             paymentUrl: `${this.baseUrl}/unifiedcheckout/?publicKey=${this.publicKey}&clientSecret=${existing.clientSecret}`,
+        //             transactionId: existing.transactionId,
+        //             orderId: orderId
+        //         };
+        //     }
+        // }
         // 2. Update the main billing profile first (Standardizing the user's current data)
         await this.accountingService.updateBillingInformation(userId, billingInfo);
         // const savedCards = await this.savedCardRepo.find({ where: { userId } }); // 💢for saved card logic 
@@ -111,7 +114,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
                 amount: amountInCents,
                 currency: this.DEFAULT_CURRENCY,
                 // card_tokens: cardTokens, // 💢for saved card logic 
-                payment_methods: [Number(getPaymobIntegrationId('card')), Number(getPaymobIntegrationId('wallet'))],
+                payment_methods: getPaymobIntegrationIds(),
                 expiration: PAYMENT_TIMING.INTENTION_TTL, // 30 minutes
                 items: [{
                     name: order.title,
@@ -127,16 +130,16 @@ export class PaymobPaymentService extends BasePaymentGateway {
                     country: snapshot.countryIso, // Captured in snapshot logic
                 },
                 special_reference: savedTx.id, // Our internal order ID
-                notification_url: `${process.env.BACKEND_URL}/api/v1/payments/webhooks/paymob`,
-                redirection_url: `${process.env.BACKEND_URL}/api/v1/payments/paymob/callback`,
-                // notification_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/webhooks/paymob',
-                // redirection_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/paymob/callback',
+                // notification_url: `${process.env.BACKEND_URL}/api/v1/payments/webhooks/paymob`,
+                // redirection_url: `${process.env.BACKEND_URL}/api/v1/payments/paymob/callback`,
+                notification_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/webhooks/paymob',
+                redirection_url: 'https://binaural-taryn-unprecipitatively.ngrok-free.dev/api/v1/payments/paymob/callback',
             };
 
             // D. Call Paymob API
             try {
                 const response = await axios.post(
-                    'https://accept.paymob.com/v1/intention/',
+                    `${this.baseUrl}/v1/intention/`,
                     payload,
                     { headers: { 'Authorization': `Token ${this.secretKey}` } }
                 );
@@ -147,21 +150,22 @@ export class PaymobPaymentService extends BasePaymentGateway {
                 });
                 const clientSecret = response.data.client_secret;
 
-                const attempt = manager.create(Payment, {
-                    invoiceId: invoice.id,
-                    transactionId: savedTx.id,
-                    clientSecret: clientSecret,
-                    userId: order.buyerId,
-                    status: PaymentStatus.PENDING,
-                    amount: savedTx.amount,
-                    currencyId: "SAR"
-                });
-                await manager.save(attempt);
+                // const attempt = manager.create(Payment, {
+                //     invoiceId: invoice.id,
+                //     transactionId: savedTx.id,
+                //     clientSecret: clientSecret,
+                //     externalOrderId: response.data?.intention_order_id,
+                //     userId: order.buyerId,
+                //     status: PaymentStatus.PENDING,
+                //     amount: savedTx.amount,
+                //     currencyId: "SAR"
+                // });
+                // await manager.save(attempt);
                 // LOG THE INTENTION SUCCESS (Log with Timestamp & Parameters)
                 this.logger.log(
                     `Paymob Intention Created | Order: ${orderId} | User: ${userId} | TransactionId: ${savedTx.id} | PaymobOrderId: ${intentionData.intention_order_id}`,
                 );
-                const paymentUrl = `https://accept.paymob.com/unifiedcheckout/?publicKey=${this.publicKey}&clientSecret=${clientSecret}`;
+                const paymentUrl = `${this.baseUrl}/unifiedcheckout/?publicKey=${this.publicKey}&clientSecret=${clientSecret}`;
                 // Return unified response to frontend
                 return {
                     paymentUrl: paymentUrl,
@@ -483,6 +487,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
             return [];
         }
     }
+
     async processPayoutWebhook(body: any) {
         const paymobTrxId = body.transaction_id?.toString();
         const status = body.disbursement_status; // e.g., 'successful' or 'failed'
@@ -547,12 +552,11 @@ export class PaymobPaymentService extends BasePaymentGateway {
 
         try {
             const requestBody = {
-                issuer: "instant_bank",
+                bank_code: bankCode.trim(),
                 amount: Number(amount), // Force number type
                 full_name: fullName.trim(),
+                issuer: "bank_card",
                 bank_card_number: iban.trim(),
-                bank_code: bankCode.trim(),
-                customer_bears_fees: true,
                 client_reference_id: clientReferenceId.toString().trim()
             };
 
@@ -612,7 +616,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
             const token = await this.getAuthToken();
 
             const response = await axios.get(
-                `https://accept.paymob.com/api/acceptance/transactions/${transactionId}`,
+                `${this.baseUrl}/api/acceptance/transactions/${transactionId}`,
                 {
                     headers: {
                         'Authorization': `Bearer ${token}`
@@ -772,6 +776,78 @@ export class PaymobPaymentService extends BasePaymentGateway {
             .digest('hex');
 
         return calculatedHmac === queryHmac;
+    }
+
+    protected async transactionInquiry(params: {
+        orderId?: string;
+    }): Promise<any> {
+        if (!params.orderId) {
+            throw new BadRequestException(
+                'orderId is required',
+            );
+        }
+
+        const token = await this.getAuthToken();
+
+        try {
+            const response = await axios.post(
+                `${this.baseUrl}/api/ecommerce/orders/transaction_inquiry`,
+                {
+                    auth_token: token,
+                    order_id: params.orderId,
+                },
+                {
+                    headers: { 'Content-Type': 'application/json' },
+                },
+            );
+
+            return response.data;
+        } catch (error) {
+            if (error.response?.data?.detail === 'Transaction Not Found') {
+                return null; // means no payment attempt yet
+            }
+
+            this.logger.error(
+                'Transaction Inquiry Failed',
+                error.response?.data || error.message,
+            );
+
+            throw new InternalServerErrorException(
+                'Failed to check transaction status',
+            );
+        }
+    }
+
+    protected async getPayinAuthToken(): Promise<string> {
+        const cacheKey = 'paymob:accept:payin_auth_token';
+
+        const cached = await this.redisService.redisClient.get(cacheKey);
+        if (cached) return cached;
+
+        try {
+            const response = await axios.post(
+                `${this.baseUrl}/api/auth/tokens`,
+                {
+                    api_key: this.secretKey.trim(),
+                },
+                {
+                    headers: { 'Content-Type': 'application/json' },
+                },
+            );
+
+            const token = response.data.token;
+
+            // Accept token usually valid ~1 hour
+            await this.redisService.redisClient.set(cacheKey, token, 'EX', 3300);
+
+            return token;
+        } catch (error) {
+            this.logger.error(
+                '❌ Paymob Accept Auth Failed',
+                error.response?.data || error.message,
+            );
+            throw new UnauthorizedException('Paymob authentication failed');
+        }
     }
 
     // async ProcessRefund() {

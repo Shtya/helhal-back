@@ -1718,8 +1718,11 @@ export class Payment extends CoreEntity {
   @Column({ name: 'currency_id' })
   currencyId: string;
 
-  @Column({ name: 'client_secret', nullable: true })
-  clientSecret: string;
+  // @Column({ name: 'client_secret', nullable: false })
+  // clientSecret: string;
+
+  // @Column({ name: 'external_order_id', nullable: false })
+  // externalOrderId: string;
 
   @Column({ type: 'enum', enum: PaymentStatus, default: PaymentStatus.PENDING })
   status: PaymentStatus;

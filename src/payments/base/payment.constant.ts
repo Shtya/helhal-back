@@ -14,13 +14,16 @@ export interface UnifiedCheckout {
     billingInfo: BillingInfoDto;
 }
 // payment-methods.enum.ts
-export const getPaymobIntegrationId = (method: 'card' | 'wallet'): string | undefined => {
-    const map: Record<string, string | undefined> = {
+export const getPaymobIntegrationIds = (): number[] => {
+    const map: Record<'card' | 'wallet', string | undefined> = {
         card: process.env.PAYMOB_CARD_INTEGRATION_ID,
         wallet: process.env.PAYMOB_WALLET_INTEGRATION_ID,
     };
-    return map[method];
-};
+
+    return (['card', 'wallet'] as const)
+        .map(method => map[method] ? Number(map[method]) : null)
+        .filter((id): id is number => id !== null);
+}
 
 // constants.ts
 export const PAYMENT_TIMING = {
