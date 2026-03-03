@@ -556,6 +556,8 @@ export class PaymobPaymentService extends BasePaymentGateway {
                 amount: Number(amount), // Force number type
                 full_name: fullName.trim(),
                 issuer: "bank_card",
+                comment: "NA",
+                purpose_code: "BB",
                 bank_card_number: iban.trim(),
                 client_reference_id: clientReferenceId.toString().trim()
             };

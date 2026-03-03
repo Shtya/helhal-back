@@ -17,7 +17,8 @@ export class WithdrawalCleanupService {
         private readonly gatewayFactory: PaymentGatewayFactory,
     ) { }
 
-    @Cron('0 */15 * * * *')
+    // @Cron('0 */15 * * * *')
+    @Cron('0 0 0 * * *')
     async checkPendingWithdrawals() {
         this.logger.log('🕵️ Starting Batch Withdrawal Reconciliation Job...');
 
