@@ -541,7 +541,7 @@ export class AuthController {
 
       const result: any = await this.oauthService.handleGoogleCallback(userInfoResponse.data, state, res);
 
-      return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/success?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
     } catch (e) {
       return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${e.message}`);
     }
@@ -605,7 +605,7 @@ export class AuthController {
 
 
       const result: any = await this.oauthService.handleAppleCallback(profile, state, res);
-      return res.redirect(`${process.env.FRONTEND_URL}/auth?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
+      return res.redirect(`${process.env.FRONTEND_URL}/auth/success?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
     } catch (e) {
       return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${e.message}`);
     }
