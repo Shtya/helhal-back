@@ -543,7 +543,14 @@ export class AuthController {
 
       return res.redirect(`${process.env.FRONTEND_URL}/auth/success?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
     } catch (e) {
-      return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${e.message}`);
+      const parsedState = JSON.parse(state);
+      const redirectQuery = parsedState?.redirectPath ? `&redirect=${encodeURIComponent(parsedState.redirectPath)}` : '';
+
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${encodeURIComponent(
+          e.message
+        )}${redirectQuery}`
+      );
     }
   }
 
@@ -558,10 +565,8 @@ export class AuthController {
 
   @Post('apple/callback')
   async appleCallback(@Req() req: any, @Res() res: any) {
+    const { code, state, user } = req.body;
     try {
-
-      //fix this
-      const { code, state, user } = req.body;
 
       const APPLE_CLIENT_SECRET = await this.oauthService.getAppleClientSecret();
 
@@ -607,7 +612,15 @@ export class AuthController {
       const result: any = await this.oauthService.handleAppleCallback(profile, state, res);
       return res.redirect(`${process.env.FRONTEND_URL}/auth/success?accessToken=${result?.user?.accessToken}&refreshToken=${result?.user?.refreshToken}&${result?.redirectPath ? 'redirect=' + encodeURIComponent(result.redirectPath) : ''}`);
     } catch (e) {
-      return res.redirect(`${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${e.message}`);
+      const parsedState = JSON.parse(state);
+      const redirectQuery = parsedState?.redirectPath ? `&redirect=${encodeURIComponent(parsedState.redirectPath)}` : '';
+
+      return res.redirect(
+        `${process.env.FRONTEND_URL}/auth?tab=login&error=oauth_failed&error_message=${encodeURIComponent(
+          e.message
+        )}${redirectQuery}`
+      );
+
     }
   }
   //🔹 loged in users phone verification flow
