@@ -739,6 +739,8 @@ export class JobsService {
             type,
             title: 'Proposal Status Updated',
             message,
+            relatedEntityType: 'proposal',
+            relatedEntityId: proposal.jobId,
           } as any);
           await notifRepo.save(n as any);
         } catch (err) {

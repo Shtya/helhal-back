@@ -24,7 +24,7 @@
     "typeorm": "typeorm",
     "migration:generate": "npx typeorm-ts-node-commonjs migration:generate src/migration/newMigration  -d src/data-source.ts",
     "migration:run": "npx typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
-    "migration:revert": "npm run typeorm migration:revert"
+    "migration:revert": "npx typeorm-ts-node-commonjs migration:revert -d src/data-source.ts"
   },
   "dependencies": {
     "@faker-js/faker": "^9.9.0",

@@ -23,7 +23,7 @@ export class ServicesController {
     }
   })
   async getServicesAdmin(@Query('') query: any) {
-    return CRUD.findAll(this.servicesService.serviceRepository, 'service', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['seller', 'category'], ['title'], { status: query.status == 'all' ? '' : query.status });
+    return CRUD.findAll(this.servicesService.serviceRepository, 'service', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['seller', 'seller.person', 'category'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
 
   @Get()
@@ -67,6 +67,12 @@ export class ServicesController {
   @UseGuards(OptionalJwtAuthGuard)
   async getService(@Param('slug') slug: string, @Req() req) {
     return this.servicesService.getService(slug, req.user?.id, req);
+  }
+
+  @Get('id/:id')
+  @UseGuards(OptionalJwtAuthGuard)
+  async getServicebyId(@Param('id') id: string, @Req() req) {
+    return this.servicesService.getServiceById(id, req.user?.id, req);
   }
 
   @Post()

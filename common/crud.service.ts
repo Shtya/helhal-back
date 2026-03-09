@@ -49,12 +49,26 @@ export class CRUD {
     const query = repository.createQueryBuilder(entityName).skip(skip).take(limitNumber);
 
     if (relations?.length > 0) {
-      const invalidRelations = relations.filter(relation => !repository.metadata.relations.some(rel => rel.propertyName === relation));
-      if (invalidRelations.length > 0) {
-        throw new BadRequestException(`Invalid relations: ${invalidRelations.join(', ')}`);
-      }
-      relations.forEach(relation => {
-        query.leftJoinAndSelect(`${entityName}.${relation}`, relation);
+      const joinedAliases = new Set(); // Keep track of what we've already joined
+
+      relations.forEach(relationPath => {
+        const parts = relationPath.split('.');
+        let currentParentAlias = entityName; // e.g., 'service'
+
+        parts.forEach((property, index) => {
+          // Create a unique alias based on the full path to avoid collisions
+          // e.g., 'seller' or 'seller_person'
+          const alias = parts.slice(0, index + 1).join('_');
+
+          // ONLY join if we haven't joined this specific path yet
+          if (!joinedAliases.has(alias)) {
+            query.leftJoinAndSelect(`${currentParentAlias}.${property}`, alias);
+            joinedAliases.add(alias);
+          }
+
+          // Move the pointer so the next nested property joins from this alias
+          currentParentAlias = alias;
+        });
       });
     }
 

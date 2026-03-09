@@ -32,7 +32,7 @@ export class OrdersController {
     }
   })
   async getOrdersAdmin(@Query('') query: any) {
-    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'seller', 'service', 'invoices', 'offlineContract'], ['title'], { status: query.status == 'all' ? '' : query.status });
+    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'buyer.person', 'seller', 'seller.person', 'service', 'invoices', 'offlineContract'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
 
 

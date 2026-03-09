@@ -617,6 +617,36 @@ export class ServicesService {
     };
   }
 
+  async getServiceById(id: string, userId: string, req: any) {
+    const service = await this.serviceRepository.findOne({
+      where: { id },
+      relations: {
+        category: true,
+      }
+    });
+
+    if (!service) {
+      throw new NotFoundException('Service not found');
+    }
+
+    const user = req?.user;
+
+    // Only allow inactive service preview for the owner or admin
+    const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.services, Permissions.Services.View)
+    const isOwnerOrAdmin = service.sellerId === userId || user?.role === 'admin' || hasPermission;
+    if (service.status !== ServiceStatus.ACTIVE && !isOwnerOrAdmin) {
+      throw new NotFoundException('Service not found');
+    }
+
+
+    const plainService = instanceToPlain(service, {
+      enableCircularCheck: true
+    })
+    return {
+      ...plainService,
+    };
+  }
+
   async getService(slug: string, userId: string, req: any) {
     const service = await this.serviceRepository.findOne({
       where: { slug },

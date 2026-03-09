@@ -1381,7 +1381,7 @@ export class OrdersService {
             title: 'Proposal Rejected',
             message: `Another proposal was accepted for job "${job.title}".`,
             relatedEntityType: 'proposal',
-            relatedEntityId: p.id,
+            relatedEntityId: p.jobId,
           } as any),
         );
         if (notifs.length) await notifRepo.save(notifs);
@@ -1411,7 +1411,7 @@ export class OrdersService {
           title: 'Proposal Accepted',
           message: `Your proposal for "${job.title}" was accepted and paid.`,
           relatedEntityType: 'proposal',
-          relatedEntityId: acceptedProposal.id,
+          relatedEntityId: acceptedProposal.jobId,
         }) as any,
       );
     });

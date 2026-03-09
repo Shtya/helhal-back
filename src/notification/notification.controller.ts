@@ -2,6 +2,7 @@ import { Controller, Get, Put, Body, UseGuards, Req, Param, Query } from '@nestj
 import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { NotificationService } from './notification.service';
 import { CRUD } from 'common/crud.service';
+import { NotificationCategoriesDto } from 'dto/notifications.dto';
 
 
 @Controller('notifications')
@@ -80,7 +81,7 @@ export class NotificationController {
 
   @UseGuards(JwtAuthGuard)
   @Put('settings/user')
-  async updateUserNotificationSettings(@Req() req: any, @Body() settings: any) {
+  async updateUserNotificationSettings(@Req() req: any, @Body() settings: NotificationCategoriesDto) {
     return this.notificationService.updateUserNotificationSettings(req.user.id, settings);
   }
 }

@@ -2,6 +2,9 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Notification, NotificationSetting, User } from 'entities/global.entity';
+import { NotificationCategoriesDto } from 'dto/notifications.dto';
+
+
 
 @Injectable()
 export class NotificationService {
@@ -12,7 +15,7 @@ export class NotificationService {
     public notificationSettingRepository: Repository<NotificationSetting>,
     @InjectRepository(User)
     public userRepository: Repository<User>,
-  ) {}
+  ) { }
 
   async getAdminNotifications(_requesterId: string, query: any) {
     // (Optional) still restrict the endpoint to admins:
@@ -82,56 +85,55 @@ export class NotificationService {
 
     return { unread: count };
   }
-
   async getUserNotificationSettings(userId: string) {
+    // 1. Try to find existing settings
     let settings = await this.notificationSettingRepository.findOne({ where: { userId } });
 
+    // 2. If no settings exist, create them with your new final categories
     if (!settings) {
-      // Create default notification settings
+      const defaultSettings = {
+        messages: true,
+        services: true,
+        proposals: true,
+        transactions: true,
+        disputes: true,
+        orders: true,
+        jobs: true,
+        others: true,
+      };
+
       settings = this.notificationSettingRepository.create({
         userId,
+        // We apply the new structure to all channels (Email, Mobile/Push)
         settings: {
-          email: {
-            inboxMessages: true,
-            orderMessages: true,
-            serviceUpdates: true,
-            quoteOrderUpdates: true,
-            ratingReminders: true,
-            adminNotifications: true,
-          },
-          mobile: {
-            inboxMessages: false,
-            orderMessages: false,
-            serviceUpdates: false,
-            quoteOrderUpdates: false,
-            ratingReminders: false,
-            adminNotifications: false,
-          },
-          push: {
-            enabled: true,
-            sound: true,
-          },
+          ...defaultSettings
         },
       });
+
       await this.notificationSettingRepository.save(settings);
     }
 
     return settings;
   }
 
-  async updateUserNotificationSettings(userId: string, newSettings: any) {
-    let settings = await this.notificationSettingRepository.findOne({ where: { userId } });
+  async updateUserNotificationSettings(userId: string, newSettings: NotificationCategoriesDto) {
+    let settingsRecord = await this.notificationSettingRepository.findOne({ where: { userId } });
 
-    if (!settings) {
-      settings = this.notificationSettingRepository.create({
+    if (!settingsRecord) {
+      // Create new record if it doesn't exist
+      settingsRecord = this.notificationSettingRepository.create({
         userId,
         settings: newSettings,
       });
     } else {
-      settings.settings = { ...settings.settings, ...newSettings };
+      // Deep merge to protect existing nested data
+      settingsRecord.settings = {
+        ...settingsRecord.settings,
+        ...newSettings,
+      };
     }
 
-    return this.notificationSettingRepository.save(settings);
+    return this.notificationSettingRepository.save(settingsRecord);
   }
 
   async markAsRead(userId: string, notificationId: string) {
@@ -154,33 +156,28 @@ export class NotificationService {
   }
 
   async getNotificationSettings(userId: string) {
+    // 1. Try to find existing settings
     let settings = await this.notificationSettingRepository.findOne({ where: { userId } });
 
+    // 2. If no settings exist, create the final default structure
     if (!settings) {
-      // Default notification settings
+      // These are the 8 final categories all set to true
+      const defaultCategories = {
+        messages: true,
+        services: true,
+        proposals: true,
+        transactions: true,
+        disputes: true,
+        orders: true,
+        jobs: true,
+        others: true,
+      };
+
       settings = this.notificationSettingRepository.create({
         userId,
-        settings: {
-          email: {
-            orderMessages: true,
-            serviceUpdates: true,
-            promotions: false,
-            adminNotifications: true,
-          },
-          push: {
-            orderMessages: true,
-            serviceUpdates: true,
-            promotions: false,
-            adminNotifications: true,
-          },
-          sms: {
-            orderMessages: false,
-            serviceUpdates: false,
-            promotions: false,
-            adminNotifications: false,
-          },
-        },
+        ...defaultCategories
       });
+
       await this.notificationSettingRepository.save(settings);
     }
 

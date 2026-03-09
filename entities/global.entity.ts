@@ -878,8 +878,28 @@ export class NotificationSetting extends CoreEntity {
   @Column({ name: 'user_id', unique: true })
   userId: string;
 
-  @Column({ type: 'jsonb', default: {} })
-  settings: any;
+  @Column({
+    type: 'jsonb', nullable: true, default: {
+      messages: true,
+      services: true,
+      proposals: true,
+      transactions: true,
+      disputes: true,
+      orders: true,
+      jobs: true,
+      others: true
+    }
+  })
+  settings: {
+    messages: boolean;
+    services: boolean;
+    proposals: boolean;
+    transactions: boolean;
+    disputes: boolean;
+    orders: boolean;
+    jobs: boolean;
+    others: boolean;
+  };
 }
 
 @Entity('notifications')
