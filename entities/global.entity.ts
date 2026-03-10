@@ -464,8 +464,9 @@ export class User extends CoreEntity {
   @OneToMany(() => Recommendation, recommendation => recommendation.user)
   recommendations: Recommendation[];
 
-  @OneToMany(() => NotificationSetting, setting => setting.user)
-  notificationSettings: NotificationSetting[];
+  // user.entity.ts
+  @OneToOne(() => NotificationSetting, setting => setting.user)
+  notificationSettings: Relation<NotificationSetting>; // تم إزالة المصفوفة []
 
   @OneToMany(() => Service, service => service.seller)
   services: Service[];
@@ -871,7 +872,7 @@ export class ServiceBoost extends CoreEntity {
 
 @Entity('notification_settings')
 export class NotificationSetting extends CoreEntity {
-  @ManyToOne(() => User, user => user.notificationSettings)
+  @OneToOne(() => User, user => user.notificationSettings)
   @JoinColumn({ name: 'user_id' })
   user: User;
 

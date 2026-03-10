@@ -483,8 +483,8 @@ export class JobsService {
     job.status = status;
     const notification = this.notificationRepository.create({
       userId: job.buyerId,
-      type: 'service_status_update',
-      title: 'Service Status Changed',
+      type: 'job_status_update',
+      title: 'Job Status Changed',
       message: `The job "${job.title}" status has been updated to "${status}".`,
       relatedEntityType: 'job',
       relatedEntityId: job.id,

@@ -7,12 +7,14 @@ import { AuthService } from 'src/auth/auth.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Setting, User } from 'entities/global.entity';
 import { SettingsService } from 'src/settings/settings.service';
+import { MailModule } from 'common/mailModule';
 
 @Module({
     imports: [
+        MailModule,
         TypeOrmModule.forFeature([User, Setting])
     ],
     controllers: [InviteController],
-    providers: [InviteService, MailService, SettingsService],
+    providers: [InviteService, SettingsService],
 })
 export class InviteModule { }

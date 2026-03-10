@@ -117,7 +117,7 @@ import { SharedModule } from 'common/shared.module';
     AccountingModule,
   ],
   controllers: [ApiController],
-  providers: [LoggingValidationPipe, QueryFailedErrorFilter, NotificationSubscriber, ResponseTimeUpdaterService, OrderAutoUpdaterService],
+  providers: [LoggingValidationPipe, QueryFailedErrorFilter, ResponseTimeUpdaterService, OrderAutoUpdaterService],
   exports: [LoggingValidationPipe],
 })
 export class AppModule { }
