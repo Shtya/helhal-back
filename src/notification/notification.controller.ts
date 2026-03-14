@@ -3,17 +3,19 @@ import { JwtAuthGuard } from '../auth/guard/jwt-auth.guard';
 import { NotificationService } from './notification.service';
 import { CRUD } from 'common/crud.service';
 import { NotificationCategoriesDto } from 'dto/notifications.dto';
+import { TranslationService } from 'common/translation.service';
 
 
 @Controller('notifications')
 @UseGuards(JwtAuthGuard)
 export class NotificationController {
-  constructor(private notificationService: NotificationService) { }
+  constructor(private notificationService: NotificationService, private readonly i18n: TranslationService) { }
 
   @Get()
   async getNotifications(@Query() query: any, @Req() req: any) {
     return CRUD.findAll(
       this.notificationService.notificationRepository,
+      this.i18n,
       'notification',
       query.search,
       query.page,
@@ -41,6 +43,7 @@ export class NotificationController {
   async getUnreadCount(@Query() query: any, @Req() req: any) {
     return CRUD.findAll(
       this.notificationService.notificationRepository,
+      this.i18n,
       'notification',
       query.search,
       query.page,

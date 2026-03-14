@@ -7,6 +7,8 @@ import { SettingsService } from 'src/settings/settings.service';
 import { Repository } from 'typeorm';
 import { User } from 'entities/global.entity';
 import { InjectRepository } from '@nestjs/typeorm';
+import { TranslationService } from 'common/translation.service';
+
 @Injectable()
 export class InviteService {
     constructor(
@@ -14,6 +16,7 @@ export class InviteService {
         private readonly userRepository: Repository<User>,
         private readonly mailService: MailService,
         private readonly settingsService: SettingsService,
+        private readonly i18n: TranslationService,
     ) { }
 
     async sendInvites(userId: string, dto: SendInviteDto) {
@@ -77,7 +80,7 @@ export class InviteService {
 
         await this.mailService.sendInviteEmail({
             to: supportEmail,
-            subject: dto.subject || `Contact request from ${dto.senderName || dto.email || 'user'}`,
+            subject: dto.subject || this.i18n.t('auth.messages.mail.invite.contact_subject', { args: { name: dto.senderName || dto.email || 'user' } }),
             senderName: dto.senderName,
             message: finalMessage,
         });

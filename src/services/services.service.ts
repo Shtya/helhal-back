@@ -9,6 +9,8 @@ import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { Permissions } from 'entities/permissions';
 import { formatSearchTerm } from 'utils/search.helper';
 import { instanceToPlain } from 'class-transformer';
+import { TranslationService } from 'common/translation.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class ServicesService {
@@ -23,7 +25,7 @@ export class ServicesService {
     public userRepository: Repository<User>,
     @InjectRepository(ServiceClick)
     public serviceClickRepository: Repository<ServiceClick>,
-    @InjectRepository(Notification) private notificationRepository: Repository<Notification>,
+    public notificationService: NotificationService,
     @InjectRepository(ServiceReview) private reviewRepository: Repository<ServiceReview>,
     @InjectRepository(Country)
     public countryRepository: Repository<Country>,
@@ -31,6 +33,7 @@ export class ServicesService {
     public stateRepository: Repository<State>,
     private readonly dataSource: DataSource,
     public sessionService: SessionService,
+    private readonly i18n: TranslationService
   ) { }
 
   async getServices(query: any) {
@@ -152,7 +155,7 @@ export class ServicesService {
     });
 
     if (!category) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundException(this.i18n.t("events.categories.errors.not_found"));
     }
     // Calculate filter counts
     const filterOptions = await this.calculateFilterCountsBackendQB(category.id);
@@ -423,7 +426,7 @@ export class ServicesService {
     let category
     if (categorySlug) {
       category = await this.categoryRepository.findOne({ where: { slug: categorySlug } });
-      if (!category) throw new NotFoundException('Category not found');
+      if (!category) throw new NotFoundException(this.i18n.t("events.categories.errors.not_found"));
       queryBuilder.andWhere('service.categoryId = :categoryId', { categoryId: category.id });
     }
 
@@ -626,7 +629,7 @@ export class ServicesService {
     });
 
     if (!service) {
-      throw new NotFoundException('Service not found');
+      throw new NotFoundException(this.i18n.t('events.service_not_found'));
     }
 
     const user = req?.user;
@@ -635,7 +638,7 @@ export class ServicesService {
     const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.services, Permissions.Services.View)
     const isOwnerOrAdmin = service.sellerId === userId || user?.role === 'admin' || hasPermission;
     if (service.status !== ServiceStatus.ACTIVE && !isOwnerOrAdmin) {
-      throw new NotFoundException('Service not found');
+      throw new NotFoundException(this.i18n.t('events.service_not_found'));
     }
 
 
@@ -664,7 +667,7 @@ export class ServicesService {
     });
 
     if (!service) {
-      throw new NotFoundException('Service not found');
+      throw new NotFoundException(this.i18n.t('events.service_not_found'));
     }
 
     const user = req?.user;
@@ -673,7 +676,7 @@ export class ServicesService {
     const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.services, Permissions.Services.View)
     const isOwnerOrAdmin = service.sellerId === userId || user?.role === 'admin' || hasPermission;
     if (service.status !== ServiceStatus.ACTIVE && !isOwnerOrAdmin) {
-      throw new NotFoundException('Service not found');
+      throw new NotFoundException(this.i18n.t('events.service_not_found'));
     }
 
 
@@ -723,7 +726,7 @@ export class ServicesService {
     if (oldSlug === slug) return {
       isUnique: true,
       ownedByCurrentUser: true,
-      message: 'Title is available',
+      message: this.i18n.t('events.title_available'),
     };
 
     const existingService = await this.serviceRepository.findOne({
@@ -734,7 +737,7 @@ export class ServicesService {
       return {
         isUnique: true,
         ownedByCurrentUser: false,
-        message: 'Title is available',
+        message: this.i18n.t('events.title_available'),
       };
     }
 
@@ -744,15 +747,15 @@ export class ServicesService {
       isUnique: false,
       ownedByCurrentUser,
       message: ownedByCurrentUser
-        ? 'You already have a service with this title'
-        : 'This title is already used by another seller',
+        ? this.i18n.t('events.title_owned_by_you')
+        : this.i18n.t('events.title_used_by_other'),
     };
   }
 
   async createService(userId: string, createServiceDto: any) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t("events.user_not_found"));
     }
 
     // Generate slug from title
@@ -762,22 +765,24 @@ export class ServicesService {
     const existingService = await this.serviceRepository.findOne({ where: { slug: tempSlug } });
     if (existingService) {
       throw new BadRequestException(
-        `Service with title "${createServiceDto.title}" already exists. Please choose a different title.`
+        this.i18n.t('events.service_title_exists', { args: { title: createServiceDto.title } })
       );
     }
 
     if (createServiceDto.countryId) {
       const country = await this.countryRepository.findOne({ where: { id: createServiceDto.countryId } } as any);
-      if (!country) throw new NotFoundException('Country not found');
+      if (!country) throw new NotFoundException(this.i18n.t('events.categories.errors.not_found'));
     }
     else {
-      throw new NotFoundException('Country not found');
+      throw new NotFoundException(this.i18n.t('events.categories.errors.not_found'));
     }
 
 
     if (createServiceDto.stateId) {
       const state = await this.stateRepository.findOne({ where: { id: createServiceDto.stateId, countryId: createServiceDto.countryId } } as any);
-      if (!state) throw new NotFoundException('State not found or does not belong to the selected country');
+      if (!state) {
+        throw new NotFoundException(this.i18n.t('events.state_not_found_in_country'));
+      }
     } else {
       delete createServiceDto.stateId;
     }
@@ -812,16 +817,19 @@ export class ServicesService {
     });
 
     if (adminUser) {
-      const notification = this.notificationRepository.create({
-        userId: adminUser.id,
+      await this.notificationService.notifyWithLang({
+        userIds: [adminUser.id],
         type: 'service_review',
-        title: 'New Service Pending Approval',
-        message: `A new service "${savedService.title}" was created and is pending your review.`,
-        relatedEntityType: 'service',
+        title: {
+          key: 'auth.messages.services.new_service_pending_title'
+        },
+        message: {
+          key: 'auth.messages.services.new_service_pending_msg',
+          args: { title: savedService.title }
+        },
         relatedEntityId: savedService.id,
+        relatedEntityType: 'service'
       });
-
-      await this.notificationRepository.save(notification);
     }
 
     return savedService;
@@ -839,7 +847,7 @@ export class ServicesService {
     });
 
     if (!service) {
-      throw new NotFoundException('Service not found');
+      throw new NotFoundException(this.i18n.t('events.service_not_found'));
     }
 
     const user = req?.user;
@@ -855,9 +863,8 @@ export class ServicesService {
     const isOwner = service.sellerId === userId;
 
     if (!hasPermission && !isOwner) {
-      throw new ForbiddenException('You can only update your own services');
+      throw new ForbiddenException(this.i18n.t('events.service_update_forbidden'));
     }
-
 
 
     // If title is being updated, generate new slug and check uniqueness
@@ -867,7 +874,7 @@ export class ServicesService {
       const existingService = await this.serviceRepository.findOne({ where: { slug: newSlug } });
       if (existingService && existingService.id !== service.id) {
         throw new BadRequestException(
-          `Service with title "${updateServiceDto.title}" already exists. Please choose a different title.`
+          this.i18n.t('events.service_title_exists', { args: { title: updateServiceDto.title } })
         );
       }
 
@@ -876,13 +883,13 @@ export class ServicesService {
 
     if (updateServiceDto.countryId) {
       const country = await this.countryRepository.findOne({ where: { id: updateServiceDto.countryId } } as any);
-      if (!country) throw new NotFoundException('Country not found');
+      if (!country) throw new NotFoundException(this.i18n.t('events.categories.errors.not_found'));
     }
 
 
     if (updateServiceDto.stateId) {
       const state = await this.stateRepository.findOne({ where: { id: updateServiceDto.stateId, countryId: updateServiceDto.countryId } } as any);
-      if (!state) throw new NotFoundException('State not found or does not belong to the selected country');
+      if (!state) throw new NotFoundException(this.i18n.t('events.state_not_found_in_country'));
     }
 
     // Explicitly assign only allowed fields
@@ -935,26 +942,31 @@ export class ServicesService {
 
   async updateServiceStatus(serviceId: string, status: ServiceStatus) {
     const service = await this.serviceRepository.findOne({ where: { id: serviceId } });
-    if (!service) throw new NotFoundException('Service not found');
+    if (!service) throw new NotFoundException(this.i18n.t('events.service_not_found'));
 
     // Validate that status is a valid enum value
     if (!Object.values(ServiceStatus).includes(status)) {
-      throw new BadRequestException(`Invalid status "${status}". Allowed values: ${Object.values(ServiceStatus).join(', ')}`);
+      throw new BadRequestException(
+        this.i18n.t('events.invalid_service_status', {
+          args: { status, allowed: Object.values(ServiceStatus).join(', ') }
+        })
+      );
     }
 
     service.status = status;
-
-    const notification = this.notificationRepository.create({
-      userId: service.sellerId,
+    await this.notificationService.notifyWithLang({
+      userIds: [service.sellerId],
       type: 'service_status_update',
-      title: 'Service Status Changed',
-      message: `The service "${service.title}" status has been updated to "${status}".`,
-      relatedEntityType: 'service',
+      title: {
+        key: 'auth.messages.services.status_changed_title'
+      },
+      message: {
+        key: 'auth.messages.services.status_updated_msg',
+        args: { title: service.title, status }
+      },
       relatedEntityId: service.id,
+      relatedEntityType: 'service'
     });
-
-    await this.notificationRepository.save(notification);
-
     return this.serviceRepository.save(service);
   }
 
@@ -970,11 +982,11 @@ export class ServicesService {
     });
 
     if (!service) {
-      throw new NotFoundException('Service not found');
+      throw new NotFoundException(this.i18n.t('events.service_not_found'));
     }
 
     if (service.sellerId !== userId) {
-      throw new ForbiddenException('You can only delete your own services');
+      throw new ForbiddenException(this.i18n.t('events.service_delete_forbidden'));
     }
 
     return this.serviceRepository.remove(service);
@@ -986,7 +998,7 @@ export class ServicesService {
     });
 
     if (!service) {
-      throw new NotFoundException('Service not found or access denied');
+      throw new NotFoundException(this.i18n.t('events.service_analytics_denied'));
     }
 
     // Calculate conversion rate
@@ -1002,7 +1014,7 @@ export class ServicesService {
 
   async trackImpression(serviceId: string) {
     await this.serviceRepository.increment({ id: serviceId }, 'impressions', 1);
-    return { message: 'Impression tracked' };
+    return { message: this.i18n.t('auth.messages.services.impression_tracked') };
   }
 
   async trackClick(serviceId: string, req, userId?: string) {
@@ -1010,7 +1022,7 @@ export class ServicesService {
     const ip = deviceInfo.ip_address;
 
     if (!userId && !ip) {
-      throw new BadRequestException('Cannot track click: missing user and IP.');
+      throw new BadRequestException(this.i18n.t('events.click_track_missing_data'));
     }
 
     // Time window (24h)
@@ -1026,7 +1038,7 @@ export class ServicesService {
     const existingClick = await this.serviceClickRepository.findOne({ where });
 
     if (existingClick) {
-      return { message: 'Click already counted' };
+      return { message: this.i18n.t('events.click_already_counted') };
     }
 
     // Save click entry
@@ -1039,20 +1051,20 @@ export class ServicesService {
     // Increment service total clicks
     await this.serviceRepository.increment({ id: serviceId }, 'clicks', 1);
 
-    return { message: 'Click tracked' };
+    return { message: this.i18n.t('auth.messages.services.click_tracked') };
   }
 
   async markAsPopular(serviceId: string, iconUrl: string) {
     const service = await this.serviceRepository.findOne({ where: { id: serviceId } });
-    if (!service) throw new NotFoundException('Service not found');
+    if (!service) throw new NotFoundException(this.i18n.t('events.service_not_found'));
 
     if (service.status != ServiceStatus.ACTIVE) {
-      throw new BadRequestException('Only active services can be marked as popular');
+      throw new BadRequestException(this.i18n.t('events.only_active_popular'));
     }
     // limit max 10 popular items
     const count = await this.serviceRepository.count({ where: { popular: true } });
     if (count >= 10) {
-      throw new BadRequestException('Maximum 10 popular services allowed.');
+      throw new BadRequestException(this.i18n.t('events.max_popular_services'));
     }
 
     service.popular = true;
@@ -1064,21 +1076,23 @@ export class ServicesService {
   async updatePopularIcon(id: string, iconUrl: string) {
     const service = await this.serviceRepository.findOne({ where: { id } });
 
-    if (!service) throw new NotFoundException('Service not found');
+    if (!service) throw new NotFoundException(this.i18n.t('events.service_not_found'));
 
-    if (!service.popular) throw new NotFoundException('Service not popular');
+    if (!service.popular) {
+      throw new NotFoundException(this.i18n.t('events.service_not_popular'));
+    }
     // Update only the icon
     service.iconUrl = iconUrl;
 
     await this.serviceRepository.save(service);
 
-    return { message: 'Popular icon updated', iconUrl };
+    return { message: this.i18n.t('events.popular_icon_updated_msg'), iconUrl };
   }
 
 
   async unmarkAsPopular(serviceId: string) {
     const service = await this.serviceRepository.findOne({ where: { id: serviceId } });
-    if (!service) throw new NotFoundException('Service not found');
+    if (!service) throw new NotFoundException(this.i18n.t('events.service_not_found'));
 
 
     if (service.iconUrl) {

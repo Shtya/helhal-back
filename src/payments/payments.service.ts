@@ -4,6 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import { Payment, Invoice, Order, User, PaymentMethod, PaymentStatus, PaymentMethodType, TransactionStatus, OrderStatus } from 'entities/global.entity';
 import { OrdersService } from 'src/orders/orders.service';
 import { AccountingService } from 'src/accounting/accounting.service';
+import { TranslationService } from 'common/translation.service';
 
 @Injectable()
 export class PaymentsService {
@@ -23,6 +24,7 @@ export class PaymentsService {
     public readonly ordersService: OrdersService,
     @Inject(forwardRef(() => AccountingService))
     public readonly accountingService: AccountingService,
+    public readonly i18n: TranslationService,
   ) { }
 
   async createPaymentIntent(userId: string, orderId: string, paymentMethodType: string) {
@@ -32,20 +34,20 @@ export class PaymentsService {
     });
 
     if (!order) {
-      throw new NotFoundException('Order not found');
+      throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
     }
 
     if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException('Order is not in a payable state');
+      throw new BadRequestException(this.i18n.t('events.orders.not_payable'));
     }
 
     const invoice = order.invoices[0];
     if (!invoice) {
-      throw new NotFoundException('Invoice not found for this order');
+      throw new NotFoundException(this.i18n.t('events.orders.invoice_not_found'));
     }
 
     if (invoice.paymentStatus === PaymentStatus.PAID) {
-      throw new BadRequestException('Order already paid');
+      throw new BadRequestException(this.i18n.t('events.orders.already_paid'));
     }
 
     // In a real implementation, you would integrate with a payment gateway like Stripe
@@ -159,12 +161,12 @@ export class PaymentsService {
       where: { id: body.orderId, buyerId: userId },
       relations: ['invoices'],
     });
-    if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== OrderStatus.PENDING) throw new BadRequestException('Order not payable');
+    if (!order) throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
+    if (order.status !== OrderStatus.PENDING) throw new BadRequestException(this.i18n.t('events.orders.not_payable'));
 
     const invoice = order.invoices?.[0];
     if (!invoice || invoice.paymentStatus === PaymentStatus.PAID)
-      throw new BadRequestException('Invoice missing or already paid');
+      throw new BadRequestException(this.i18n.t('events.orders.already_paid'));
 
     // Simulated hosted checkout URL (replace with Stripe/PayPal/etc.)
     const checkoutId = `chk_${Date.now()}_${order.id}`;

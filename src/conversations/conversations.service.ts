@@ -4,6 +4,7 @@ import { IsNull, Like, Repository } from 'typeorm';
 import { Conversation, Message, User, Order, Service as ServiceEntity, FavoriteConversation } from 'entities/global.entity';
 import { ChatGateway } from 'src/chat/chat.gateway';
 import { instanceToPlain } from 'class-transformer';
+import { TranslationService } from 'common/translation.service';
 
 @Injectable()
 export class ConversationsService {
@@ -22,6 +23,7 @@ export class ConversationsService {
     private favoriteRepository: Repository<FavoriteConversation>,
     @Inject(forwardRef(() => ChatGateway))
     private chatGateway: ChatGateway,
+    private i18n: TranslationService,
   ) { }
 
   async getConversation(userId: string, conversationId: string) {
@@ -41,11 +43,11 @@ export class ConversationsService {
     });
 
     if (!conversation) {
-      throw new NotFoundException('Conversation not found');
+      throw new NotFoundException(this.i18n.t('events.conversation_not_found'));
     }
 
     if (conversation.buyerId !== userId && conversation.sellerId !== userId) {
-      throw new ForbiddenException('Access denied');
+      throw new ForbiddenException(this.i18n.t('events.access_denied'));
     }
 
     const unreadCount = await this.messageRepository.count({
@@ -72,11 +74,11 @@ export class ConversationsService {
     });
 
     if (!conversation) {
-      throw new NotFoundException('Conversation not found');
+      throw new NotFoundException(this.i18n.t('events.conversation_not_found'));
     }
 
     if (conversation.buyerId !== userId && conversation.sellerId !== userId) {
-      throw new ForbiddenException('Access denied');
+      throw new ForbiddenException(this.i18n.t('events.access_denied'));
     }
 
     const limit = 50;
@@ -118,11 +120,11 @@ export class ConversationsService {
     const text = (messageText || '').trim();
 
     if (!text && (!attachments || attachments.length === 0)) {
-      throw new BadRequestException('Message must include text or attachments');
+      throw new BadRequestException(this.i18n.t('events.message_empty'));
     }
 
     if (text && text.length > 1000) {
-      throw new BadRequestException('Message too long');
+      throw new BadRequestException(this.i18n.t('events.message_too_long'));
     }
 
     const conversation = await this.conversationRepository.findOne({
@@ -130,11 +132,11 @@ export class ConversationsService {
     });
 
     if (!conversation) {
-      throw new NotFoundException('Conversation not found');
+      throw new NotFoundException(this.i18n.t('events.conversation_not_found'));
     }
 
     if (conversation.buyerId !== userId && conversation.sellerId !== userId) {
-      throw new ForbiddenException('Access denied');
+      throw new ForbiddenException(this.i18n.t('events.access_denied'));
     }
 
     const message = this.messageRepository.create({
@@ -148,18 +150,18 @@ export class ConversationsService {
     conversation.lastMessageAt = new Date();
     await this.conversationRepository.save(conversation);
 
-    // Determine receiver
-    const otherUserId =
-      conversation.buyerId === userId
-        ? conversation.sellerId
-        : conversation.buyerId;
+    // // Determine receiver
+    // const otherUserId =
+    //   conversation.buyerId === userId
+    //     ? conversation.sellerId
+    //     : conversation.buyerId;
 
-    const user = await this.userRepository.findOne({
-      where: [{ id: userId }],
+    // const user = await this.userRepository.findOne({
+    //   where: [{ id: userId }],
 
-    });
-    // 🔥 Emit message to receiver
-    this.chatGateway.emitNewMessage(otherUserId, message, user);
+    // });
+    // // 🔥 Emit message to receiver
+    // this.chatGateway.emitNewMessage(otherUserId, message, user);
 
 
     return this.messageRepository.save(message);
@@ -171,11 +173,11 @@ export class ConversationsService {
     });
 
     if (!conversation) {
-      throw new NotFoundException('Conversation not found');
+      throw new NotFoundException(this.i18n.t('events.conversation_not_found'));
     }
 
     if (conversation.buyerId !== userId && conversation.sellerId !== userId) {
-      throw new ForbiddenException('Access denied');
+      throw new ForbiddenException(this.i18n.t('events.access_denied'));
     }
 
     // FIX 1: Mark ALL unread messages in this conversation as read
@@ -196,7 +198,7 @@ export class ConversationsService {
     console.log(`Marked ${result.affected} messages as read for conversation ${conversationId}`);
 
     return {
-      message: 'Messages marked as read',
+      message: this.i18n.t('events.messages_marked_read'),
       affected: result.affected,
     };
   }
@@ -290,7 +292,7 @@ export class ConversationsService {
     });
 
     if (!conversation) {
-      throw new NotFoundException('Conversation not found');
+      throw new NotFoundException(this.i18n.t('events.conversation_not_found'));
     }
 
     const limit = 50;
@@ -400,11 +402,11 @@ export class ConversationsService {
     });
 
     if (!conversation) {
-      throw new NotFoundException('Conversation not found');
+      throw new NotFoundException(this.i18n.t('events.conversation_not_found'));
     }
 
     if (conversation.buyerId !== userId && conversation.sellerId !== userId) {
-      throw new ForbiddenException('Access denied');
+      throw new ForbiddenException(this.i18n.t('events.access_denied'));
     }
 
     const existingFavorite = await this.favoriteRepository.findOne({
@@ -446,7 +448,7 @@ export class ConversationsService {
     const { otherUserId, serviceId, orderId, initialMessage } = createConversationDto;
 
     if (userId === otherUserId) {
-      throw new BadRequestException('Cannot create conversation with yourself');
+      throw new BadRequestException(this.i18n.t('events.cannot_chat_self'));
     }
 
     const user = await this.userRepository.findOne({ where: { id: userId } });
@@ -455,7 +457,7 @@ export class ConversationsService {
     });
 
     if (!user || !otherUser) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t("events.user_not_found"));
     }
 
     // Check if conversation already exists
@@ -479,7 +481,7 @@ export class ConversationsService {
         where: { id: serviceId },
       });
       if (!service) {
-        throw new NotFoundException('Service not found');
+        throw new NotFoundException(this.i18n.t("events.service_not_found"));
       }
     }
 
@@ -498,11 +500,11 @@ export class ConversationsService {
       });
 
       if (!order) {
-        throw new NotFoundException('Order not found');
+        throw new NotFoundException(this.i18n.t("events.order_not_found"));
       }
 
       if (order.buyerId !== userId && order.sellerId !== userId) {
-        throw new ForbiddenException('Access denied');
+        throw new ForbiddenException(this.i18n.t('events.access_denied'));
       }
     }
 

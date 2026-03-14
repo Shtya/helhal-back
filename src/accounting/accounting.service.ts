@@ -4,6 +4,8 @@ import { Repository, Between, DataSource, In, EntityManager } from 'typeorm';
 import { UserBalance, Transaction, PaymentMethod, User, Order, TransactionStatus, PaymentStatus, Invoice, Setting, Notification, UserBillingInfo, UserBankAccount, Country, TransactionBillingInfo, State, TransactionType, PlatformWallet } from 'entities/global.entity';
 import { PaymentGatewayFactory } from 'src/payments/base/payment.gateway.factory';
 import { randomUUID } from 'crypto';
+import { NotificationService } from 'src/notification/notification.service';
+import { TranslationService } from 'common/translation.service';
 
 type ReverseResolutionInput = {
   orderId: string;
@@ -29,11 +31,8 @@ export class AccountingService {
     @InjectRepository(Country) private countryRepository: Repository<Country>,
     @InjectRepository(State) private stateRepository: Repository<State>,
     @InjectRepository(User) private userRepository: Repository<User>,
-    @InjectRepository(Order) private orderRepository: Repository<Order>,
-    @InjectRepository(Invoice) private invoiceRepo: Repository<Invoice>,
-    @InjectRepository(Setting) private settingRepo: Repository<Setting>,
+    public notificationService: NotificationService,
     @InjectRepository(PlatformWallet) private platformWalletRepo: Repository<PlatformWallet>,
-    @InjectRepository(Notification) private notifRepo: Repository<Notification>,
     @InjectRepository(UserBillingInfo)
     private userBillingInfoRepository: Repository<UserBillingInfo>,
     @InjectRepository(TransactionBillingInfo)
@@ -42,6 +41,7 @@ export class AccountingService {
     private userBankAccountRepository: Repository<UserBankAccount>,
     private readonly dataSource: DataSource,
     private readonly gatewayFactory: PaymentGatewayFactory,
+    private readonly i18n: TranslationService,
   ) { }
 
   async getBillingInformation(userId: string) {
@@ -56,7 +56,7 @@ export class AccountingService {
     if (!billingInfo) {
       const user = await this.userRepository.findOne({ where: { id: userId } });
       if (!user) {
-        throw new NotFoundException('User not found');
+        throw new NotFoundException(this.i18n.t('events.user_not_found'));
       }
 
 
@@ -78,7 +78,7 @@ export class AccountingService {
     });
 
     const country = await this.countryRepository.findOne({ where: { id: data.countryId } });
-    if (!country) throw new NotFoundException('Country not found');
+    if (!country) throw new NotFoundException(this.i18n.t('events.jobs.country_not_found'));
 
     // 2. Validate State (Ensure it belongs to the selected country)
     const state = await this.stateRepository.findOne({
@@ -150,7 +150,7 @@ export class AccountingService {
     });
 
     if (!bankAccount) {
-      throw new NotFoundException('Bank account not found');
+      throw new NotFoundException(this.i18n.t('events.accounting.bank_account_not_found'));
     }
 
     Object.assign(bankAccount, bankAccountData);
@@ -164,11 +164,11 @@ export class AccountingService {
     });
 
     if (!bankAccount) {
-      throw new NotFoundException('Bank account not found');
+      throw new NotFoundException(this.i18n.t('events.accounting.bank_account_not_found'));
     }
 
     if (bankAccount.isDefault) {
-      throw new BadRequestException('Cannot delete default bank account');
+      throw new BadRequestException(this.i18n.t('events.accounting.cannot_delete_default_bank'));
     }
 
     return this.userBankAccountRepository.remove(bankAccount);
@@ -183,7 +183,7 @@ export class AccountingService {
       // Set new default
       await manager.getRepository(UserBankAccount).update({ id, userId }, { isDefault: true });
 
-      return { message: 'Default bank account updated successfully' };
+      return { message: this.i18n.t('events.accounting.default_bank_updated') };
     });
   }
 
@@ -246,7 +246,6 @@ export class AccountingService {
     const invoiceRepo = manager.getRepository(Invoice);
     const settingRepo = manager.getRepository(Setting);
     const platformWalletRepo = manager.getRepository(PlatformWallet);
-    const notifRepo = manager.getRepository(Notification);
     const transactionRepo = manager.getRepository(Transaction);
 
     const inv = await invoiceRepo.findOne({
@@ -254,12 +253,12 @@ export class AccountingService {
       relations: ['order'],
     });
     if (!inv || inv.paymentStatus !== PaymentStatus.PAID) {
-      throw new BadRequestException('Invoice not paid');
+      throw new BadRequestException(this.i18n.t('events.accounting.invoice_not_paid'));
     }
 
     const settings = await settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
     const platformUserId = settings?.[0]?.platformAccountUserId;
-    if (!platformUserId) throw new BadRequestException('Platform account is not configured');
+    if (!platformUserId) throw new BadRequestException(this.i18n.t('events.accounting.platform_account_not_configured'));
 
     const amount = Number(inv.totalAmount);
 
@@ -268,7 +267,7 @@ export class AccountingService {
         userId: platformUserId,
         type: TransactionType.ESCROW_DEPOSIT,
         amount,
-        description: `Escrow deposit for order #${orderId}`,
+        description: this.i18n.t('events.accounting.escrow_deposit_desc', { args: { orderId } }),
         status: TransactionStatus.COMPLETED,
         orderId,
         currencyId: 'SAR',
@@ -279,16 +278,23 @@ export class AccountingService {
     platformWallet.totalEscrowBalance = Number(platformWallet.totalEscrowBalance) + inv.subtotal;
     await platformWalletRepo.save(platformWallet);
 
-    await notifRepo.save(
-      notifRepo.create({
-        userId: platformUserId,
-        type: 'escrow_deposit',
-        title: 'Funds received into the platform wallet',
-        message: `The platform has received ${amount} SAR for order "${inv.order?.title || orderId}".`,
-        relatedEntityType: 'order',
-        relatedEntityId: orderId,
-      }),
-    );
+    await this.notificationService.notifyWithLang({
+      userIds: [platformUserId],
+      type: 'escrow_deposit',
+      title: {
+        key: 'events.escrow.funds_received_title'
+      },
+      message: {
+        key: 'events.escrow.funds_received_msg',
+        args: {
+          amount,
+          title: inv.order?.title || orderId
+        }
+      },
+      relatedEntityId: orderId,
+      relatedEntityType: 'order',
+      manager // Atomicity is key for escrow operations
+    });
   }
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -300,11 +306,11 @@ export class AccountingService {
       where: { orderId },
       relations: ['order'],
     });
-    if (!inv) throw new NotFoundException('Invoice not found');
+    if (!inv) throw new NotFoundException(this.i18n.t('events.orders.invoice_not_found'));
 
     const settings = await manager.find(Setting, { take: 1, order: { created_at: 'DESC' } });
     const platformUserId = settings?.[0]?.platformAccountUserId;
-    if (!platformUserId) throw new BadRequestException('Platform account is not configured');
+    if (!platformUserId) throw new BadRequestException(this.i18n.t('events.accounting.platform_account_not_configured'));
     const amount = Number(inv.subtotal);
 
     const fees = (amount * (Number(inv.sellerServiceFee) / 100));
@@ -325,7 +331,7 @@ export class AccountingService {
         userId: platformUserId,
         type: TransactionType.ESCROW_RELEASE,
         amount: -netEarnings,
-        description: `Escrow release to seller for order #${orderId}`,
+        description: this.i18n.t('events.accounting.escrow_release_seller_desc', { args: { orderId } }),
         status: TransactionStatus.COMPLETED,
         orderId,
         currencyId: 'SAR',
@@ -334,7 +340,7 @@ export class AccountingService {
         userId: inv.order.sellerId,
         type: TransactionType.EARNING,
         amount: netEarnings,
-        description: `Payout for order #${orderId}`,
+        description: this.i18n.t('events.accounting.payout_desc', { args: { orderId } }),
         status: TransactionStatus.COMPLETED,
         orderId,
         currencyId: 'SAR',
@@ -356,10 +362,10 @@ export class AccountingService {
       relations: ['order'],
     });
 
-    if (!inv) throw new NotFoundException('Invoice not found');
+    if (!inv) throw new NotFoundException(this.i18n.t('events.orders.invoice_not_found'));
     // Prevent double refunds
     if (inv.paymentStatus !== PaymentStatus.PAID) {
-      throw new BadRequestException('Invoice is not in PAID status');
+      throw new BadRequestException(this.i18n.t('events.accounting.invoice_not_paid_status'));
     }
 
     // 2. Identify Platform Wallet and Buyer Balance
@@ -374,7 +380,7 @@ export class AccountingService {
 
     // 3. Safety Check
     if (Number(platformWallet.totalEscrowBalance) < refundAmount) {
-      throw new BadRequestException('Insufficient escrow funds for refund');
+      throw new BadRequestException(this.i18n.t('events.accounting.insufficient_escrow_funds'));
     }
 
     // 4. Update Platform Wallet
@@ -401,7 +407,7 @@ export class AccountingService {
         userId: platformUserId,
         type: TransactionType.REFUND,
         amount: -refundAmount,
-        description: `Refund for rejected order #${orderId} - deducted from escrow`,
+        description: this.i18n.t('events.accounting.refund_rejected_escrow_desc', { args: { orderId } }),
         status: TransactionStatus.COMPLETED,
         orderId,
         currencyId: 'SAR',
@@ -411,7 +417,7 @@ export class AccountingService {
         userId: inv.order.buyerId,
         type: TransactionType.REFUND,
         amount: refundAmount,
-        description: `Refund for rejected order #${orderId}`,
+        description: this.i18n.t('events.accounting.refund_rejected_desc', { args: { orderId } }),
         status: TransactionStatus.COMPLETED,
         orderId,
         currencyId: 'SAR',
@@ -432,21 +438,21 @@ export class AccountingService {
       where: { orderId },
       relations: ['order'],
     });
-    if (!inv) throw new NotFoundException('Invoice not found');
+    if (!inv) throw new NotFoundException(this.i18n.t('events.orders.invoice_not_found'));
 
     if (inv.paymentStatus !== PaymentStatus.PAID) {
-      throw new BadRequestException('Invoice is not in PAID status');
+      throw new BadRequestException(this.i18n.t('events.accounting.invoice_not_paid_status'));
     }
 
     const settings = await manager.find(Setting, { take: 1, order: { created_at: 'DESC' } });
     const platformUserId = settings?.[0]?.platformAccountUserId;
-    if (!platformUserId) throw new BadRequestException('Platform account is not configured');
+    if (!platformUserId) throw new BadRequestException(this.i18n.t('events.accounting.platform_account_not_configured'));
 
     // 2. Validate Split Math
     const subtotal = Number(inv.subtotal);
     // Use a small epsilon check for floating point math
     if (((Number(sellerAmount) + Number(buyerRefund)) - subtotal) > 0.01) {
-      throw new BadRequestException('Split must equal subtotal');
+      throw new BadRequestException(this.i18n.t('events.accounting.split_mismatch'));
     }
 
     // 3. Calculate Fees and Net for the Seller portion
@@ -456,7 +462,7 @@ export class AccountingService {
     const totalRequiredFromEscrow = Number(buyerRefund + sellerNetPay);
     // 4. Update Platform Wallet (Treasury)
     const platformWallet = await this.getPlatformWalletTx(manager);
-    if (Number(platformWallet.totalEscrowBalance) < (buyerRefund + sellerAmount)) throw new BadRequestException('Escrow insufficient');
+    if (Number(platformWallet.totalEscrowBalance) < (buyerRefund + sellerAmount)) throw new BadRequestException(this.i18n.t('events.accounting.escrow_insufficient'));
 
     // Remove the full original subtotal from Escrow
     platformWallet.totalEscrowBalance = Number(platformWallet.totalEscrowBalance) - (buyerRefund + sellerAmount)
@@ -479,7 +485,7 @@ export class AccountingService {
         userId: inv.order.sellerId,
         type: TransactionType.EARNING,
         amount: sellerNetPay,
-        description: `Dispute payout for order #${orderId}`,
+        description: this.i18n.t('events.accounting.dispute_payout_desc', { args: { orderId } }),
         status: TransactionStatus.COMPLETED,
         orderId,
         currencyId: 'SAR',
@@ -499,7 +505,7 @@ export class AccountingService {
         userId: inv.order.buyerId,
         type: TransactionType.REFUND,
         amount: Number(buyerRefund),
-        description: `Dispute refund for order #${orderId}`,
+        description: this.i18n.t('events.accounting.dispute_refund_desc', { args: { orderId } }),
         status: TransactionStatus.COMPLETED,
         orderId,
         currencyId: 'SAR',
@@ -511,7 +517,7 @@ export class AccountingService {
       userId: platformUserId,
       type: TransactionType.ESCROW_RELEASE,
       amount: -totalRequiredFromEscrow,
-      description: `Escrow split release for order #${orderId}`,
+      description: this.i18n.t('events.accounting.escrow_split_release_desc', { args: { orderId } }),
       status: TransactionStatus.COMPLETED,
       orderId,
       currencyId: 'SAR',
@@ -645,7 +651,7 @@ export class AccountingService {
   //     const buyerDebitTxId = buyerDebitTx ? saved.find(t => t.userId === buyerId && t.type === 'refund_reversal' && t.orderId === orderId)?.id || null : null;
 
   //     // Notifications (platform, seller, buyer)
-  //     await manager.getRepository(Notification).save(
+  //     await manager.getRepository).save(
   //       [
   //         manager.getRepository(Notification).create({
   //           userId: platformUserId,
@@ -690,7 +696,7 @@ export class AccountingService {
     let balance = await this.userBalanceRepository.findOne({ where: { userId } });
     if (!balance) {
       const user = await this.userRepository.findOne({ where: { id: userId } });
-      if (!user) throw new NotFoundException('User not found');
+      if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
       balance = this.userBalanceRepository.create({
         userId,
         availableBalance: 0,
@@ -744,7 +750,7 @@ export class AccountingService {
     let balance = await manager.getRepository(UserBalance).findOne({ where: { userId } });
     if (!balance) {
       const user = await manager.getRepository(User).findOne({ where: { id: userId } });
-      if (!user) throw new NotFoundException('User not found');
+      if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
       balance = manager.getRepository(UserBalance).create({
         userId,
         availableBalance: 0,
@@ -807,13 +813,13 @@ export class AccountingService {
   // accounting.service.ts
 
   async withdrawFunds(userId: string, amount: number) {
-    if (amount < 112) throw new BadRequestException('Minimum withdrawal amount is 112 SAR');
+    if (amount < 112) throw new BadRequestException(this.i18n.t('events.accounting.min_withdrawal_amount'));
 
     return await this.dataSource.transaction(async (manager) => {
       // 2. Lock & Get Balance
       const balance = await this.getUserBalanceTx(manager, userId);
       if (!balance || Number(balance.availableBalance) < amount) {
-        throw new BadRequestException('Insufficient available balance');
+        throw new BadRequestException(this.i18n.t('events.accounting.insufficient_balance'));
       }
 
       // 3. Get Default Bank Account
@@ -821,14 +827,14 @@ export class AccountingService {
         where: { userId, isDefault: true }
       });
 
-      if (!bankAccount) throw new NotFoundException('No default bank account found.');
+      if (!bankAccount) throw new NotFoundException(this.i18n.t('events.accounting.no_default_bank'));
 
       // 4. Create Transaction Record (Internal)
       let transaction = manager.create(Transaction, {
         userId,
         type: TransactionType.WITHDRAWAL,
         amount: -amount,
-        description: `Withdrawal to IBAN: ${bankAccount.iban}`,
+        description: this.i18n.t('events.accounting.withdrawal_iban_desc', { args: { iban: bankAccount.iban } }),
         status: TransactionStatus.PENDING,
         currencyId: 'SAR', // Ensure this matches Paymob setup
       });
@@ -862,7 +868,6 @@ export class AccountingService {
     return await this.dataSource.transaction(async (manager) => {
       const tx = await manager.findOne(Transaction, { where: { id: transactionId } });
       if (!tx || tx.status !== TransactionStatus.PENDING) return;
-      const notifRepo = manager.getRepository(Notification);
       const settingRepo = manager.getRepository(Setting);
 
       const settings = await settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
@@ -877,25 +882,33 @@ export class AccountingService {
         balance.reservedBalance = Math.max(0, Number(balance.reservedBalance) - amount);
 
         tx.status = TransactionStatus.COMPLETED;
-        await notifRepo.save(notifRepo.create({
-          userId: tx.userId,
+        await this.notificationService.notifyWithLang({
+          userIds: [tx.userId],
           type: 'withdrawal_success',
-          title: 'Withdrawal Successful',
-          message: `Your withdrawal of ${amount} SAR has been processed successfully.`,
-          relatedEntityType: 'transaction',
+          title: { key: 'events.wallet.withdrawal_success_title' },
+          message: {
+            key: 'events.wallet.withdrawal_success_msg',
+            args: { amount }
+          },
           relatedEntityId: tx.id,
-        }));
+          relatedEntityType: 'transaction',
+          manager
+        });
 
-        // --- Notify Admin ---
+        // 2. Notify Admin (if applicable)
         if (platformUserId) {
-          await notifRepo.save(notifRepo.create({
-            userId: platformUserId,
+          await this.notificationService.notifyWithLang({
+            userIds: [platformUserId],
             type: 'withdrawal_completed',
-            title: 'Withdrawal Released',
-            message: `Amount of ${amount} SAR has been released to user ${tx.userId}.`,
-            relatedEntityType: 'transaction',
+            title: { key: 'events.wallet.admin_withdrawal_released_title' },
+            message: {
+              key: 'events.wallet.admin_withdrawal_released_msg',
+              args: { amount, userId: tx.userId }
+            },
             relatedEntityId: tx.id,
-          }));
+            relatedEntityType: 'transaction',
+            manager
+          });
         }
 
       } else {
@@ -907,14 +920,20 @@ export class AccountingService {
         tx.status = TransactionStatus.REJECTED;
         tx.description = `${tx.description} [Failed/Reversed]`;
 
-        await notifRepo.save(notifRepo.create({
-          userId: tx.userId,
+        await this.notificationService.notifyWithLang({
+          userIds: [tx.userId],
           type: 'withdrawal_failed',
-          title: 'Withdrawal Failed',
-          message: `Your withdrawal of ${amount} SAR failed. The amount has been returned to your balance.`,
-          relatedEntityType: 'transaction',
+          title: {
+            key: 'events.wallet.withdrawal_failed_title'
+          },
+          message: {
+            key: 'events.wallet.withdrawal_failed_msg',
+            args: { amount }
+          },
           relatedEntityId: tx.id,
-        }));
+          relatedEntityType: 'transaction',
+          manager // Crucial to ensure the notification only saves if the balance return succeeds
+        });
       }
 
       await manager.save(balance);
@@ -935,8 +954,8 @@ export class AccountingService {
 
   async removePaymentMethod(userId: string, paymentMethodId: string) {
     const paymentMethod = await this.paymentMethodRepository.findOne({ where: { id: paymentMethodId, userId } });
-    if (!paymentMethod) throw new NotFoundException('Payment method not found');
-    if (paymentMethod.isDefault) throw new BadRequestException('Cannot remove default payment method');
+    if (!paymentMethod) throw new NotFoundException(this.i18n.t('events.accounting.payment_method_not_found'));
+    if (paymentMethod.isDefault) throw new BadRequestException(this.i18n.t('events.accounting.cannot_remove_default_payment'));
     return this.paymentMethodRepository.remove(paymentMethod);
   }
 
@@ -1052,8 +1071,8 @@ export class AccountingService {
 
   async processWithdrawalAdmin(id: string, action: 'approve' | 'reject') {
     const tx = await this.transactionRepository.findOne({ where: { id, type: TransactionType.WITHDRAWAL } });
-    if (!tx) throw new NotFoundException('Withdrawal not found');
-    if (tx.status !== TransactionStatus.PENDING) throw new BadRequestException('Only pending withdrawals can be processed');
+    if (!tx) throw new NotFoundException(this.i18n.t('events.accounting.withdrawal_not_found'));
+    if (tx.status !== TransactionStatus.PENDING) throw new BadRequestException(this.i18n.t('events.accounting.only_pending_withdrawals'));
 
     if (action === 'approve') {
       tx.status = TransactionStatus.COMPLETED;

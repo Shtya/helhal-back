@@ -5,11 +5,12 @@ import { RequireAccess } from 'decorators/access.decorator';
 import { UserRole } from 'entities/global.entity';
 import { ConversationsService } from './conversations.service';
 import { CreateConversationDto } from 'dto/conversation.dto';
+import { TranslationService } from 'common/translation.service';
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
 export class ConversationsController {
-  constructor(private conversationsService: ConversationsService) { }
+  constructor(private conversationsService: ConversationsService, private i18n: TranslationService) { }
 
   @Get('admin')
   @UseGuards(AccessGuard)
@@ -64,7 +65,7 @@ export class ConversationsController {
   @Get('search/users')
   async searchUsers(@Req() req, @Query('query') query: string) {
     if (!query || query.length < 2) {
-      throw new BadRequestException('Query must be at least 2 characters long');
+      this.i18n.t('events.search_query_too_short')
     }
     return this.conversationsService.searchUsers(req.user.id, query);
   }

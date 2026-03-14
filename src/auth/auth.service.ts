@@ -6,7 +6,7 @@ import { Response } from 'express';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount, PendingPhoneRegistration, Person } from 'entities/global.entity';
+import { User, PendingUserRegistration, UserRole, UserStatus, AccountDeactivation, ServiceReview, Order, UserSession, DeviceInfo, SellerLevel, Notification, Setting, UserRelatedAccount, PendingPhoneRegistration, Person, Language } from 'entities/global.entity';
 import { RegisterDto, LoginDto, VerifyEmailDto, ForgotPasswordDto, ResetPasswordDto, UpdateUserPermissionsDto, PhoneRegisterDto, PhoneVerifyDto, NafazDto } from 'dto/user.dto';
 import { ConfigService } from '@nestjs/config';
 import { MailService } from 'common/nodemailer';
@@ -16,6 +16,10 @@ import { SmsService } from 'common/sms-service';
 import { instanceToPlain } from 'class-transformer';
 import { NafathService } from 'common/nafath-service';
 import { ChatGateway } from 'src/chat/chat.gateway';
+import { TranslationService } from 'common/translation.service';
+import { NotificationService } from 'src/notification/notification.service';
+
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -36,7 +40,7 @@ export class AuthService {
     @InjectRepository(Order) private orderRepository: Repository<Order>,
     @InjectRepository(ServiceReview) private reviewRepository: Repository<ServiceReview>,
     @InjectRepository(UserSession) private sessionsRepo: Repository<UserSession>,
-    @InjectRepository(Notification) private notifRepo: Repository<Notification>,
+    private notificationService: NotificationService,
     @InjectRepository(Setting) private settingsRepo: Repository<Setting>,
     @Inject(forwardRef(() => ChatGateway))
     private chatGateway: ChatGateway,
@@ -47,6 +51,7 @@ export class AuthService {
     public smsService: SmsService,
     public nafathService: NafathService,
     public sessionService: SessionService,
+    private readonly i18n: TranslationService,
   ) { }
 
   DOCUMENT_EXPIRY_HOURS = 24;
@@ -60,11 +65,10 @@ export class AuthService {
   private hash(token: string) {
     return crypto.createHash('sha256').update(token).digest('hex');
   }
-
   async updateStatus(userId: string, status: UserStatus) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t('events.user_not_found'));
     }
 
     user.person.status = status;
@@ -107,7 +111,7 @@ export class AuthService {
   async deleteUser(userId: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t('events.user_not_found'));
     }
 
     user.person.status = UserStatus.DELETED;
@@ -134,9 +138,9 @@ export class AuthService {
 
     if (existingPerson) {
       if (existingPerson.email === email) {
-        throw new ConflictException('Email already exists');
+        throw new ConflictException(this.i18n.t('auth.errors.email_already_exists'));
       } else if (existingPerson.username === username) {
-        throw new ConflictException('Username already exists');
+        throw new ConflictException(this.i18n.t('auth.errors.username_already_exists'));
       }
     }
 
@@ -149,8 +153,11 @@ export class AuthService {
 
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-        const remainingMinutes = Math.ceil(remainingSeconds / 60);
-        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
+        throw new ForbiddenException(
+          this.i18n.t('auth.errors.resend_email_cooldown', {
+            args: { seconds: remainingSeconds },
+          }),
+        );
       }
     }
 
@@ -159,7 +166,7 @@ export class AuthService {
     const codeExpiresAt = new Date(currentTimestamp + this.CODE_EXPIRY_MINUTES * 60 * 1000);
 
     if (role === UserRole.ADMIN) {
-      throw new ForbiddenException('You cannot assign yourself as admin');
+      throw new ForbiddenException(this.i18n.t('auth.errors.cannot_assign_admin_self'));
     }
 
     if (pendingUser) {
@@ -196,7 +203,7 @@ export class AuthService {
 
     await this.emailService.sendVerificationEmail(email, verificationCode, username);
 
-    return { message: 'Verification code sent', email };
+    return { message: this.i18n.t('auth.messages.verification_code_sent'), email };
   }
 
   async verifyEmail(verifyEmailDto: VerifyEmailDto, res: Response) {
@@ -204,15 +211,15 @@ export class AuthService {
 
     const pendingUser = await this.pendingUserRepository.findOne({ where: { email } });
     if (!pendingUser) {
-      throw new NotFoundException('No active registration found for this email');
+      throw new NotFoundException(this.i18n.t('auth.errors.no_active_registration_email'));
     }
 
     if (pendingUser.verificationCode !== code) {
-      throw new BadRequestException('Invalid verification code');
+      throw new BadRequestException(this.i18n.t('auth.errors.invalid_verification_code'));
     }
 
     if (new Date() > pendingUser.codeExpiresAt) {
-      throw new BadRequestException('Verification code has expired');
+      throw new BadRequestException(this.i18n.t('auth.errors.verification_code_expired'));
     }
 
     const { username, email: userEmail, passwordHash, referralCodeUsed, role } = pendingUser;
@@ -229,6 +236,7 @@ export class AuthService {
       password: passwordHash,
       type: pendingUser.type,
       referralCode,
+      preferredLanguage: Language.AR
     });
 
     const savedPerson = await this.personRepository.save(person);
@@ -251,13 +259,13 @@ export class AuthService {
 
 
     const emailPromises = [
-      this.emailService.sendWelcomeEmail(user.email, user.username, user.role)
+      this.emailService.sendWelcomeEmail(user.email, user.username, user.role, user.preferredLanguage)
     ];
 
 
     if (user.role === 'seller') {
       emailPromises.push(
-        this.emailService.sendSellerFeePolicyEmail(user.email, user.username)
+        this.emailService.sendSellerFeePolicyEmail(user.email, user.username, user.preferredLanguage)
       );
     }
 
@@ -269,7 +277,7 @@ export class AuthService {
     }
 
     return {
-      message: 'Email verified and registration complete',
+      message: this.i18n.t('auth.messages.email_verified_complete'),
       user: serializedUser,
     };
   }
@@ -287,41 +295,45 @@ export class AuthService {
     await this.userRepository.save([newUser, referrerUser]);
 
     // 🔔 Notify referral owner
-    await this.notifRepo.save(
-      this.notifRepo.create({
-        userId: referrerUser.id,
-        type: 'referral_signup',
-        title: 'New referral signup',
-        message: `User "${newUser.username}" signed up using your referral code!`,
-        relatedEntityType: 'user', // or 'referral'
-        relatedEntityId: referrerUser.id,
-        isRead: false,
-      }),
-    );
+    await this.notificationService.notifyWithLang({
+      userIds: [referrerUser.id],
+      type: 'referral_signup',
+      title: {
+        key: 'auth.messages.referral.signup_title'
+      },
+      message: {
+        key: 'auth.messages.referral.signup_msg',
+        args: { username: newUser.username }
+      },
+      relatedEntityId: newUser.id, // Pointing to the new user who joined
+      relatedEntityType: 'user'
+    });
   }
 
   async resendVerificationEmail(email: string) {
     const existingUser = await this.userRepository.findOne({ where: { person: { email } } });
     if (existingUser) {
-      throw new ConflictException('Email already registered');
+      throw new ConflictException(this.i18n.t('auth.errors.email_already_registered'));
     }
 
     const pendingUser = await this.pendingUserRepository.findOne({ where: { email } });
     if (!pendingUser) {
-      throw new NotFoundException('No active registration found for this email');
+      throw new NotFoundException(this.i18n.t('auth.errors.no_active_registration_email'));
     }
 
     const currentTimestamp = Date.now();
 
-    if (!pendingUser?.lastSentAt) {
-
+    if (pendingUser?.lastSentAt) {
       const lastSentTime = pendingUser.lastSentAt.getTime();
       const timeElapsedSeconds = (currentTimestamp - lastSentTime) / 1000;
 
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-        const remainingMinutes = Math.ceil(remainingSeconds / 60);
-        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
+        throw new ForbiddenException(
+          this.i18n.t('auth.errors.resend_email_cooldown', {
+            args: { seconds: remainingSeconds },
+          }),
+        );
       }
     }
 
@@ -336,10 +348,11 @@ export class AuthService {
 
     await this.pendingUserRepository.save(pendingUser);
 
-    return { message: 'New verification email sent', email };
+    return { message: this.i18n.t('auth.messages.new_verification_email_sent'), email };
   }
 
   async login(loginDto: LoginDto, res: Response, req) {
+
     const { email, password } = loginDto;
 
     const user = await this.userRepository.createQueryBuilder('user')
@@ -353,20 +366,20 @@ export class AuthService {
       .getOne();
 
     if (!user || !(await user.comparePassword(password))) {
-      throw new UnauthorizedException('Incorrect email or password');
+      throw new UnauthorizedException(this.i18n.t('events.invalid_email_or_password'));
     }
 
 
     if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
-      throw new UnauthorizedException('Your account is inactive. Please contact support.');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.account_inactive'));
     }
 
     if (user.status === UserStatus.SUSPENDED) {
-      throw new UnauthorizedException('Your account has been suspended. Please contact support.');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.account_suspended'));
     }
 
     if (user.status === UserStatus.PENDING_VERIFICATION) {
-      throw new UnauthorizedException('Please verify your email before logging in');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.email_not_verified'));
     }
     const result = await this.generateTokens(user, res, req);
 
@@ -424,7 +437,7 @@ export class AuthService {
       .getOne();
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException(this.i18n.t('events.user_not_found'));
     }
 
     const relatedUsers = await this.getRelatedUsers(user.id);
@@ -469,7 +482,7 @@ export class AuthService {
     let meRole: string | undefined;
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException(this.i18n.t('events.user_not_found'));
     }
     if (me?.id) {
       const meUser = await this.userRepository.findOne({
@@ -481,7 +494,7 @@ export class AuthService {
     }
     const isSelf = me?.id === user.id;
     if (!isSelf && !this.canViewUserProfile(meRole, user.role)) {
-      throw new ForbiddenException('You are not allowed to view this profile');
+      throw new ForbiddenException(this.i18n.t('auth.errors.not_allowed_to_view_profile'));
     }
 
     const plainUser = instanceToPlain(user, {
@@ -498,7 +511,7 @@ export class AuthService {
     try {
       decoded = this.jwtService.verify(refreshToken, { secret: this.configService.get('JWT_REFRESH') }) as any;
     } catch {
-      throw new UnauthorizedException('Invalid or expired refresh token');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.invalid_or_expired_refresh_token'));
     }
 
     const user = await this.userRepository
@@ -510,16 +523,16 @@ export class AuthService {
 
 
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException(this.i18n.t('events.user_not_found'));
     }
     const session = await this.sessionsRepo.findOne({ where: { id: decoded.sid, userId: decoded.id } });
     if (!session || session.revokedAt) {
-      throw new UnauthorizedException('Session revoked');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.session_revoked'));
     }
     // check token matches hash
     const incomingHash = this.hash(refreshToken);
     if (!session.refreshTokenHash || session.refreshTokenHash !== incomingHash) {
-      throw new UnauthorizedException('Refresh token mismatch');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.refresh_token_mismatch'));
     }
 
     // rotate both tokens
@@ -543,18 +556,25 @@ export class AuthService {
       refreshTokenHash: this.hash(newRefresh),
     });
 
-    return { message: 'Tokens refreshed successfully', accessToken: newAccess, refreshToken: newRefresh };
+    return {
+      message: this.i18n.t('auth.messages.tokens_refreshed'),
+      accessToken: newAccess,
+      refreshToken: newRefresh,
+    };
   }
 
   async forgotPassword(forgotPasswordDto: ForgotPasswordDto) {
     const { email } = forgotPasswordDto;
 
-    const user = await this.userRepository.findOne({
-      where: { person: { email } },
-      relations: ['person']
-    });
+    const user = await this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.person', 'person')
+      .where('person.email = :email', { email })
+      // جلب الحقول المخفية صراحة
+      .addSelect(['person.resetPasswordToken', 'person.resetPasswordExpires', 'person.lastResetPasswordSentAt', "person.preferredLanguage"])
+      .getOne();
+
     if (!user) {
-      return { message: 'OTP sent if account exists' };
+      return { message: this.i18n.t('auth.messages.otp_sent_if_account_exists') };
     }
 
     if (user.resetPasswordExpires && user?.lastResetPasswordSentAt) {
@@ -564,8 +584,9 @@ export class AuthService {
 
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-        const remainingMinutes = Math.ceil(remainingSeconds / 60);
-        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
+        throw new ForbiddenException(
+          this.i18n.t('auth.errors.resend_email_cooldown', { args: { seconds: remainingSeconds } }),
+        );
       }
 
     }
@@ -578,9 +599,9 @@ export class AuthService {
 
     await this.userRepository.save(user);
 
-    await this.emailService.sendPasswordResetOtp(user.email, user.username, otp);
+    await this.emailService.sendPasswordResetOtp(user.email, user.username, otp, user.preferredLanguage);
 
-    return { message: 'Password reset OTP sent' };
+    return { message: this.i18n.t('auth.messages.password_reset_otp_sent') };
   }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto) {
@@ -597,7 +618,7 @@ export class AuthService {
       .getOne();
 
     if (!user) {
-      throw new BadRequestException('Invalid email or OTP, or OTP has expired');
+      throw new BadRequestException(this.i18n.t('auth.errors.invalid_email_or_otp'));
     }
 
 
@@ -617,9 +638,9 @@ export class AuthService {
     const adminEmail = settings?.contactEmail || process.env.ADMIN_EMAIL;
 
     // Send password change notification to the user
-    await this.emailService.sendPasswordChangeNotification(user.email, user.username, adminEmail);
+    await this.emailService.sendPasswordChangeNotification(user.email, user.username, adminEmail, user.preferredLanguage);
 
-    return { message: 'Password successfully reset' };
+    return { message: this.i18n.t('auth.messages.password_reset_success') };
   }
 
   private async createSession(
@@ -733,17 +754,17 @@ export class AuthService {
       }
     });
 
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
     return user;
   }
 
   async updateProfile(userId: string, updateData: Partial<User>, adminId?: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     const isAdmin = !!adminId;
     if (isAdmin && user.role === UserRole.ADMIN && user.id != adminId) {
-      throw new ForbiddenException("You cannot update another admin's profile");
+      throw new ForbiddenException(this.i18n.t('auth.errors.cannot_update_other_admin'));
     }
 
     const allowedFieldsUser: (keyof User)[] = ['profileImage', 'description', 'skills', 'education', 'certifications', 'deliveryTime', 'ageGroup', 'revisions', 'preferences'];
@@ -751,7 +772,9 @@ export class AuthService {
 
     if (typeof updateData.email !== 'undefined' && updateData.email !== user.email) {
       const exists = await this.userRepository.findOne({ where: { person: { email: updateData.email } } });
-      if (exists) throw new ConflictException('Email already in use');
+      if (exists) throw new ConflictException(
+        this.i18n.t('auth.errors.email_in_use')
+      );
       user.person.email = updateData.email!;
     }
 
@@ -765,7 +788,9 @@ export class AuthService {
       });
 
       if (usernameExists) {
-        throw new ConflictException('Username already taken');
+        throw new ConflictException(
+          this.i18n.t('auth.errors.username_taken')
+        );
       }
 
       user.person.username = updateData.username;
@@ -790,7 +815,9 @@ export class AuthService {
         .getOne();
 
       if (exists) {
-        throw new ConflictException('Phone number with this country code already in use');
+        throw new ConflictException(
+          this.i18n.t('auth.errors.phone_in_use')
+        );
       }
 
       user.person.phone = updateData.phone;
@@ -820,7 +847,7 @@ export class AuthService {
         .getOne();
 
       if (idExists) {
-        throw new ConflictException('A user with this National ID already exists');
+        throw new ConflictException(this.i18n.t('auth.errors.national_id_in_use'));
       }
       // Update the record and RESET verification status
       user.person.nationalId = cleanNationalId;
@@ -846,14 +873,14 @@ export class AuthService {
 
   async updateSkills(userId: string, skills: string[]) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
     user.skills = skills || [];
     return this.userRepository.save(user);
   }
 
   async getProfileStats(userId: any) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     // Orders completed as seller
     const ordersCompleted = await this.orderRepository.count({
@@ -884,7 +911,7 @@ export class AuthService {
     else if (stats.ordersCompleted >= 20 && stats.averageRating >= 4.5) SellerLevel.LVL2;
 
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
     user.sellerLevel = sellerLevel;
     user.topRated = sellerLevel === SellerLevel.TOP;
     return this.userRepository.save(user);
@@ -893,16 +920,20 @@ export class AuthService {
   async updateSellerLevel(userId: string, level: SellerLevel, adminId) {
     // Validate the level
     if (!Object.values(SellerLevel).includes(level)) {
-      throw new BadRequestException(`Invalid seller level: ${level}`);
+      throw new BadRequestException(
+        this.i18n.t('auth.errors.invalid_seller_level', { args: { level } })
+      );
     }
 
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException(`User with ID ${userId} not found`);
+    if (!user) this.i18n.t('auth.errors.user_not_found', { args: { id: userId } })
 
 
     // Optional: prevent changing other admins
     if (user.role === UserRole.ADMIN && user.id !== adminId) {
-      throw new BadRequestException(`Cannot change seller level for another admin`);
+      throw new ForbiddenException(
+        this.i18n.t('auth.errors.cannot_update_other_admin')
+      );
     }
 
     user.sellerLevel = level;
@@ -912,11 +943,11 @@ export class AuthService {
   async deactivateAccount(userId: string, reason: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t('events.user_not_found'));
     }
 
     if (user.status === UserStatus.INACTIVE) {
-      throw new ConflictException('Account already deactivated');
+      throw new ConflictException(this.i18n.t('auth.errors.account_already_deactivated'));
     }
 
     // Create deactivation record
@@ -933,7 +964,7 @@ export class AuthService {
     await this.userRepository.save(user);
     await this.accountDeactivationRepository.save(deactivation);
 
-    return { message: 'Account deactivated successfully' };
+    return { message: this.i18n.t('auth.messages.account_deactivated_success') };
   }
 
   async changePassword(userId: string, currentPassword: string, newPassword: string) {
@@ -941,10 +972,10 @@ export class AuthService {
       .innerJoinAndSelect('user.person', 'person')
       .addSelect('person.password').where('user.id = :id', { id: userId }).getOne();
 
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     const ok = await user.comparePassword(currentPassword);
-    if (!ok) throw new UnauthorizedException('Current password is incorrect');
+    if (!ok) throw new UnauthorizedException(this.i18n.t('auth.errors.current_password_incorrect'));
     user.person.password = newPassword; // your entity hook hashes on save (existing logic)
     const salt = await bcrypt.genSalt(12);
     const hashedPassword = await bcrypt.hash(newPassword, salt);
@@ -959,15 +990,15 @@ export class AuthService {
     const adminEmail = settings?.contactEmail || process.env.ADMIN_EMAIL;
 
     // Send password change notification to the user
-    await this.emailService.sendPasswordChangeNotification(user.email, user.username, adminEmail);
+    await this.emailService.sendPasswordChangeNotification(user.email, user.username, adminEmail, user.preferredLanguage);
 
-    return { message: 'Password changed successfully' };
+    return { message: this.i18n.t('auth.messages.password_changed_success') };
   }
 
   // auth.service.ts
   async logoutSession(userId: string, sessionId: string) {
     const session = await this.sessionsRepo.findOne({ where: { id: sessionId, userId } });
-    if (!session) throw new NotFoundException('Session not found');
+    if (!session) throw new NotFoundException(this.i18n.t('auth.errors.session_not_found'));
 
     if (!session.revokedAt) {
       session.revokedAt = new Date();
@@ -976,7 +1007,7 @@ export class AuthService {
     }
 
 
-    return { message: 'Session revoked', id: sessionId };
+    return { message: this.i18n.t('auth.messages.session_revoked'), id: sessionId };
   }
   // auth.service.ts
   async getSessionsForUser(
@@ -1022,30 +1053,35 @@ export class AuthService {
       .where('"user_id" = :uid', { uid: userId });
     if (keepSessionId) qb.andWhere('"id" != :sid', { sid: keepSessionId });
     await qb.execute();
-    return { message: keepSessionId ? 'Other sessions revoked' : 'All sessions revoked' };
+    return {
+      message: keepSessionId
+        ? this.i18n.t('auth.messages.session_revoked')
+        : this.i18n.t('auth.messages.session_revoked'),
+    };
   }
 
 
   async requestEmailChange(userId: string, newEmail: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     // Check if new email is already used
-    const emailExists = await this.userRepository.findOne({
-      where: { person: { email: newEmail } },
-      select: {
-        id: true,
-        person: {
-          username: true,
-          email: true,
-          pendingEmail: true,
-          pendingEmailCode: true,
-          lastEmailChangeSentAt: true,
-        }
-      },
+    const cleanEmail = newEmail.trim().toLowerCase();
 
-    });
-    if (emailExists) throw new BadRequestException('Email already in use');
+    const emailExists = await this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.person', 'person')
+      .where('person.email = :email', { email: cleanEmail })
+      .select([
+        'user.id',
+        'person.username',
+        'person.email',
+        'person.pendingEmail',
+        'person.pendingEmailCode',
+        'person.lastEmailChangeSentAt',
+        'person.preferredLanguage'
+      ])
+      .getOne();
+    if (emailExists) throw new BadRequestException(this.i18n.t('auth.errors.email_in_use'));
 
     // Cooldown check
     if (user.lastEmailChangeSentAt) {
@@ -1055,8 +1091,11 @@ export class AuthService {
 
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-        const remainingMinutes = Math.ceil(remainingSeconds / 60);
-        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
+        throw new ForbiddenException(
+          this.i18n.t('auth.errors.resend_email_cooldown', {
+            args: { seconds: remainingSeconds },
+          }),
+        );
       }
     }
 
@@ -1070,9 +1109,9 @@ export class AuthService {
     await this.userRepository.save(user);
 
     // Send confirmation email
-    await this.emailService.sendEmailChangeConfirmation(newEmail, user.username, user.id, code);
+    await this.emailService.sendEmailChangeConfirmation(newEmail, user.username, user.id, code, user.preferredLanguage);
 
-    return { message: 'Confirmation email sent to new email address' };
+    return { message: this.i18n.t('auth.messages.confirmation_email_sent_new_email') };
   }
 
   async resendEmailConfirmation(userId: string) {
@@ -1090,7 +1129,7 @@ export class AuthService {
       },
     });
     if (!user || !user.pendingEmail || !user.pendingEmailCode) {
-      throw new BadRequestException('No pending email change found');
+      throw new BadRequestException(this.i18n.t('auth.errors.no_pending_email_change'));
     }
 
     // Cooldown check
@@ -1101,8 +1140,11 @@ export class AuthService {
 
       if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-        const remainingMinutes = Math.ceil(remainingSeconds / 60);
-        throw new ForbiddenException(`Please wait ${remainingSeconds} seconds before resending email`);
+        throw new ForbiddenException(
+          this.i18n.t('auth.errors.resend_email_cooldown', {
+            args: { seconds: remainingSeconds },
+          }),
+        );
       }
     }
 
@@ -1115,9 +1157,10 @@ export class AuthService {
       user.username,
       user.id,
       user.pendingEmailCode
+      , user.preferredLanguage
     );
 
-    return { message: 'Confirmation email resent' };
+    return { message: this.i18n.t('auth.messages.confirmation_email_resent') };
   }
 
   async cancelEmailChange(userId: string) {
@@ -1135,40 +1178,42 @@ export class AuthService {
       },
 
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     user.person.pendingEmail = null;
     user.person.pendingEmailCode = null;
     user.person.lastEmailChangeSentAt = null;
 
     await this.userRepository.save(user);
-    return { message: 'Pending email change canceled' };
+    return { message: this.i18n.t('auth.messages.pending_email_change_canceled') };
   }
 
   async confirmEmailChange(userId: string, pendingEmail: string, code: string) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      select: {
-        id: true,
-        person: {
-          username: true,
-          email: true,
-          pendingEmail: true,
-          pendingEmailCode: true,
-          lastEmailChangeSentAt: true,
-        }
-      },
+    const cleanUserId = userId.trim();
 
-    });
-    if (!user) throw new NotFoundException('User not found');
+    const user = await this.userRepository.createQueryBuilder('user')
+      .leftJoinAndSelect('user.person', 'person') // Joining the person relation
+      .where('user.id = :id', { id: cleanUserId })
+      .select([
+        'user.id',
+        'person.username',
+        'person.email',
+        'person.pendingEmail',
+        'person.pendingEmailCode',
+        'person.lastEmailChangeSentAt',
+        'person.preferredLanguage'
+      ])
+      .getOne();
+
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     if (user.pendingEmail !== pendingEmail || user.pendingEmailCode !== code) {
-      throw new BadRequestException('Invalid code or pending email');
+      throw new BadRequestException(this.i18n.t('auth.errors.invalid_code_or_pending_email'));
     }
 
     // Check if email is now used
     const emailExists = await this.userRepository.findOne({ where: { person: { email: pendingEmail } } });
-    if (emailExists) throw new BadRequestException('Email already in use');
+    if (emailExists) throw new BadRequestException(this.i18n.t('auth.errors.email_in_use'));
 
     const oldEmail = user.email;
     user.person.email = pendingEmail;
@@ -1182,8 +1227,8 @@ export class AuthService {
     const adminEmail = settings?.contactEmail || process.env.ADMIN_EMAIL;
 
     // Send password change notification to the user
-    await this.emailService.sendEmailChangeNotification(oldEmail, user.username, adminEmail);
-    return { message: 'Email successfully updated' };
+    await this.emailService.sendEmailChangeNotification(oldEmail, user.username, adminEmail, user.preferredLanguage);
+    return { message: this.i18n.t('auth.messages.email_updated_success') };
   }
 
   async getFirstAdmin() {
@@ -1193,7 +1238,7 @@ export class AuthService {
     });
 
     if (!admin) {
-      throw new NotFoundException('No admin user found');
+      throw new NotFoundException(this.i18n.t('auth.errors.no_admin_found'));
     }
 
     return admin;
@@ -1275,35 +1320,37 @@ export class AuthService {
     });
 
     if (existingSeller) {
-      throw new BadRequestException('You already have a seller account');
+      throw new BadRequestException(this.i18n.t('auth.errors.seller_account_exists'));
     }
 
 
     // 1. Load main user
     const mainUser = await this.userRepository.findOne({
-      where: { id: activeAccountId },
+      where: { id: activeAccountId }, relations: {
+        person: true
+      },
     });
 
 
     if (!mainUser) {
-      throw new UnauthorizedException("User not found");
+      throw new UnauthorizedException(this.i18n.t('events.user_not_found'));
     }
 
     if (mainUser.status === UserStatus.INACTIVE || mainUser.status === UserStatus.DELETED) {
-      throw new UnauthorizedException('Your account is inactive. Please contact support.');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.account_inactive'));
     }
 
     if (mainUser.status === UserStatus.SUSPENDED) {
-      throw new UnauthorizedException('Your account has been suspended. Please contact support.');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.account_suspended'));
     }
 
     if (mainUser.status === UserStatus.PENDING_VERIFICATION) {
-      throw new UnauthorizedException('Please verify your email before logging in');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.email_not_verified'));
     }
 
 
     if (mainUser.role !== 'buyer') {
-      throw new ForbiddenException('Only buyers can create seller sub accounts');
+      throw new ForbiddenException(this.i18n.t('auth.errors.only_buyers_can_create_seller'));
     }
 
     // 2. Create new user (COPY DATA)
@@ -1325,13 +1372,13 @@ export class AuthService {
 
 
     const emailPromises = [
-      this.emailService.sendWelcomeEmail(subUser.email, subUser.username, subUser.role)
+      this.emailService.sendWelcomeEmail(subUser.email, subUser.username, subUser.role, mainUser.preferredLanguage)
     ];
 
 
     if (subUser.role === 'seller') {
       emailPromises.push(
-        this.emailService.sendSellerFeePolicyEmail(subUser.email, subUser.username)
+        this.emailService.sendSellerFeePolicyEmail(subUser.email, subUser.username, mainUser.preferredLanguage)
       );
     }
 
@@ -1365,7 +1412,7 @@ export class AuthService {
     });
 
     if (!relation) {
-      throw new ForbiddenException('Users not related');
+      throw new ForbiddenException(this.i18n.t('auth.errors.users_not_related'));
     }
 
     const targetUser = await this.userRepository
@@ -1377,7 +1424,7 @@ export class AuthService {
       .getOne();
 
     if (!targetUser) {
-      throw new UnauthorizedException("User not found")
+      throw new UnauthorizedException(this.i18n.t('events.user_not_found'))
     }
 
 
@@ -1453,7 +1500,7 @@ export class AuthService {
       .where('user.id = :id', { id: userId })
       .getOne();
 
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     const updatedPermissions: Record<string, number> = {};
 
@@ -1491,22 +1538,20 @@ export class AuthService {
       .getOne();
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t('events.user_not_found'));
     }
 
     if (user.isPhoneVerified) {
-      throw new BadRequestException('Your phone is already verified.');
+      throw new BadRequestException(this.i18n.t('auth.errors.phone_already_verified'));
     }
 
     if (!user.phone || !user.countryCode?.dial_code || !user.countryCode?.code) {
-      throw new BadRequestException(
-        'To verify your phone, please complete your phone information: phone number and country code are required.'
-      );
+      throw new BadRequestException(this.i18n.t('auth.errors.phone_info_required'));
     }
 
     if (user.countryCode.code !== 'SA' && user.countryCode.dial_code !== '+966') {
       throw new BadRequestException(
-        'We currently only support phone numbers registered in Saudi Arabia (+966).'
+        this.i18n.t('auth.errors.only_saudi_phone_support')
       );
     }
 
@@ -1521,7 +1566,7 @@ export class AuthService {
         const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
         const remainingMinutes = Math.ceil(remainingSeconds / 60);
         throw new ForbiddenException(
-          `Please wait ${remainingSeconds} seconds before requesting another OTP`
+          this.i18n.t('auth.errors.otp_wait_seconds', { args: { seconds: remainingSeconds } })
         );
       }
     }
@@ -1534,9 +1579,14 @@ export class AuthService {
       otpCode = this.generateOTP();
     }
 
-    const { success, details } = await this.smsService.sendOTP(user.phone, user.countryCode.dial_code, otpCode, this.CODE_EXPIRY_MINUTES);
+    const { success, details } = await this.smsService.sendOTP(
+      user.phone,
+      user.countryCode.dial_code,
+      otpCode,
+      this.CODE_EXPIRY_MINUTES,
+    );
     if (!success) {
-      throw new BadRequestException(details || 'Failed to send OTP')
+      throw new BadRequestException(details || this.i18n.t('auth.errors.failed_to_send_otp'));
     }
 
     await this.personRepository.update(user.personId, {
@@ -1549,7 +1599,7 @@ export class AuthService {
 
     // ✅ Send OTP via SMS provider
 
-    return { message: 'OTP sent successfully to your phone number' };
+    return { message: this.i18n.t('auth.messages.otp_sent_phone') };
   }
 
   //for loged in users that want to verify their phone
@@ -1565,24 +1615,22 @@ export class AuthService {
       .getOne();
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t('events.user_not_found'));
     }
 
     if (user.isPhoneVerified) {
-      throw new BadRequestException(
-        'Your phone is already verified.'
-      );
+      throw new BadRequestException(this.i18n.t('auth.errors.phone_already_verified'));
     }
 
     if (!user.phone || !user.countryCode?.dial_code || !user.countryCode?.code) {
-      throw new BadRequestException('To verify your phone, please complete your phone information: phone number and country code are required.');
+      throw new BadRequestException(this.i18n.t('auth.errors.phone_info_required'));
     }
 
     if (!user.otpCode || user.otpCode !== otpCode) {
-      throw new BadRequestException('Invalid OTP code');
+      throw new BadRequestException(this.i18n.t('auth.errors.invalid_otp'));
     }
     if (!user.otpExpiresAt || new Date() > user.otpExpiresAt) {
-      throw new BadRequestException('OTP has expired');
+      throw new BadRequestException(this.i18n.t('auth.errors.otp_expired'));
     }
 
 
@@ -1594,19 +1642,19 @@ export class AuthService {
     });
 
     // 🔹 Return a simple success response (no login tokens)
-    return { message: 'Phone number successfully verified' };
+    return { message: this.i18n.t('auth.messages.phone_verified_success') };
   }
 
   //for login or register with phone
   async phoneAuth(dto: PhoneRegisterDto) {
     const { phone, countryCode, role, type, ref } = dto;
     if (!phone || !countryCode?.code || !countryCode?.dial_code) {
-      throw new UnauthorizedException('Phone or country code missing');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.phone_or_country_missing'));
     }
 
     if (dto.countryCode.code !== 'SA' && dto.countryCode.dial_code !== '+966') {
       throw new BadRequestException(
-        'We currently only support phone numbers registered in Saudi Arabia (+966).'
+        this.i18n.t('auth.errors.only_saudi_phone_support')
       );
     }
 
@@ -1625,23 +1673,21 @@ export class AuthService {
     const currentTimestamp = Date.now();
     if (user) {
       if ([UserStatus.INACTIVE, UserStatus.DELETED].includes(user.status)) {
-        throw new UnauthorizedException('Your account is inactive. Please contact support.');
+        throw new UnauthorizedException(this.i18n.t('auth.errors.account_inactive'));
       }
       if (user.status === UserStatus.SUSPENDED) {
-        throw new UnauthorizedException('Your account has been suspended. Please contact support.');
+        throw new UnauthorizedException(this.i18n.t('auth.errors.account_suspended'));
       }
       if (user.status === UserStatus.PENDING_VERIFICATION) {
-        throw new UnauthorizedException('Please verify your email before logging in');
+        throw new UnauthorizedException(this.i18n.t('auth.errors.email_not_verified'));
       }
 
       if (!user.isPhoneVerified) {
-        throw new UnauthorizedException('Your phone number is not verified. Please verify with OTP before logging in.');
+        throw new UnauthorizedException(this.i18n.t('auth.errors.phone_not_verified'));
       }
 
       if (!user.phone || !user.countryCode?.dial_code || !user.countryCode?.code) {
-        throw new BadRequestException(
-          'To log in with your phone, please complete your phone information: a valid phone number and country code are required.'
-        );
+        throw new BadRequestException(this.i18n.t('auth.errors.phone_info_required'));
       }
 
 
@@ -1651,15 +1697,14 @@ export class AuthService {
 
         if (timeElapsedSeconds < this.RESEND_COOLDOWN_SECONDS) {
           const remainingSeconds = Math.ceil(this.RESEND_COOLDOWN_SECONDS - timeElapsedSeconds);
-          const remainingMinutes = Math.ceil(remainingSeconds / 60);
           throw new ForbiddenException(
-            `Please wait ${remainingSeconds} seconds before requesting another OTP`
+            this.i18n.t('auth.errors.resend_email_cooldown', { args: { seconds: remainingSeconds } }),
           );
         }
       }
     }
     else {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t('events.user_not_found'));
     }
 
 
@@ -1676,9 +1721,14 @@ export class AuthService {
         finalOTP = this.generateOTP();
       }
 
-      const { success, details } = await this.smsService.sendOTP(phone, countryCode.dial_code, finalOTP, this.CODE_EXPIRY_MINUTES);
+      const { success, details } = await this.smsService.sendOTP(
+        phone,
+        countryCode.dial_code,
+        finalOTP,
+        this.CODE_EXPIRY_MINUTES,
+      );
       if (!success) {
-        throw new BadRequestException('Failed to send OTP')
+        throw new BadRequestException(details || this.i18n.t('auth.errors.failed_to_send_otp'));
       }
 
       await this.personRepository.update(user.personId, {
@@ -1751,7 +1801,7 @@ export class AuthService {
 
     // 🔹 Send OTP via SMS provider
 
-    return { message: 'OTP sent successfully to your phone number' };
+    return { message: this.i18n.t('auth.messages.otp_sent_phone') };
   }
 
   //for verify otp to login or register with phone
@@ -1777,19 +1827,19 @@ export class AuthService {
 
     if (user) {
       if (!user.isPhoneVerified) {
-        throw new UnauthorizedException('Your phone number is not verified. Please verify with OTP before logging in.');
+        throw new UnauthorizedException(this.i18n.t('auth.errors.phone_not_verified'));
       }
 
       if (!user.phone || !user.countryCode?.dial_code || !user.countryCode?.code) {
-        throw new BadRequestException('To log in with your phone, please complete your phone information: phone number and country code are required.');
+        throw new BadRequestException(this.i18n.t('auth.errors.phone_info_required'));
       }
 
       // Validate OTP
       if (!user.otpCode || user.otpCode !== otpCode) {
-        throw new BadRequestException('Invalid OTP code');
+        throw new BadRequestException(this.i18n.t('auth.errors.invalid_otp'));
       }
       if (new Date() > user.otpExpiresAt) {
-        throw new BadRequestException('OTP has expired');
+        throw new BadRequestException(this.i18n.t('auth.errors.otp_expired'));
       }
 
       // Clear OTP fields after successful verification
@@ -1805,7 +1855,7 @@ export class AuthService {
       return result;
     }
     else {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t('events.user_not_found'));
     }
 
     // // 🔹 Otherwise check pending phone registration
@@ -1884,15 +1934,15 @@ export class AuthService {
 
     const user = await this.userRepository.findOne({ where: { id: userId }, relations: ['person'] });
     if (!user || !user.person) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException(this.i18n.t('events.user_not_found'));
     }
 
     if (!dto.nationalId) {
-      throw new UnauthorizedException('National Id is required');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.national_id_required'));
     }
 
     if (dto.nationalId == user.nationalId && user.isIdentityVerified) {
-      throw new BadRequestException('Your identity is already verified.');
+      throw new BadRequestException(this.i18n.t('auth.errors.identity_already_verified'));
     }
 
     const requestId = uuidv4();
@@ -1909,7 +1959,11 @@ export class AuthService {
     // 2. Start polling in the background
     this.pollNafathStatus(requestId, user, dto.nationalId, nafathResponse.transId, nafathResponse.random);
 
-    return { message: 'MFA initiated', requestId, random: nafathResponse.random, };
+    return {
+      message: this.i18n.t('auth.messages.mfa_initiated'),
+      requestId,
+      random: nafathResponse.random,
+    };
   }
   // At the top of your AuthService
   private activePolls = new Map<string, NodeJS.Timeout>();
@@ -1976,15 +2030,15 @@ export class AuthService {
       .getOne();
 
 
-    if (!user || !user.person) throw new NotFoundException('User not found');
+    if (!user || !user.person) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     // BLOCK: If already verified, do not allow cancellation/reset of data
     if (user.person.isIdentityVerified) {
-      throw new ForbiddenException('Cannot cancel a completed and verified identity.');
+      throw new ForbiddenException(this.i18n.t('auth.errors.cannot_cancel_verified_identity'));
     }
 
     if (!user.person.nafathTransId) {
-      throw new NotFoundException('No active Nafath request found to cancel.');
+      throw new NotFoundException(this.i18n.t('auth.errors.no_active_nafath_request'));
     }
 
     // Otherwise, proceed with normal cancellation
@@ -2000,7 +2054,7 @@ export class AuthService {
       nafathRequestId: null,
     });
 
-    return { message: 'MFA Request cancelled' };
+    return { message: this.i18n.t('auth.messages.mfa_cancelled') };
   }
   private generateOTP() {
 
@@ -2008,5 +2062,3 @@ export class AuthService {
   }
 
 }
-
-

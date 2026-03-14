@@ -5,9 +5,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Conversation, Message, User, Order, Service, FavoriteConversation } from 'entities/global.entity';
 import { ChatGateway } from '../chat/chat.gateway';
 import { AuthModule } from 'src/auth/auth.module';
+import { MailModule } from 'common/mailModule';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Conversation, Message, User, Order, Service, FavoriteConversation]), forwardRef(() => AuthModule),],
+  imports: [MailModule, TypeOrmModule.forFeature([Conversation, Message, User, Order, Service, FavoriteConversation]), forwardRef(() => AuthModule),],
   controllers: [ConversationsController],
   providers: [ConversationsService, ChatGateway],
   exports: [ChatGateway],

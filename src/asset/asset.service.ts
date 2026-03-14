@@ -4,71 +4,73 @@ import { Asset } from 'entities/assets.entity';
 import { Repository } from 'typeorm';
 import { CreateAssetDto, UpdateAssetDto } from 'dto/assets.dto';
 import * as fs from 'fs';
- import { BaseService } from 'common/base.service';
+import { BaseService } from 'common/base.service';
 import { User } from 'entities/global.entity';
+import { TranslationService } from 'common/translation.service';
 
 @Injectable()
 export class AssetService extends BaseService<Asset> {
   constructor(
     @InjectRepository(Asset) private assetRepo: Repository<Asset>,
+    public i18n: TranslationService,
   ) {
-    super(assetRepo)
+    super(assetRepo, i18n)
   }
 
 
 
-extractTypeFromMime(mime: string): string {
-  if (!mime) return 'unknown';
+  extractTypeFromMime(mime: string): string {
+    if (!mime) return 'unknown';
 
-  if (mime.startsWith('image/')) return 'image';
-  if (mime.startsWith('video/')) return 'video';
-  if (mime.startsWith('audio/')) return 'audio';
+    if (mime.startsWith('image/')) return 'image';
+    if (mime.startsWith('video/')) return 'video';
+    if (mime.startsWith('audio/')) return 'audio';
 
-  if (
-    mime === 'application/pdf' ||
-    mime === 'application/msword' ||
-    mime.startsWith('application/vnd') || // Word, Excel, PPT
-    mime === 'text/plain' ||
-    mime.startsWith('application/x-') // e.g., x-compressed, x-zip-compressed
-  ) return 'document';
+    if (
+      mime === 'application/pdf' ||
+      mime === 'application/msword' ||
+      mime.startsWith('application/vnd') || // Word, Excel, PPT
+      mime === 'text/plain' ||
+      mime.startsWith('application/x-') // e.g., x-compressed, x-zip-compressed
+    ) return 'document';
 
-  if (
-    mime === 'application/zip' ||
-    mime === 'application/x-7z-compressed' ||
-    mime === 'application/x-rar-compressed'
-  ) return 'archive';
+    if (
+      mime === 'application/zip' ||
+      mime === 'application/x-7z-compressed' ||
+      mime === 'application/x-rar-compressed'
+    ) return 'archive';
 
-  if (
-    mime.startsWith('application/json') ||
-    mime === 'application/xml' ||
-    mime.startsWith('text/') 
-  ) return 'code';
+    if (
+      mime.startsWith('application/json') ||
+      mime === 'application/xml' ||
+      mime.startsWith('text/')
+    ) return 'code';
 
-  return 'binary';
-}
+    return 'binary';
+  }
 
 
 
-async Create(dto: CreateAssetDto, file: any, user: User) {
-  const inferredType = this.extractTypeFromMime(file.mimetype);
+  async Create(dto: CreateAssetDto, file: any, user: User) {
+    const inferredType = this.extractTypeFromMime(file.mimetype);
 
-  const asset = this.assetRepo.create({
-    filename: dto.filename ?? file.originalname,
-    url: file.path,
-    type: dto.type ?? inferredType,
-    category: dto.category ?? inferredType,
-    mimeType: file.mimetype,
-    size: file.size,
-    user,
-  });
+    const asset = this.assetRepo.create({
+      filename: dto.filename ?? file.originalname,
+      url: file.path,
+      type: dto.type ?? inferredType,
+      category: dto.category ?? inferredType,
+      mimeType: file.mimetype,
+      size: file.size,
+      user,
+    });
 
-  return this.assetRepo.save(asset);
-}
+    return this.assetRepo.save(asset);
+  }
 
 
   async update(id: string, dto: UpdateAssetDto, file?: any) {
     const asset = await this.assetRepo.findOne({ where: { id } });
-    if (!asset) throw new NotFoundException('Asset not found');
+    if (!asset) throw new NotFoundException(this.i18n.t('events.asset.asset_not_found'));
 
     if (file) {
       try {
@@ -91,7 +93,7 @@ async Create(dto: CreateAssetDto, file: any, user: User) {
 
   async delete(id: string) {
     const asset = await this.assetRepo.findOne({ where: { id } });
-    if (!asset) throw new NotFoundException('Asset not found');
+    if (!asset) throw new NotFoundException(this.i18n.t('events.asset.asset_not_found'));
 
     try {
       fs.unlinkSync(asset.url);
@@ -108,7 +110,7 @@ async Create(dto: CreateAssetDto, file: any, user: User) {
 
   async findOne(id: string) {
     const asset = await this.assetRepo.findOne({ where: { id } });
-    if (!asset) throw new NotFoundException('Asset not found');
+    if (!asset) throw new NotFoundException(this.i18n.t('events.asset.asset_not_found'));
     return asset;
   }
 }

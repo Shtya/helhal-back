@@ -4,11 +4,12 @@ import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { Person, User, UserRole, UserStatus } from 'entities/global.entity';
+import { Language, Person, User, UserRole, UserStatus } from 'entities/global.entity';
 import { AuthService } from './auth.service';
 import { randomBytes } from 'crypto';
 import { MailService } from 'common/nodemailer';
 import { RedisService } from 'common/RedisService';
+import { TranslationService } from 'common/translation.service';
 
 @Injectable()
 export class OAuthService {
@@ -22,7 +23,8 @@ export class OAuthService {
     private configService: ConfigService,
     public emailService: MailService,
 
-    private readonly redisService: RedisService
+    private readonly redisService: RedisService,
+    private readonly i18n: TranslationService,
   ) { }
 
 
@@ -157,7 +159,7 @@ export class OAuthService {
 
   async handleGoogleCallback(profile: any, state?: string, res?: Response) {
     const email = profile.email;
-    if (!email) throw new UnauthorizedException('No email found in Google profile');
+    if (!email) throw new UnauthorizedException(this.i18n.t('auth.errors.oauth_google_no_email'));
 
     let user = await this.userRepository
       .createQueryBuilder('user')
@@ -179,6 +181,7 @@ export class OAuthService {
         email: email,
         googleId: profile.id,
         type: 'Individual',
+        preferredLanguage: Language.AR,
       });
 
       // 2. Save the person FIRST to generate an ID
@@ -202,15 +205,15 @@ export class OAuthService {
     }
 
     if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
-      throw new UnauthorizedException('Your account is inactive. Please contact support.');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.account_inactive'));
     }
 
     if (user.status === UserStatus.SUSPENDED) {
-      throw new UnauthorizedException('Your account has been suspended. Please contact support.');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.account_suspended'));
     }
 
     if (user.status === UserStatus.PENDING_VERIFICATION) {
-      throw new UnauthorizedException('Please verify your email before logging in');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.email_not_verified'));
     }
 
     return this.finalizeOAuthAuthentication(user, state, res, newUserCreated);
@@ -218,7 +221,7 @@ export class OAuthService {
 
   async handleAppleCallback(profile: any, state?: string, res?: Response) {
     const email = profile.email;
-    if (!email) throw new UnauthorizedException('No email found in Apple profile');
+    if (!email) throw new UnauthorizedException(this.i18n.t('auth.errors.oauth_apple_no_email'));
 
 
     let user = await this.userRepository
@@ -240,6 +243,7 @@ export class OAuthService {
         email: email,
         appleId: profile.id,
         type: 'Individual',
+        preferredLanguage: Language.AR,
 
       });
 
@@ -267,15 +271,15 @@ export class OAuthService {
     }
 
     if (user.status === UserStatus.INACTIVE || user.status === UserStatus.DELETED) {
-      throw new UnauthorizedException('Your account is inactive. Please contact support.');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.account_inactive'));
     }
 
     if (user.status === UserStatus.SUSPENDED) {
-      throw new UnauthorizedException('Your account has been suspended. Please contact support.');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.account_suspended'));
     }
 
     if (user.status === UserStatus.PENDING_VERIFICATION) {
-      throw new UnauthorizedException('Please verify your email before logging in');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.email_not_verified'));
     }
 
     return this.finalizeOAuthAuthentication(user, state, res, newUserCreated);
@@ -298,7 +302,7 @@ export class OAuthService {
     }
 
     if (userType === UserRole.ADMIN) {
-      throw new ForbiddenException('You cannot assign yourself as admin');
+      throw new ForbiddenException(this.i18n.t('auth.errors.cannot_assign_admin_self'));
     }
     // ✔ Set role only if valid
     if (userType === UserRole.BUYER || userType === UserRole.SELLER) {
@@ -315,12 +319,12 @@ export class OAuthService {
     if (newUserCreated) {
 
       const emailPromises = [
-        this.emailService.sendWelcomeEmail(user.email, user.username, user.role)
+        this.emailService.sendWelcomeEmail(user.email, user.username, user.role, user?.preferredLanguage)
       ];
 
       if (user.role === 'seller') {
         emailPromises.push(
-          this.emailService.sendSellerFeePolicyEmail(user.email, user.username)
+          this.emailService.sendSellerFeePolicyEmail(user.email, user.username, user?.preferredLanguage)
         );
       }
 
@@ -348,7 +352,7 @@ export class OAuthService {
     try {
       return this.jwtService.verify(token, { secret: process.env.JWT_ACCESS_SECRET });
     } catch (error) {
-      throw new UnauthorizedException('Invalid or expired one-time token');
+      throw new UnauthorizedException(this.i18n.t('auth.errors.invalid_or_expired_one_time_token'));
     }
   }
 }

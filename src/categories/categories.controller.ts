@@ -9,10 +9,11 @@ import { IsNull, Not } from 'typeorm';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { categoryIconOptions } from 'common/upload.config';
 import { Permissions } from 'entities/permissions';
+import { TranslationService } from 'common/translation.service';
 
 @Controller('categories')
 export class CategoriesController {
-  constructor(private categoriesService: CategoriesService) { }
+  constructor(private categoriesService: CategoriesService, private readonly i18n: TranslationService) { }
 
   @Get('top')
   async getTopCategories(@Query('limit') limit: string) {
@@ -41,6 +42,7 @@ export class CategoriesController {
 
     return CRUD.findAll(
       this.categoriesService.categoryRepository,
+      this.i18n,
       'category',
       query.search,
       query.page,
@@ -118,7 +120,7 @@ export class CategoriesController {
     @UploadedFile() file?: any,
   ) {
     if (!file) {
-      throw new BadRequestException('Icon file is required to mark as top');
+      throw new BadRequestException(this.i18n.t('events.categories.errors.icon_required'));
     }
     const iconUrl = `uploads/category-icons/${file.filename}`;
     return this.categoriesService.markAsTop(id, iconUrl);
@@ -139,7 +141,7 @@ export class CategoriesController {
     @UploadedFile() file: any
   ) {
     if (!file) {
-      throw new BadRequestException('Icon file is required to update top category icon');
+      throw new BadRequestException(this.i18n.t('events.categories.errors.update_icon_required'));
     }
     const iconUrl = `uploads/category-icons/${file.filename}`;
     return this.categoriesService.updateTopIcon(id, iconUrl);

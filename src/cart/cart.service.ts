@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Cart, CartItem, Service, User, PackageType } from 'entities/global.entity';
+import { Cart, CartItem, Service, User } from 'entities/global.entity';
+import { TranslationService } from 'common/translation.service';
 
 @Injectable()
 export class CartService {
@@ -14,8 +15,8 @@ export class CartService {
     private serviceRepository: Repository<Service>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private readonly i18n: TranslationService, // حقن خدمة الترجمة
   ) { }
-
 
   async getUserCart(userId: string) {
     let cart = await this.cartRepository.findOne({
@@ -25,7 +26,9 @@ export class CartService {
 
     if (!cart) {
       const user = await this.userRepository.findOne({ where: { id: userId } });
-      if (!user) throw new NotFoundException('User not found');
+      if (!user) {
+        throw new NotFoundException(this.i18n.t('events.cart.errors.user_not_found'));
+      }
 
       cart = this.cartRepository.create({ userId, user });
       await this.cartRepository.save(cart);
@@ -34,17 +37,17 @@ export class CartService {
     return {
       id: cart.id,
       userId: userId,
-      items: cart?.items?.map(item => item.service),
-      total: cart?.items?.length || 0
-    }
+      items: cart?.items?.map((item) => item.service),
+      total: cart?.items?.length || 0,
+    };
   }
 
   async toggleCartItem(userId: string, serviceId: string) {
-    // Fetch the service
     const service = await this.serviceRepository.findOne({ where: { id: serviceId } });
-    if (!service) throw new NotFoundException('Service not found');
+    if (!service) {
+      throw new NotFoundException(this.i18n.t('events.cart.errors.service_not_found'));
+    }
 
-    // Fetch or create cart
     let cart = await this.cartRepository.findOne({
       where: { userId },
       relations: ['items'],
@@ -56,21 +59,25 @@ export class CartService {
       await this.cartRepository.save(cart);
     }
 
-    // Check if item exists in cart
-    let item = cart.items?.find(i => i.serviceId === serviceId);
+    let item = cart.items?.find((i) => i.serviceId === serviceId);
 
     if (item) {
-      // Remove from cart
       await this.cartItemRepository.remove(item);
-      return { action: 'removed', service };
+      return {
+        action: 'removed',
+        message: this.i18n.t('events.cart.messages.removed'),
+        service
+      };
     }
 
-    // Add to cart
     item = this.cartItemRepository.create({ cartId: cart.id, serviceId });
     await this.cartItemRepository.save(item);
-    return { action: 'added', service };
+    return {
+      action: 'added',
+      message: this.i18n.t('events.cart.messages.added'),
+      service
+    };
   }
-
 
   async removeCartItem(userId: string, serviceId: string) {
     const cart = await this.cartRepository.findOne({
@@ -78,13 +85,17 @@ export class CartService {
       relations: ['items'],
     });
 
-    if (!cart) throw new NotFoundException('Cart not found');
+    if (!cart) {
+      throw new NotFoundException(this.i18n.t('events.cart.errors.cart_not_found'));
+    }
 
-    const item = cart.items?.find(i => i.serviceId === serviceId);
-    if (!item) throw new NotFoundException('Service not in cart');
+    const item = cart.items?.find((i) => i.serviceId === serviceId);
+    if (!item) {
+      throw new NotFoundException(this.i18n.t('events.cart.errors.service_not_in_cart'));
+    }
 
     await this.cartItemRepository.remove(item);
-    return { message: 'Removed from cart' };
+    return { message: this.i18n.t('events.cart.messages.removed') };
   }
 
   async clearCart(userId: string) {
@@ -97,6 +108,6 @@ export class CartService {
       await this.cartItemRepository.remove(cart.items);
     }
 
-    return { message: 'Cart cleared successfully' };
+    return { message: this.i18n.t('events.cart.messages.cleared') };
   }
 }

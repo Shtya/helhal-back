@@ -20,11 +20,15 @@ import { CreateAssetDto, UpdateAssetDto } from 'dto/assets.dto';
 import { AssetService } from './asset.service';
 import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
 import { AccessGuard } from 'src/auth/guard/access.guard';
+import { TranslationService } from 'common/translation.service';
 
 @UseGuards(JwtAuthGuard, AccessGuard)
 @Controller('assets')
 export class AssetController {
-  constructor(private readonly assetService: AssetService) { }
+  constructor(
+    private readonly assetService: AssetService,
+    private readonly i18n: TranslationService,
+  ) { }
 
   // ✅ Single asset upload
   @Post()
@@ -44,14 +48,14 @@ export class AssetController {
     @Body() dto: CreateAssetDto,
     @Req() req: any,
   ) {
-    if (!files?.length) throw new NotFoundException('No files uploaded');
+    if (!files?.length) throw new NotFoundException(this.i18n.t('events.asset.no_files_uploaded'));
 
     const assets = await Promise.all(
       files.map((file) => this.assetService.Create(dto, file, req.user)),
     );
 
     return {
-      message: 'Assets uploaded successfully',
+      message: this.i18n.t('events.asset.upload_success'),
       assets,
     };
   }

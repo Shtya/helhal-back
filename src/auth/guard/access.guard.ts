@@ -7,10 +7,14 @@ import {
 import { Reflector } from '@nestjs/core';
 import { ACCESS_KEY, AccessRule } from 'decorators/access.decorator';
 import { PermissionBitmaskHelper } from '../permission-bitmask.helper';
+import { TranslationService } from 'common/translation.service';
 
 @Injectable()
 export class AccessGuard implements CanActivate {
-    constructor(private reflector: Reflector) { }
+    constructor(
+        private reflector: Reflector,
+        private readonly i18n: TranslationService,
+    ) { }
 
     canActivate(context: ExecutionContext): boolean {
         const rule = this.reflector.get<AccessRule>(
@@ -24,7 +28,7 @@ export class AccessGuard implements CanActivate {
         const user = request.user;
 
         if (!user) {
-            throw new ForbiddenException('User not authenticated');
+            throw new ForbiddenException(this.i18n.t('auth.errors.user_not_authenticated'));
         }
 
         // 1️⃣ ROLE CHECK (OR condition)
@@ -55,6 +59,6 @@ export class AccessGuard implements CanActivate {
             }
         }
 
-        throw new ForbiddenException('Insufficient permissions');
+        throw new ForbiddenException(this.i18n.t('auth.errors.insufficient_permissions'));
     }
 }

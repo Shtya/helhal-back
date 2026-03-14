@@ -4,12 +4,14 @@ import { Repository, In } from 'typeorm';
 import { Category, Service, CategoryType } from 'entities/global.entity';
 import { join } from 'path';
 import { promises as fsp } from 'fs';
+import { TranslationService } from 'common/translation.service';
 
 @Injectable()
 export class CategoriesService {
   constructor(
     @InjectRepository(Category)
     public categoryRepository: Repository<Category>,
+    private readonly i18n: TranslationService,
     @InjectRepository(Service)
     public serviceRepository: any,
   ) { }
@@ -33,9 +35,8 @@ export class CategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundException(this.i18n.t('events.categories.errors.not_found'));
     }
-
     return category;
   }
 
@@ -65,9 +66,10 @@ export class CategoriesService {
     });
 
     if (!category) {
-      throw new NotFoundException(`Category with slug "${slug}" not found`);
+      throw new NotFoundException(
+        this.i18n.t('events.categories.errors.slug_not_found', { args: { slug } })
+      );
     }
-
     const [services, total] = await this.serviceRepository.findAndCount({
       where: { categoryId: category.id },
       relations: {
@@ -109,12 +111,12 @@ export class CategoriesService {
 
   async markAsTop(categoryId: string, iconUrl: string) {
     const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
-    if (!category) throw new NotFoundException('Category not found');
+    if (!category) throw new NotFoundException(this.i18n.t("events.categories.errors.not_found"));
 
     // limit max top categories
     const count = await this.categoryRepository.count({ where: { top: true } });
     if (count >= 10) {
-      throw new BadRequestException('Maximum 10 top categories allowed.');
+      throw new BadRequestException(this.i18n.t('events.categories.errors.max_top_reached'));
     }
 
     category.top = true;
@@ -125,20 +127,24 @@ export class CategoriesService {
 
   async updateTopIcon(id: string, iconUrl: string) {
     const category = await this.categoryRepository.findOne({ where: { id } });
-    if (!category) throw new NotFoundException('Category not found');
+    if (!category) throw new NotFoundException(this.i18n.t("events.categories.errors.not_found"));
 
-    if (!category.top) throw new NotFoundException('Category is not marked as top');
+    if (!category.top) {
+      throw new BadRequestException(this.i18n.t('events.categories.errors.not_marked_as_top'));
+    }
 
     category.topIconUrl = iconUrl;
     await this.categoryRepository.save(category);
 
-    return { message: 'Top category icon updated', iconUrl };
+    return {
+      message: this.i18n.t('events.categories.messages.icon_updated'),
+      iconUrl
+    };
   }
 
   async unmarkAsTop(categoryId: string) {
     const category = await this.categoryRepository.findOne({ where: { id: categoryId } });
-    if (!category) throw new NotFoundException('Category not found');
-
+    if (!category) throw new NotFoundException(this.i18n.t('events.categories.errors.not_found'));
     // delete old icon if exists
     if (category.topIconUrl) {
       const oldPath = join(process.cwd(), category.topIconUrl);
@@ -149,6 +155,8 @@ export class CategoriesService {
           console.error('Failed to delete old icon:', err);
         }
       }
+
+      return { message: this.i18n.t('events.categories.messages.unmarked_top') };
     }
 
     category.top = false;

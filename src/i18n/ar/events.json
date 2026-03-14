@@ -1,8 +1,30 @@
 {
   "refresh_token_expired": "انتهت صلاحية رمز التحديث الخاص بك. الرجاء تسجيل الدخول مرة أخرى.",
+  "request_in_flight": "Request already in-flight, try again later.",
+  "authentication_failed": "Authentication failed.",
   "equipment": {
     "not_found_for_venue": "لم يتم العثور على الجهاز برقم التعريف {serviceId} للمكان برقم التعريف {venueId}",
     "updated": "تم التحديث بنجاح"
+  },
+  "crud": {
+    "errors": {
+      "pagination_invalid": "يجب أن تكون معاملات الصفحات أرقاماً صالحة أكبر من 0.",
+      "sort_order_invalid": "يجب أن يكون ترتيب الفرز إما 'ASC' أو 'DESC'.",
+      "enum_invalid": "قيمة غير صالحة '{search}' للحقل '{field}'. القيم المسموح بها: {allowed}",
+      "not_found": "{entityName} بالمعرف {id} غير موجود.",
+      "invalid_relations": "علاقات غير صالحة: {relations}"
+    },
+    "messages": {
+      "deleted": "تم حذف {entityName} بنجاح.",
+      "soft_deleted": "تم حذف {entityName} (حذف ناعم) بنجاح."
+    }
+  },
+  "nafath": {
+    "errors": {
+      "initiation_failed": "فشل بدء عملية التحقق من الهوية عبر نفاذ.",
+      "status_check_failed": "تعذر التحقق من حالة نفاذ في الوقت الحالي.",
+      "invalid_token": "رمز نفاذ غير صالح أو منتهي الصلاحية."
+    }
   },
   "period_already_reserved": "الفترة المحددة في تاريخ {date} محجوزة بالفعل.",
   "otp_valid": "رمز التحقق صحيح.",
@@ -12,10 +34,8 @@
   "website_settings_not_found": "إعدادات الموقع بالمعرف {id} غير موجودة.",
   "service_not_exist": "الخدمة غير موجودة.",
   "check_your_email_for_verification": "يرجى التحقق من بريدك الإلكتروني لتفعيل حسابك.",
-  "some_policies_not_found" : "بعض السياسات غير موجودة في قائمة السياسات",
-
+  "some_policies_not_found": "بعض السياسات غير موجودة في قائمة السياسات",
   "success": "تم التسجيل بنجاح!",
-
   "otp_sent2": "تم إرسال OTP إلى بريدك الإلكتروني، يرجى التحقق من حسابك",
   "user_not_found": "المستخدم غير موجود!",
   "user_already_verified": "تم التحقق من المستخدم بالفعل!",
@@ -23,12 +43,10 @@
   "user_not_found_repeat": "المستخدم غير موجود!",
   "user_already_verified_or_invalid_request": "المستخدم تم التحقق منه بالفعل أو الطلب غير صالح!",
   "new_otp_sent": "تم إرسال OTP جديدة إلى بريدك الإلكتروني. يرجى التحقق من حسابك.",
-
   "startDateRequired": "تاريخ البداية مطلوب.",
   "startDateMustBeDate": "يجب أن يكون تاريخ البداية تاريخًا صالحًا.",
   "endDateRequired": "تاريخ النهاية مطلوب.",
   "endDateMustBeDate": "يجب أن يكون تاريخ النهاية تاريخًا صالحًا.",
-
   "pages_setting_empty": "يجب إدخال إعدادات الصفحات.",
   "pages_setting_invalid_array": "إعدادات الصفحات يجب أن تكون مصفوفة.",
   "pages_setting_invalid_object": "كل عنصر في إعدادات الصفحات يجب أن يكون كائنًا صحيحًا.",
@@ -37,7 +55,6 @@
   "faq_empty": "يجب إدخال الأسئلة الشائعة.",
   "faq_invalid_array": "الأسئلة الشائعة يجب أن تكون مصفوفة.",
   "faq_invalid_object": "كل عنصر في الأسئلة الشائعة يجب أن يكون كائنًا صحيحًا.",
-
   "model_id_invalid": "يجب أن يكون معرف النموذج رقمًا أو نصًا يمثل رقمًا.",
   "model_id_required": "يجب إدخال معرف النموذج.",
   "name_invalid": "يجب أن يكون الاسم نصًا.",
@@ -54,17 +71,14 @@
   "folder_required": "يجب إدخال اسم المجلد.",
   "collection_invalid": "يجب أن تكون المجموعة نصًا.",
   "collection_required": "يجب إدخال اسم المجموعة.",
-
   "feature_not_found": "الميزة ذات المعرف {featureId} غير موجودة.",
   "feature_not_found_for_venue": "الميزة ذات المعرف {featureId} غير موجودة للقاعات ذات المعرف {venueId}.",
   "feature_removed_from_venue": "تمت إزالة الميزة ذات المعرف {featureId} من القاعات ذات المعرف {venueId}.",
   "feature_added_to_venue": "تمت إضافة الميزة ذات المعرف {featureId} إلى القاعات ذات المعرف {venueId}.",
-
   "file_required": "الملف مطلوب.",
   "media_not_found_by_id": "لم يتم العثور على الوسائط بالمعرف {id}.",
   "media_not_found_by_filename": "لم يتم العثور على الوسائط باسم الملف {fileName}.",
   "media_deleted_success": "تم حذف الوسائط بنجاح.",
-
   "permissions_array_required": "يجب إدخال مصفوفة الأذونات.",
   "permission_name_invalid": "يجب أن يكون اسم الإذن نصًا.",
   "permission_name_required": "يجب إدخال اسم الإذن.",
@@ -73,10 +87,8 @@
   "role_name_unique": "يجب أن يكون اسم الدور فريدًا.",
   "permissions_not_found": "بعض الأذونات غير موجودة.",
   "invalid_permissions": "إذن واحد أو أكثر غير صالح.",
-
   "permissions_already_exist": "بعض الأذونات موجودة بالفعل.",
   "permission_name_unique": "يجب أن يكون اسم الإذن فريدًا.",
-
   "role_required1": "يجب إدخال الدور.",
   "role_invalid1": "يجب أن يكون الدور واحدًا من القيم المسموحة.",
   "permissions_array_invalid": "يجب أن تكون الأذونات في شكل مصفوفة.",
@@ -98,22 +110,18 @@
   "policyDescriptionRequired": "وصف السياسة مطلوب",
   "policyIdMustBeNumber": "يجب أن يكون معرف السياسة رقمًا",
   "policyIdRequired": "معرف السياسة مطلوب",
-
   "events.feature_name_required": "يجب إدخال اسم الميزة.",
   "events.feature_name_invalid": "اسم الميزة يجب أن يكون كائن JSON.",
   "events.icon_media_id_invalid": "رقم تعريف الأيقونة يجب أن يكون رقمًا صحيحًا.",
   "events.feature_id_required": "يجب إدخال رقم الميزة.",
   "events.feature_id_invalid": "رقم الميزة يجب أن يكون رقمًا صحيحًا.",
-
   "policy_not_found": "السياسة ذات المعرف {policy_id} غير موجودة.",
   "policy_not_found_for_venue": "السياسة ذات المعرف {policyId} غير موجودة للمكان ذو المعرف {venueId}.",
   "policy_removed_from_venue": "تمت إزالة السياسة ذات المعرف {policyId} من المكان ذو المعرف {venueId}.",
-
   "user_not_exist": "المستخدم المحدد غير موجود.",
   "venue_not_exist": "المكان المطلوب غير موجود.",
   "package_not_exist": "الباقة المحددة غير متوفرة.",
   "venue_already_reserved": "المكان محجوز بالفعل من {from_time} إلى {to_time} في {check_in}. يرجى اختيار وقت آخر.",
-
   "venue_not_found2": "المكان ذو المعرف {venue_id} غير موجود.",
   "userIdRequired": "معرف المستخدم مطلوب",
   "userIdMustBeNumber": "يجب أن يكون معرف المستخدم رقمًا",
@@ -140,24 +148,26 @@
   "totalPriceMustBeNumber": "يجب أن يكون السعر الإجمالي رقمًا",
   "paymentMethodRequired": "طريقة الدفع مطلوبة",
   "paymentMethodMustBeString": "يجب أن تكون طريقة الدفع نصًا صحيحًا",
-
   "packageNameRequired": "اسم الباقة مطلوب",
   "packageNameMustBeObject": "يجب أن يكون اسم الباقة كائنًا",
-
   "serviceIdRequired": "معرف الخدمة مطلوب",
   "serviceIdMustBeNumber": "يجب أن يكون معرف الخدمة رقمًا",
   "priceRequired": "السعر مطلوب",
   "priceMustBeNumber": "يجب أن يكون السعر رقمًا",
-
   "equipment_not_found2": "المعدة المحددة غير موجودة.",
   "package_not_found": "الباقة المحددة غير موجودة.",
-
   "equipmentIdRequired": "معرف المعدة مطلوب",
   "equipmentIdMustBeNumber": "يجب أن يكون معرف المعدة رقمًا",
   "countRequired": "العدد مطلوب",
   "countMustBeNumber": "يجب أن يكون العدد رقمًا",
-
   ".": "لا يوجد مستخدم بهذا البريد الإلكتروني.",
+  "click_already_counted": "تم احتساب النقرة بالفعل.",
+  "click_track_missing_data": "تعذر تتبع النقرة: بيانات المستخدم وعنوان IP مفقودة.",
+  "click_tracked": "تم تتبع النقرة بنجاح.",
+  "max_popular_services": "الحد الأقصى المسموح به هو 10 خدمات شائعة فقط.",
+  "service_not_popular": "هذه الخدمة ليست مميزة كخدمة شائعة.",
+  "popular_icon_updated_msg": "تم تحديث أيقونة الخدمة الشائعة بنجاح.",
+  "only_active_popular": "يمكن فقط تمييز الخدمات النشطة كخدمات شائعة.",
   "password_reset_link_sent": "تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني.",
   "password_mismatch": "كلمة المرور الجديدة وتأكيد كلمة المرور غير متطابقين.",
   "password_reset_success": "تم إعادة تعيين كلمة المرور بنجاح.",
@@ -185,10 +195,8 @@
   "invalid_or_expired_otp": "رمز التحقق غير صالح أو منتهي الصلاحية.",
   "current_password_required": "كلمة المرور الحالية مطلوبة.",
   "current_password_incorrect": "كلمة المرور الحالية غير صحيحة.",
-
   "venue_not_found": "المكان المحدد غير موجود.",
   "gallery_not_found": "المعرض ذو المعرف {id} غير موجود.",
-
   "full_name": "يجب أن يكون الاسم الكامل نصًا.",
   "full_name_required": "الاسم الكامل مطلوب.",
   "email_invalid": "تنسيق البريد الإلكتروني غير صالح.",
@@ -201,16 +209,20 @@
   "status_invalid": "يجب أن تكون الحالة إما نشطة أو غير نشطة.",
   "avatar_invalid": "يجب أن يكون الصورة الرمزية نصًا.",
   "notFound": "هذا السجل بالمعرف  غير موجود.",
-
   "venueIdMustBePositive": "يجب أن يكون معرف القاعة رقمًا موجبًا",
   "imgsMustBeArray": "يجب أن تكون الصور في شكل مصفوفة",
   "imgsMinOneRequired": "يجب تحميل صورة واحدة على الأقل",
   "imgsMustBeString": "يجب أن يكون كل عنصر في المصفوفة نصًا (رابط URL)",
-
   "validation": {
-    "name": { "minLength": "يجب أن يكون الاسم على الأقل 3 أحرف." },
-    "email": { "required": "البريد الإلكتروني مطلوب." },
-    "password": { "minLength": "يجب أن تكون كلمة المرور على الأقل 3 أحرف." },
+    "name": {
+      "minLength": "يجب أن يكون الاسم على الأقل 3 أحرف."
+    },
+    "email": {
+      "required": "البريد الإلكتروني مطلوب."
+    },
+    "password": {
+      "minLength": "يجب أن تكون كلمة المرور على الأقل 3 أحرف."
+    },
     "role": {
       "invalid": "يجب أن تكون الصلاحية إما 'مدير' أو 'مستخدم'."
     },
@@ -303,7 +315,7 @@
       "balanceBeforeTransaction.required": "balanceBeforeTransaction مطلوب",
       "to.string": "يجب أن يكون to نصًا",
       "to.required": "to مطلوب",
-      "invalid": "معلمات التقسيم غير صالحة. يجب أن تكون \"page\" و \"limit\" أرقامًا موجبة.",
+      "invalid": "معلمات التقسيم غير صالحة. يجب أن تكون page و limitأرقامًا موجبة.",
       "deleted": "تم حذف سجل التمويل بالمعرف {id} بنجاح."
     },
     "date_required": "التاريخ مطلوب.",
@@ -314,7 +326,6 @@
     "event_type_error": "يجب أن يكون نوع الحدث نصًا وأقل من 50 حرفًا.",
     "booking_price_error": "يجب أن يكون سعر الحجز رقمًا موجبًا."
   },
-
   "user_id_integer": "يجب أن يكون معرف المستخدم رقمًا صحيحًا.",
   "user_id_required": "معرف المستخدم مطلوب.",
   "vendor_id_integer": "يجب أن يكون معرف البائع رقمًا صحيحًا.",
@@ -341,7 +352,6 @@
   "invalid_exclude_fields": "حقول غير صالحة في fieldsExclude: {fields}.",
   "record_not_found": "السجل ذو المعرف {id} غير موجود.",
   "record_deleted": "تم حذف السجل ذو المعرف {id} بنجاح.",
-
   "vendor_not_found": "لم يتم العثور على البائع بالمعرف {vendor_id}.",
   "only_vendors_can_create": "يمكن للبائعين فقط إنشاء العقارات.",
   "city_not_found": "لم يتم العثور على المدينة بالمعرف {city_id}.",
@@ -354,7 +364,6 @@
   "cities_added_successfully": "تم إضافة {citiesCount} مدينة بنجاح.",
   "cannot_delete_or_update": "لا يمكن حذف أو تحديث هذا السجل لأنه مُرتبط بسجلات أخرى.",
   "unexpected_database_error": "حدث خطأ غير متوقع في قاعدة البيانات.",
-
   "city.name_string": "يجب أن يكون الاسم نص.",
   "city.name_required": "الاسم مطلوب.",
   "city.country_id_required": "معرف البلد مطلوب.",
@@ -362,7 +371,6 @@
   "country.name_string": "يجب أن يكون الاسم سلسلة نصية.",
   "country.name_required": "الاسم مطلوب.",
   "country.description_string": "يجب أن تكون الوصف سلسلة نصية.",
-
   "property.name_valid_object": "يجب أن يكون الاسم كائنًا صالحًا.",
   "property.name_required": "الاسم مطلوب.",
   "property.description_valid_object": "يجب أن يكون الوصف كائنًا صالحًا.",
@@ -375,13 +383,11 @@
   "property.city_id_required": "معرف المدينة مطلوب.",
   "property.venue_id_number": "يجب أن يكون معرف المكان رقمًا.",
   "missing_table_in_from_clause": "الاستعلام يفتقد إلى جدول ضروري في جملة FROM. يرجى التأكد من تضمين جميع الجداول المرجعية.",
-
   "venue.occasion_type_not_found": "نوع المناسبة غير موجود",
   "venue.property_not_found": "العقار غير موجود",
   "venue.venue_not_found": "المكان بالمعرف {id} غير موجود",
   "venue.venue_not_found_by_id": "المكان بالمعرف {venueId} غير موجود",
   "venue.feature_not_found": "الميزة بالمعرف {featureId} غير موجودة",
-
   "venue_name_invalid": "اسم المكان غير صالح.",
   "venue_description_invalid": "وصف المكان غير صالح.",
   "venue_operating_system_invalid": "نظام التشغيل غير صالح.",
@@ -402,7 +408,6 @@
   "venue_classroom_invalid": "يجب أن يكون خيار الفصل الدراسي قيمة منطقية.",
   "venue_property_id_invalid": "يجب أن يكون معرف الملكية موجودًا ويجب أن يكون عددًا.",
   "occasion_type_id_invalid": "يجب أن يكون معرف نوع المناسبة موجودًا ويجب أن يكون عددًا.",
-
   "service_name_invalid": "اسم الخدمة غير صالح",
   "service_name_required": "اسم الخدمة مطلوب",
   "service_icon_invalid": "معرف الأيقونة غير صالح",
@@ -424,7 +429,6 @@
     "removed_from_venue": "تمت إزالة الخدمة بالمعرف {serviceId} من القاعة بالمعرف {venueId}",
     "already_associated": "هذه الخدمة مرتبطة بالفعل بسجل موجود. معرف الخدمة: {serviceId}, معرف المكان: {venueId}."
   },
-
   "createequipment": {
     "name": "يجب أن يكون الاسم كائنًا صالحًا.",
     "icon_media_id": "يجب أن يكون معرف الأيقونة رقمًا.",
@@ -440,12 +444,293 @@
     "price_per": "يجب أن يكون السعر لكل وحدة نصًا.",
     "price_per_required": "السعر لكل وحدة مطلوب."
   },
-
   "equipment_not_found": "لم يتم العثور على المعدات بالمعرف {equipmentId}",
   "venue_equipment_not_found": "لم يتم العثور على تجهيزات القاعة بالمعرف {id}",
   "venue_equipment_deleted": "تم حذف تجهيزات القاعة بالمعرف {id} بنجاح.",
   "occasion_type": {
     "name_required": "يجب ألا يكون الاسم فارغًا.",
     "name_invalid": "يجب أن يكون الاسم كائن JSON."
+  },
+  "cart": {
+    "errors": {
+      "user_not_found": "المستخدم غير موجود.",
+      "service_not_found": "الخدمة غير موجودة.",
+      "cart_not_found": "عربة التسوق غير موجودة.",
+      "service_not_in_cart": "هذه الخدمة ليست في عربة التسوق."
+    },
+    "messages": {
+      "added": "تمت إضافة الخدمة إلى العربة.",
+      "removed": "تمت إزالة الخدمة من العربة.",
+      "cleared": "تم تفريغ عربة التسوق بنجاح."
+    }
+  },
+  "ratings": {
+    "order_not_found_buyer": "الطلب غير موجود أو أنك لست المشتري",
+    "order_not_found_seller": "الطلب غير موجود أو أنك لست البائع",
+    "order_not_completed": "الطلب لم يكتمل بعد",
+    "period_expired": "انتهت فترة التقييم (14 يومًا)",
+    "cannot_edit_public": "لا يمكن تعديل التقييم بعد أن يصبح علنيًا",
+    "seller_rated_success": "تم تقييم البائع بنجاح",
+    "buyer_rated_success": "تم تقييم المشتري بنجاح",
+    "rating_published_title": "تم نشر التقييم",
+    "rating_published_msg": "التقييمات للطلب رقم #{orderId} أصبحت علنية الآن.",
+    "unauthorized_view": "ليس لديك صلاحية لعرض هذا التقييم",
+    "user_not_found": "المستخدم غير موجود"
+  },
+  "categories": {
+    "errors": {
+      "not_found": "الفئة غير موجودة.",
+      "slug_not_found": "الفئة ذات الرابط {slug} غير موجودة.",
+      "icon_required": "ملف الأيقونة مطلوب لتمييز الفئة كفئة رئيسية.",
+      "update_icon_required": "ملف الأيقونة مطلوب لتحديث أيقونة الفئة الرئيسية.",
+      "max_top_reached": "الحد الأقصى المسموح به هو 10 فئات رئيسية فقط.",
+      "not_marked_as_top": "هذه الفئة ليست محددة كفئة رئيسية."
+    },
+    "messages": {
+      "icon_updated": "تم تحديث أيقونة الفئة الرئيسية بنجاح.",
+      "marked_top": "تم تمييز الفئة كفئة رئيسية بنجاح.",
+      "unmarked_top": "تم إلغاء تمييز الفئة كفئة رئيسية بنجاح."
+    }
+  },
+  "conversation_not_found": "المحادثة غير موجودة.",
+  "access_denied": "ليس لديك صلاحية الوصول.",
+  "message_empty": "يجب أن تتضمن الرسالة نصاً أو مرفقات.",
+  "message_too_long": "الرسالة طويلة جداً (الحد الأقصى 1000 حرف).",
+  "messages_marked_read": "تم تحديد الرسائل كمقروءة.",
+  "cannot_chat_self": "لا يمكنك إنشاء محادثة مع نفسك.",
+  "service_not_found": "الخدمة غير موجودة.",
+  "search_query_too_short": "يجب أن يتكون نص البحث من حرفين على الأقل.",
+  "order_not_found": "الطلب غير موجود.",
+  "dispute_already_exists": "يوجد نزاع مفتوح بالفعل لهذا الطلب.",
+  "dispute_not_found": "النزاع غير موجود.",
+  "dispute_resolved_title": "تم حل النزاع",
+  "dispute_resolved_buyer_msg": "تم حل النزاع الخاص بالطلب {title}. تم إرجاع المبلغ إلى محفظتك.",
+  "dispute_resolved_seller_msg": "تم حل النزاع الخاص بالطلب {title}. تم تحويل المستحقات إلى محفظتك.",
+  "rating_title_buyer": "كيف كانت تجربتك؟",
+  "rating_msg_buyer": "الطلب {title} مكتمل الآن! يرجى تقييم عمل المستقل لمساعدة الآخرين.",
+  "rating_title_seller": "شاركنا رأيك",
+  "rating_msg_seller": "الطلب {title} انتهى. يرجى تقييم تجربتك مع العميل لإتمام العملية.",
+  "dispute_access_denied": "يمكنك فقط فتح نزاعات للطلبات الخاصة بك.",
+  "message_required": "نص الرسالة مطلوب.",
+  "dispute_closed_error": "لا يمكن إضافة رسائل على نزاع مغلق.",
+  "parent_message_not_found": "الرسالة الأصلية غير موجودة في هذا النزاع.",
+  "only_admin_change_status": "فقط المسؤولون يمكنهم تغيير حالة النزاع عندما يكون مفتوحاً.",
+  "admin_only_status_change": "فقط المسؤولون يمكنهم تغيير حالة النزاع.",
+  "invalid_dispute_status": "حالة النزاع غير صالحة: {status}",
+  "dispute_status_transition_error": "الحالة {next} يمكن تعيينها فقط إذا كانت الحالة السابقة هي OPEN أو IN_REVIEW.",
+  "dispute_in_review_error": "الحالة in_review يمكن تعيينها فقط إذا كانت الحالة السابقة هي OPEN.",
+  "admin_resolve_required": "فقط المسؤول يمكنه حل النزاع مباشرة دون وجود قرار حل معلق.",
+  "admin_only_close": "فقط المسؤولون يمكنهم إغلاق النزاع.",
+  "unsupported_status": "حالة غير مدعومة.",
+  "invoice_mismatch": "مجموع مستحقات البائع والمبلغ المسترد للمشتري يجب أن يساوي إجمالي الفاتورة.",
+  "resolution_not_pending": "القرار ليس قيد انتظار القبول حالياً.",
+  "user_not_involved": "أنت لست طرفاً في هذا النزاع.",
+  "invalid_resolution_format": "صيغة القرار غير صالحة. يتوقع نظام JSON يحتوي على sellerAmount و buyerRefund.",
+  "service_not_found_or_inactive": "الخدمة غير موجودة أو غير متاحة حالياً.",
+  "favorite_not_found": "الخدمة ليست موجودة في المفضلة.",
+  "added_to_favorites": "تمت إضافة الخدمة إلى المفضلة بنجاح.",
+  "removed_from_favorites": "تمت إزالة الخدمة من المفضلة بنجاح.",
+  "file_required_or_invalid": "لم يتم توفير ملف، أو أن نوع الملف غير صالح.",
+  "popular_icon_required": "ملف الأيقونة مطلوب لتمييز هذه الفئة كفئة شائعة.",
+  "update_popular_icon_required": "ملف الأيقونة مطلوب لتحديث أيقونة الفئة الشائعة.",
+  "title_available": "العنوان متاح للاستخدام.",
+  "title_owned_by_you": "لديك بالفعل خدمة مسجلة بهذا العنوان.",
+  "title_used_by_other": "هذا العنوان مستخدم بالفعل من قبل بائع آخر.",
+  "service_title_exists": "الخدمة بالعنوان {title} موجودة بالفعل. يرجى اختيار عنوان مختلف.",
+  "state_not_found_in_country": "المنطقة غير موجودة أو لا تنتمي إلى الدولة المختارة.",
+  "service_update_forbidden": "يمكنك فقط تحديث الخدمات الخاصة بك.",
+  "invalid_service_status": "حالة الخدمة غير صالحة: {status}. القيم المسموحة: {allowed}",
+  "service_delete_forbidden": "يمكنك فقط حذف الخدمات الخاصة بك.",
+  "service_analytics_denied": "الخدمة غير موجودة أو ليس لديك صلاحية الوصول لإحصائياتها.",
+  "notifications": {
+    "admins_only": "للمسؤولين فقط",
+    "no_admin_found": "لم يتم العثور على مسؤول",
+    "all_read": "تم تحديد جميع الإشعارات كمقروءة"
+  },
+  "orders": {
+    "user_not_found": "المستخدم غير موجود",
+    "transaction_not_found": "المعاملة غير موجودة",
+    "transaction_already_processed": "المعاملة تمت معالجتها بالفعل",
+    "payment_failed_title": "فشل الدفع",
+    "payment_failed_msg": "فشلت محاولة الدفع للطلب رقم {orderId}. (مرجع: {transactionId}). يرجى المحاولة مرة أخرى.",
+    "order_not_found": "الطلب غير موجود",
+    "invoice_not_found": "الفاتورة غير موجودة",
+    "payment_success_title": "تم الدفع بنجاح",
+    "payment_success_msg": "تمت معالجة دفع مبلغ {amount} {currency} للطلب “{title}” بنجاح.",
+    "order_paid_title": "تم دفع الطلب",
+    "order_paid_msg": "تم دفع الطلب “{title}”.",
+    "manual_finalize_description": "إنهاء إداري يدوي - طلب رقم #{orderId} - السعر: {amount} ريال",
+    "already_paid": "هذه الفاتورة مدفوعة بالفعل",
+    "only_buyer_pay": "يمكن للمشتري فقط إتمام عملية الدفع",
+    "not_payable": "الطلب ليس في حالة تسمح بالدفع",
+    "access_denied": "تم رفض الوصول",
+    "service_not_found": "الخدمة غير موجودة أو غير متاحة",
+    "linked_to_seller": "لا يمكنك تقديم طلب لأنك مرتبط بالفعل بهذا البائع",
+    "seller_not_found": "البائع غير موجود",
+    "invalid_package": "نوع الباقة غير صالح",
+    "new_order_title": "تم استلام طلب جديد",
+    "new_order_msg": "لقد تلقيت طلباً جديداً لخدمتك {title}.",
+    "rating_buyer_title": "كيف كانت تجربتك؟",
+    "rating_buyer_msg": "طلبك {title} مكتمل الآن! يرجى تقييم عمل المستقل لمساعدة الآخرين.",
+    "rating_seller_title": "شاركنا رأيك",
+    "rating_seller_msg": "انتهى الطلب {title}. يرجى تقييم تجربتك مع العميل لإتمام العملية.",
+    "invalid_status_transition": "تغيير حالة غير صالح",
+    "buyer_only_cancel": "يمكن للمشترين فقط إلغاء الطلبات",
+    "seller_cannot_cancel": "لا يمكن للبائعين إلغاء الطلبات مباشرة",
+    "must_be_accepted_for_delivery": "يجب قبول الطلب قبل التسليم",
+    "in_dispute": "الطلب في حالة نزاع",
+    "order_delivered_title": "تم تسليم الطلب",
+    "order_delivered_msg": "قام البائع بتسليم {title}. يرجى المراجعة وتأكيد الاستلام.",
+    "cannot_request_changes": "لا يمكن طلب تعديلات على هذا الطلب في حالته الحالية",
+    "change_requested_title": "تم طلب تعديل لـ {title}",
+    "change_requested_msg": "طلب المشتري تعديلات",
+    "buyer_only_cancel_order": "يمكن للمشتري فقط إلغاء هذا الطلب",
+    "not_cancellable": "لا يمكن إلغاء الطلب في هذه المرحلة",
+    "order_cancelled_title": "تم إلغاء الطلب",
+    "order_cancelled_msg": "قام المشتري بإلغاء الطلب.",
+    "seller_only_reject": "يمكن للبائع فقط رفض هذا الطلب",
+    "not_rejectable": "لا يمكن رفض الطلب في هذه المرحلة",
+    "order_rejected_title": "تم رفض الطلب",
+    "order_rejected_msg": "تم رفض طلبك من قبل البائع.",
+    "seller_only_accept": "يمكن للبائع فقط قبول هذا الطلب",
+    "not_acceptable": "لا يمكن قبول الطلب في هذه المرحلة",
+    "order_accepted_title": "تم قبول الطلب",
+    "order_accepted_msg": "تم قبول طلبك من قبل البائع.",
+    "auto_cancelled_buyer_title": "تم إلغاء الطلب تلقائياً",
+    "auto_cancelled_buyer_msg": "تم إلغاء طلبك لـ {title} وتم إعادة الأموال إلى محفظتك.",
+    "auto_cancelled_seller_title": "تم إلغاء الطلب (النظام)",
+    "auto_cancelled_seller_msg": "تم إلغاء الطلب {title} بسبب انتهاء فترة طلب التعديل.",
+    "must_be_delivered": "يجب تسليم الطلب قبل إتمامه",
+    "in_dispute_blocked": "الطلب في حالة نزاع؛ الإتمام محظور",
+    "auto_completed_seller_title": "تم إتمام الطلب تلقائياً",
+    "auto_completed_seller_msg": "تم إتمام الطلب {title} تلقائياً. أرباحك متاحة الآن في رصيدك.",
+    "auto_completed_buyer_title": "تم إغلاق الطلب",
+    "auto_completed_buyer_msg": "تم تحديد طلبك لـ {title} كمكتمل تلقائياً بعد فترة التسليم.",
+    "context_invalid": "سياق الطلب غير صالح",
+    "proposal_not_found": "العرض غير موجود",
+    "proposal_rejected_title": "تم رفض العرض",
+    "proposal_rejected_msg": "تم قبول عرض آخر للوظيفة {title}.",
+    "order_activated_title": "تم تفعيل الطلب",
+    "order_activated_msg": "تم استلام الدفعة. الطلب لـ {title} نشط الآن.",
+    "proposal_accepted_title": "تم قبول العرض",
+    "proposal_accepted_msg": "تم قبول عرضك لـ {title} وتم الدفع.",
+    "order_completed_title": "تم إتمام الطلب",
+    "order_completed_msg": "أكد المشتري الإتمام لـ {title}. المبلغ متاح الآن."
+  },
+  "payments": {
+    "billing_profile_incomplete": "يرجى إكمال ملف الفواتير الخاص بك. الحقول المفقودة: {missingLabels}",
+    "labels": {
+      "firstName": "الاسم الأول",
+      "lastName": "اسم العائلة",
+      "country": "الدولة",
+      "state": "المنطقة"
+    },
+    "escrow_deposit_description": "إيداع ضمان للطلب رقم {orderId} (فاتورة رقم {invoiceId})",
+    "paymob_init_failed": "فشل بدء Paymob، يرجى المحاولة مرة أخرى أو الاتصال بالدعم.",
+    "invalid_hmac": "HMAC غير صالح",
+    "auth_token_failed": "تعذر إنشاء رمز مصادقة Paymob",
+    "disbursement_failed": "فشل صرف Paymob: {reason}",
+    "payout_init_failed": "فشل بدء عملية الصرف مع المزود",
+    "order_id_required": "معرف الطلب مطلوب",
+    "status_check_failed": "فشل التحقق من حالة المعاملة",
+    "paymob_auth_failed": "فشلت مصادقة Paymob"
+  },
+  "jobs": {
+    "service_analytics_denied": "الخدمة غير موجودة أو ليس لديك صلاحية الوصول لإحصائياتها.",
+    "click_track_missing_data": "تعذر تتبع النقرة: بيانات المستخدم وعنوان IP مفقودة.",
+    "click_already_counted": "تم احتساب النقرة مسبقاً.",
+    "click_tracked": "تم تتبع النقرة بنجاح.",
+    "only_active_popular": "يمكن فقط تمييز الخدمات النشطة كخدمات شائعة.",
+    "max_popular_services": "الحد الأقصى المسموح به هو 10 خدمات شائعة فقط.",
+    "service_not_popular": "هذه الخدمة ليست مميزة كخدمة شائعة.",
+    "popular_icon_updated_msg": "تم تحديث أيقونة الخدمة الشائعة بنجاح.",
+    "not_found": "لم يتم العثور على الوظيفة",
+    "not_found_or_deleted": "الوظيفة غير موجودة أو تم حذفها",
+    "category_not_found": "الفئة غير موجودة",
+    "subcategory_not_found": "الفئة الفرعية غير موجودة أو لا تنتمي إلى الفئة المختارة",
+    "country_not_found": "الدولة غير موجودة",
+    "state_not_found": "المنطقة غير موجودة أو لا تنتمي إلى الدولة المختارة",
+    "update_own_only": "يمكنك فقط تعديل الوظائف الخاصة بك",
+    "delete_own_only": "يمكنك فقط حذف الوظائف الخاصة بك",
+    "not_published": "الوظيفة غير موجودة أو لم يتم نشرها",
+    "linked_to_buyer": "لا يمكنك تقديم عرض لأنك مرتبط بالفعل بهذا المشتري",
+    "proposal_already_submitted": "لقد قدمت بالفعل عرضاً لهذه الوظيفة",
+    "access_denied": "تم رفض الوصول",
+    "proposal_not_found": "لم يتم العثور على العرض",
+    "invalid_status_update": "تحديث حالة غير صالح"
+  },
+  "missing-from-clause-entry-error": "خطأ في إدخال بند FROM (Missing FROM-clause entry).",
+  "disputes": {
+    "invalid_order_state": "الطلب ليس في حالة تسمح بفتح نزاع",
+    "opened_title": "تم فتح نزاع",
+    "opened_msg": "تم فتح نزاع للطلب {title}. السبب: {reason}",
+    "new_dispute_title": "نزاع جديد",
+    "new_dispute_msg": "الطلب {title} الآن في حالة نزاع.",
+    "user_not_found": "المستخدم غير موجود",
+    "new_message_title": "رسالة نزاع جديدة",
+    "status_updated_title": "تم تحديث حالة النزاع",
+    "status_updated_msg": "تغيرت حالة النزاع إلى {status} في الطلب {title}.",
+    "resolved_title": "تم حل النزاع",
+    "resolved_msg": "تم حل النزاع القائم على {title}.",
+    "status_in_review_msg": "تغيرت حالة النزاع إلى قيد المراجعة في {title}.",
+    "status_open_msg": "تغيرت حالة النزاع إلى مفتوح في {title}.",
+    "status_close_no_action_msg": "تغيرت حالة النزاع إلى إغلاق بدون اتخاذ إجراء في {title}.",
+    "status_rejected_msg": "تغيرت حالة النزاع إلى مرفوض في {title}.",
+    "resolution_proposed_title": "تم اقتراح حل للنزاع",
+    "resolution_proposed_msg": "تم اقتراح حل للنزاع رقم #{id}.",
+    "resolution_rejected_title": "تم رفض الحل",
+    "resolution_rejected_msg": "تم رفض الحل المقترح للنزاع رقم #{id}.",
+    "no_invoice": "لم يتم العثور على فاتورة لهذا الطلب",
+    "admin_resolved_msg": "قام المسؤول بحل النزاع في {title}.",
+    "resolution_accepted_msg": "تم قبول الحل لـ {title}.",
+    "order_resolved_msg": "تم حل النزاع في الطلب {title}.",
+    "rating_buyer_title": "كيف كانت تجربتك؟",
+    "rating_buyer_msg": "طلبك {title} مكتمل! يرجى تخصيص لحظة لتقييم عمل المستقل لمساعدة الآخرين في المجتمع.",
+    "rating_seller_title": "شارك ملاحظاتك",
+    "rating_seller_msg": "انتهى الطلب {title}. يرجى تقييم تجربتك في العمل مع هذا العميل لإكمال العملية."
+  },
+  "escrow": {
+    "funds_received_title": "تم استلام الأموال",
+    "funds_received_msg": "تلقى النظام مبلغ {amount} ريال سعودي للطلب {title}."
+  },
+  "wallet": {
+    "admin_withdrawal_released_title": "تم إطلاق سحب مالي",
+    "admin_withdrawal_released_msg": "تم تحويل مبلغ {amount} ريال سعودي للمستخدم {userId}.",
+    "withdrawal_failed_title": "فشل عملية السحب",
+    "withdrawal_failed_msg": "فشلت عملية سحب {amount} ريال سعودي. تم إعادة المبلغ إلى رصيدك.",
+    "withdrawal_success_title": "تم السحب بنجاح",
+    "withdrawal_success_msg": "تمت معالجة سحب مبلغ {amount} ريال سعودي بنجاح."
+  },
+  "accounting": {
+    "bank_account_not_found": "لم يتم العثور على الحساب البنكي",
+    "cannot_delete_default_bank": "لا يمكن حذف الحساب البنكي الافتراضي",
+    "default_bank_updated": "تم تحديث الحساب البنكي الافتراضي بنجاح",
+    "invoice_not_paid": "الفاتورة غير مدفوعة",
+    "platform_account_not_configured": "لم يتم تكوين حساب المنصة",
+    "invoice_not_paid_status": "الفاتورة ليست في حالة مدفوعة",
+    "insufficient_escrow_funds": "أموال الضمان غير كافية للاسترداد",
+    "split_mismatch": "يجب أن يساوي التقسيم المجموع الفرعي",
+    "escrow_insufficient": "رصيد الضمان غير كافٍ",
+    "min_withdrawal_amount": "الحد الأدنى لمبلغ السحب هو 112 ريال سعودي",
+    "insufficient_balance": "الرصيد المتاح غير كافٍ",
+    "no_default_bank": "لم يتم العثور على حساب بنكي افتراضي.",
+    "payment_method_not_found": "لم يتم العثور على طريقة الدفع",
+    "cannot_remove_default_payment": "لا يمكن إزالة طريقة الدفع الافتراضية",
+    "escrow_deposit_desc": "إيداع الضمان للطلب #{orderId}",
+    "escrow_release_seller_desc": "إصدار الضمان للبائع للطلب #{orderId}",
+    "payout_desc": "صرف للطلب #{orderId}",
+    "refund_rejected_escrow_desc": "استرداد للطلب المرفوض #{orderId} - مخصوم من الضمان",
+    "refund_rejected_desc": "استرداد للطلب المرفوض #{orderId}",
+    "dispute_payout_desc": "صرف نزاع للطلب #{orderId}",
+    "dispute_refund_desc": "استرداد نزاع للطلب #{orderId}",
+    "escrow_split_release_desc": "إصدار تقسيم الضمان للطلب #{orderId}",
+    "withdrawal_iban_desc": "سحب إلى آيبان: {iban}",
+    "withdrawal_not_found": "لم يتم العثور على طلب السحب",
+    "only_pending_withdrawals": "يمكن معالجة السحوبات المعلقة فقط"
+  },
+  "asset": {
+    "no_files_uploaded": "لم يتم تحميل أي ملفات",
+    "asset_not_found": "لم يتم العثور على الأصل (Asset)",
+    "upload_success": "تم تحميل الأصول بنجاح"
   }
 }

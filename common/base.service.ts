@@ -9,7 +9,8 @@ import {
 import { Repository, Brackets, QueryFailedError } from 'typeorm';
 // import { checkEntityExists } from 'utils/checkEntityExists';
 import { I18nService } from 'nestjs-i18n';
- import { checkEntityExists } from './checkEntityExists';
+import { checkEntityExists } from './checkEntityExists';
+import { TranslationService } from './translation.service';
 
 export interface FindAllOptions {
   entityName: string;
@@ -25,10 +26,8 @@ export interface FindAllOptions {
 
 @Injectable()
 export class BaseService<T> {
-  @Inject(I18nService)
-  public readonly i18n: I18nService;
+  constructor(protected readonly repository: Repository<T>, public i18n: TranslationService) { }
 
-  constructor(protected readonly repository: Repository<T>) {}
 
   async update(id: any, dto: any) {
     const metadata: any = this.repository.metadata;
@@ -65,7 +64,7 @@ export class BaseService<T> {
         );
       }
     }
- 
+
 
     try {
       const data = this.repository.create(dto);
@@ -235,7 +234,7 @@ export class BaseService<T> {
     //! Fetch data
     const [data, total] = (await query.getManyAndCount()) as any;
 
-    return { total_records: total, current_page: pageNumber, per_page: limitNumber,  records : data };
+    return { total_records: total, current_page: pageNumber, per_page: limitNumber, records: data };
   }
 
   async findOne(id: any, relations?: string[]) {

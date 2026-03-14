@@ -5,6 +5,7 @@ import { PreconditionFailedException } from '@nestjs/common';
 import { AccountingService } from 'src/accounting/accounting.service';
 import { UnifiedCheckout } from './payment.constant';
 import { OrdersService } from 'src/orders/orders.service';
+import { TranslationService } from 'common/translation.service';
 
 
 export abstract class BasePaymentGateway {
@@ -13,7 +14,8 @@ export abstract class BasePaymentGateway {
         protected readonly accountingService: AccountingService,
         protected readonly orderRepo: Repository<Order>,
         protected readonly transactionBillingRepo: Repository<TransactionBillingInfo>,
-        protected readonly ordersService: OrdersService
+        protected readonly ordersService: OrdersService,
+        protected readonly i18n: TranslationService,
     ) { }
 
     protected DEFAULT_CURRENCY = process.env.DEFAULT_CURRENCY || "SAR";
@@ -24,12 +26,12 @@ export abstract class BasePaymentGateway {
         const currentInfo = await this.accountingService.getBillingInformation(userId);
 
         const requiredFields = [
-            { key: 'firstName', label: 'First Name' },
-            { key: 'lastName', label: 'Last Name' },
+            { key: 'firstName', label: this.i18n.t('events.payments.labels.firstName') },
+            { key: 'lastName', label: this.i18n.t('events.payments.labels.lastName') },
             // { key: 'phoneNumber', label: 'Phone Number' },
             // { key: 'email', label: 'Email' },
-            { key: 'countryId', label: 'Country' },
-            { key: 'stateId', label: 'State' }
+            { key: 'countryId', label: this.i18n.t('events.payments.labels.country') },
+            { key: 'stateId', label: this.i18n.t('events.payments.labels.state') }
         ];
 
         // Check for missing values
@@ -38,7 +40,7 @@ export abstract class BasePaymentGateway {
         if (missing.length > 0) {
             const missingLabels = missing.map(m => m.label).join(', ');
             throw new PreconditionFailedException(
-                `Please complete your billing profile. Missing: ${missingLabels}`
+                this.i18n.t('events.payments.billing_profile_incomplete', { args: { missingLabels } })
             );
         }
 

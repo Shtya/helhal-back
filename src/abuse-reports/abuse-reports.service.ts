@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { AbuseReport, User, Service, Notification, AbuseReportStatus } from 'entities/global.entity';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class AbuseReportsService {
@@ -13,7 +14,8 @@ export class AbuseReportsService {
     @InjectRepository(Service)
     private serviceRepository: Repository<Service>,
     @InjectRepository(Notification)
-    private notificationRepository: Repository<Notification>,
+    private notificationRepository: Repository<Notification>
+
   ) { }
 
   async createReport(userId: string, createReportDto: any) {

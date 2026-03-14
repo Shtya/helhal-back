@@ -47,7 +47,7 @@ export class NotificationSubscriber
         // جلب المستخدم مع إعدادات الإشعارات الخاصة به
         const user = await manager.findOne(User, {
             where: { id: notif.userId },
-            relations: ['notificationSettings']
+            relations: ['notificationSettings', 'person']
         });
 
         if (!user || !user.email) return;
@@ -81,6 +81,7 @@ export class NotificationSubscriber
                 user.email,
                 user.username || 'User',
                 notif,
+                user?.preferredLanguage,
                 link
             );
 

@@ -5,6 +5,8 @@ import { Dispute, Order, User, Notification, DisputeStatus, OrderStatus, Setting
 import { AccountingService } from 'src/accounting/accounting.service';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { Permissions } from 'entities/permissions';
+import { TranslationService } from 'common/translation.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class DisputesService {
@@ -14,9 +16,10 @@ export class DisputesService {
     @InjectRepository(User) private userRepository: Repository<User>,
     @InjectRepository(DisputeMessage) private dmRepo: Repository<DisputeMessage>,
     @InjectRepository(Setting) private settingRepo: Repository<Setting>,
-    @InjectRepository(Notification) private notificationRepository: Repository<Notification>,
+    private notificationService: NotificationService,
     private accountingService: AccountingService,
     private dataSource: DataSource,
+    private i18n: TranslationService,
   ) { }
 
   async createDispute(userId: string, createDisputeDto: any) {
@@ -33,11 +36,13 @@ export class DisputesService {
       }
     });
 
-    if (!order) throw new NotFoundException('Order not found');
-
-    if (order.buyerId !== userId && order.sellerId !== userId) throw new ForbiddenException('You can only open disputes for your own orders');
-
-    if (![OrderStatus.ACCEPTED, OrderStatus.DELIVERED, OrderStatus.ChangeRequested].includes(order.status)) throw new BadRequestException('Order is not in a disputable state');
+    if (!order) {
+      throw new NotFoundException(this.i18n.t('events.order_not_found'));
+    }
+    if (order.buyerId !== userId && order.sellerId !== userId) {
+      throw new ForbiddenException(this.i18n.t('events.dispute_access_denied'));
+    }
+    if (![OrderStatus.ACCEPTED, OrderStatus.DELIVERED, OrderStatus.ChangeRequested].includes(order.status)) throw new BadRequestException(this.i18n.t('events.disputes.invalid_order_state'));
 
 
     // const existing = await this.disputeRepository.findOne({ where: { orderId } });
@@ -53,31 +58,36 @@ export class DisputesService {
 
     // notify other party
     const otherUserId = order.buyerId === userId ? order.sellerId : order.buyerId;
-    await this.notificationRepository.save(
-      this.notificationRepository.create({
-        userId: otherUserId,
-        type: 'dispute_opened',
-        title: 'Dispute opened',
-        message: `A dispute has been opened for "${order.title}". Reason: ${reason}`,
-        relatedEntityType: 'dispute',
-        relatedEntityId: savedDispute.id,
-      }) as any,
-    );
 
-    // notify platform account (admin inbox)
+    // 1. Notify the counterparty (Buyer or Seller)
+    await this.notificationService.notifyWithLang({
+      userIds: [otherUserId],
+      type: 'dispute_opened',
+      title: { key: 'events.disputes.opened_title' },
+      message: {
+        key: 'events.disputes.opened_msg',
+        args: { title: order.title, reason }
+      },
+      relatedEntityId: savedDispute.id,
+      relatedEntityType: 'dispute'
+    });
+
+    // 2. Notify the Platform Admin
     const settings = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
     const platformUserId = settings?.[0]?.platformAccountUserId;
+
     if (platformUserId) {
-      await this.notificationRepository.save(
-        this.notificationRepository.create({
-          userId: platformUserId,
-          type: 'dispute_opened',
-          title: 'New dispute',
-          message: `Order "${order.title}" is now in dispute.`,
-          relatedEntityType: 'dispute',
-          relatedEntityId: savedDispute.id,
-        }) as any,
-      );
+      await this.notificationService.notifyWithLang({
+        userIds: [platformUserId],
+        type: 'dispute_opened',
+        title: { key: 'events.disputes.new_dispute_title' },
+        message: {
+          key: 'events.disputes.new_dispute_msg',
+          args: { title: order.title }
+        },
+        relatedEntityId: savedDispute.id,
+        relatedEntityType: 'dispute'
+      });
     }
 
     return savedDispute;
@@ -101,7 +111,7 @@ export class DisputesService {
       },
     });
 
-    if (!dispute) throw new NotFoundException('Dispute not found');
+    if (!dispute) throw new BadRequestException(this.i18n.t('events.dispute_not_found'));
     const user = await this.userRepository
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
@@ -109,12 +119,12 @@ export class DisputesService {
       .where('user.id = :id', { id: userId })
       .getOne();
 
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.disputes.user_not_found'));
 
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.Chat);
 
     const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user.role === 'admin' || hasPermission;
-    if (!involved) throw new ForbiddenException('Access denied');
+    if (!involved) throw new BadRequestException(this.i18n.t('events.access_denied'));
 
     // order + invoice
     const order = await this.orderRepository.findOne({
@@ -191,10 +201,11 @@ export class DisputesService {
 
   async postMessage(userId: string, userRole: string, disputeId: string, message: string, parentId?: string) {
     const text = (message || '').trim();
-    if (!text) throw new BadRequestException('Message required');
-
+    if (!text) {
+      throw new BadRequestException(this.i18n.t('events.message_required'));
+    }
     const dispute = await this.disputeRepository.findOne({ where: { id: disputeId }, relations: ['order'] });
-    if (!dispute) throw new NotFoundException('Dispute not found');
+    if (!dispute) throw new BadRequestException(this.i18n.t('events.dispute_not_found'));
 
     const user = await this.userRepository
       .createQueryBuilder('user')
@@ -206,15 +217,17 @@ export class DisputesService {
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.Chat);
 
     const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user?.role === 'admin' || hasPermission;
-    if (!involved) throw new ForbiddenException('Access denied');
+    if (!involved) throw new BadRequestException(this.i18n.t('events.access_denied'));
 
     if ([DisputeStatus.RESOLVED, DisputeStatus.REJECTED].includes(dispute.status)) {
-      throw new BadRequestException('Cannot post messages on a closed dispute');
+      throw new BadRequestException(this.i18n.t('events.dispute_closed_error'));
     }
 
     if (parentId) {
       const parent = await this.dmRepo.findOne({ where: { id: parentId, disputeId } });
-      if (!parent) throw new BadRequestException('Parent message not found in this dispute');
+      if (!parent) {
+        throw new BadRequestException(this.i18n.t('events.parent_message_not_found'));
+      }
     }
 
     const dm = this.dmRepo.create({ disputeId, senderId: userId, message: text, ...(parentId ? { parentId } : {}) } as any);
@@ -225,17 +238,20 @@ export class DisputesService {
     if (dispute.order.buyerId !== userId) recipientIds.add(dispute.order.buyerId);
     if (dispute.order.sellerId !== userId) recipientIds.add(dispute.order.sellerId);
 
-    for (const rid of recipientIds) {
-      await this.notificationRepository.save(
-        this.notificationRepository.create({
-          userId: rid,
-          type: 'dispute_message',
-          title: 'New dispute message',
-          message: text.slice(0, 2000),
-          relatedEntityType: 'dispute',
-          relatedEntityId: disputeId,
-        }) as any,
-      );
+    // Convert the Set to an array for the service
+    const recipients = Array.from(recipientIds);
+
+    if (recipients.length > 0) {
+      await this.notificationService.notifyWithLang({
+        userIds: recipients,
+        type: 'dispute_message',
+        title: {
+          key: 'events.disputes.new_message_title'
+        },
+        message: text.slice(0, 2000),
+        relatedEntityId: disputeId,
+        relatedEntityType: 'dispute'
+      });
     }
     return { ok: true, id: saved.id };
   }
@@ -365,7 +381,7 @@ export class DisputesService {
         }
       },
     });
-    if (!dispute) throw new NotFoundException('Dispute not found');
+    if (!dispute) throw new BadRequestException(this.i18n.t('events.dispute_not_found'));
     const user = await userRepo
       .createQueryBuilder('user')
       .leftJoinAndSelect('user.person', 'person')
@@ -376,7 +392,7 @@ export class DisputesService {
     const isInvolved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId;
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.View);
 
-    if (!(user.role === 'admin' || hasPermission || !isInvolved)) throw new ForbiddenException('Access denied');
+    if (!(user.role === 'admin' || hasPermission || !isInvolved)) throw new BadRequestException(this.i18n.t('events.access_denied'));
 
     return dispute;
   }
@@ -395,7 +411,7 @@ export class DisputesService {
 
     // Only admins can change to in_review / resolved / rejected
     if (status === DisputeStatus.OPEN && !(user.role === 'admin' || hasPermission)) {
-      throw new ForbiddenException('Only administrators can change dispute status when it is open');
+      throw new ForbiddenException(this.i18n.t('events.only_admin_change_status'));
     }
     dispute.status = status as DisputeStatus;
     const saved = await this.disputeRepository.save(dispute);
@@ -406,41 +422,24 @@ export class DisputesService {
       order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', to: status, by: userId }];
       await this.orderRepository.save(order);
 
-      const parties = [order.buyerId, order.sellerId];
-      await this.notificationRepository.save(
-        parties.map(
-          pid =>
-            this.notificationRepository.create({
-              userId: pid,
-              type: 'dispute_status',
-              title: 'Dispute status updated',
-              message: `Dispute status changed to "${status}" on order "${order.title}".`,
-              relatedEntityType: 'dispute',
-              relatedEntityId: disputeId,
-            }) as any,
-        ),
-      );
+      await this.notificationService.notifyWithLang({
+        userIds: [order.buyerId, order.sellerId],
+        type: 'dispute_status',
+        title: {
+          key: 'events.disputes.status_updated_title'
+        },
+        message: {
+          key: 'events.disputes.status_updated_msg',
+          args: { status, title: order.title }
+        },
+        relatedEntityId: disputeId,
+        relatedEntityType: 'dispute'
+      });
     }
 
     return saved;
   }
 
-  private async notify(userIds: string[], type: string, title: string, message: string, disputeId: string) {
-    if (!userIds?.length) return;
-    await this.notificationRepository.save(
-      userIds.map(
-        uid =>
-          this.notificationRepository.create({
-            userId: uid,
-            type,
-            title,
-            message,
-            relatedEntityType: 'dispute',
-            relatedEntityId: disputeId,
-          }) as any,
-      ),
-    );
-  }
 
   private getAmountsFromBodyOrResolution(body: { sellerAmount?: number; buyerRefund?: number; note?: string }, dispute: Dispute) {
     const hasBody = typeof body?.sellerAmount === 'number' || typeof body?.buyerRefund === 'number';
@@ -496,7 +495,7 @@ export class DisputesService {
           }
         },
       });
-      if (!dispute) throw new NotFoundException('Dispute not found');
+      if (!dispute) throw new BadRequestException(this.i18n.t('events.dispute_not_found'));
 
       const order = dispute.order;
       const prev = dispute.status as DisputeStatus;
@@ -511,27 +510,27 @@ export class DisputesService {
         .getOne();
 
       const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.ChangeStatus);
-
       if (!(user.role === 'admin' || hasPermission)) {
-        throw new ForbiddenException('Only administrators can change dispute status');
+        throw new ForbiddenException(this.i18n.t('events.admin_only_status_change'));
       }
 
       if (!restrictedNextStatuses.includes(next)) {
-        throw new BadRequestException(`Invalid dispute status "${next}"`);
+        throw new BadRequestException(
+          this.i18n.t('events.invalid_dispute_status', { args: { status: next } })
+        );
       }
 
-      if ([DisputeStatus.RESOLVED, DisputeStatus.REJECTED, DisputeStatus.CLOSE_NO_ACTION,].includes(next)) {
+      if ([DisputeStatus.RESOLVED, DisputeStatus.REJECTED, DisputeStatus.CLOSE_NO_ACTION].includes(next)) {
         if (![DisputeStatus.OPEN, DisputeStatus.IN_REVIEW].includes(prev)) {
           throw new BadRequestException(
-            `Dispute status "${next}" can only be set if the previous status is OPEN or IN_REVIEW.`
+            this.i18n.t('events.dispute_status_transition_error', { args: { next } })
           );
         }
       }
 
       if (next === DisputeStatus.IN_REVIEW && prev !== DisputeStatus.OPEN) {
-        throw new BadRequestException(`Dispute status "in_review" can only be set if the previous status is OPEN.`);
+        throw new BadRequestException(this.i18n.t('events.dispute_in_review_error'));
       }
-
 
       if (next === DisputeStatus.IN_REVIEW) {
         // If coming back from RESOLVED → IN_REVIEW, reverse funds first
@@ -554,8 +553,20 @@ export class DisputesService {
         order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
         await manager.save(order);
 
-        await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "in_review" on "${order.title}".`, dispute.id);
-
+        await this.notificationService.notifyWithLang({
+          userIds: [order.buyerId, order.sellerId],
+          type: 'dispute_status',
+          title: {
+            key: 'events.disputes.status_updated_title'
+          },
+          message: {
+            key: 'events.disputes.status_in_review_msg',
+            args: { title: order.title }
+          },
+          relatedEntityId: dispute.id,
+          relatedEntityType: 'dispute',
+          manager
+        });
         return dispute;
       }
 
@@ -568,18 +579,31 @@ export class DisputesService {
         order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
         await manager.save(order);
 
-        await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "open" on "${order.title}".`, dispute.id);
+        await this.notificationService.notifyWithLang({
+          userIds: [order.buyerId, order.sellerId],
+          type: 'dispute_status',
+          title: {
+            key: 'events.disputes.status_updated_title'
+          },
+          message: {
+            key: 'events.disputes.status_open_msg',
+            args: { title: order.title }
+          },
+          relatedEntityId: dispute.id,
+          relatedEntityType: 'dispute',
+          manager
+        });
 
         return dispute;
       }
 
       if (next === DisputeStatus.RESOLVED) {
         const { sellerAmount, buyerRefund, note } = this.getAmountsFromBodyOrResolution(body, dispute);
-        if (sellerAmount < 0 || buyerRefund < 0) throw new BadRequestException('Amounts must be >= 0');
+        if (sellerAmount < 0 || buyerRefund < 0) throw new BadRequestException(this.i18n.t('events.invoice_mismatch'));
 
         if (!(user.role === 'admin' || hasPermission)) {
           if (prev !== DisputeStatus.IN_REVIEW || !dispute.resolution) {
-            throw new ForbiddenException('Only admin can directly resolve without a pending resolution');
+            throw new ForbiddenException(this.i18n.t('events.admin_resolve_required'));
           }
         }
 
@@ -607,13 +631,25 @@ export class DisputesService {
         order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'payout_released', by: userId, sellerAmount, buyerRefund }, { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
         await manager.save(order);
 
-        await this.notify([order.buyerId, order.sellerId], 'dispute_resolved', 'Dispute resolved', `The dispute on "${order.title}" was resolved.`, dispute.id);
-
+        await this.notificationService.notifyWithLang({
+          userIds: [order.buyerId, order.sellerId],
+          type: 'dispute_resolved',
+          title: {
+            key: 'events.disputes.resolved_title'
+          },
+          message: {
+            key: 'events.disputes.resolved_msg',
+            args: { title: order.title }
+          },
+          relatedEntityId: dispute.id,
+          relatedEntityType: 'dispute',
+          manager
+        });
         return dispute;
       }
 
       if (next === DisputeStatus.CLOSE_NO_ACTION) {
-        if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException('Only administrators can close dispute');
+        if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException(this.i18n.t('events.admin_only_close'));
 
         dispute.status = DisputeStatus.CLOSE_NO_ACTION;
         await manager.save(dispute);
@@ -623,7 +659,20 @@ export class DisputesService {
         order.status = OrderStatus.ACCEPTED;
         await manager.save(order);
 
-        await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "close without action" on "${order.title}".`, dispute.id);
+        await this.notificationService.notifyWithLang({
+          userIds: [order.buyerId, order.sellerId],
+          type: 'dispute_status',
+          title: {
+            key: 'events.disputes.status_updated_title'
+          },
+          message: {
+            key: 'events.disputes.status_close_no_action_msg',
+            args: { title: order.title }
+          },
+          relatedEntityId: dispute.id,
+          relatedEntityType: 'dispute',
+          manager
+        });
 
         return dispute;
       }
@@ -636,13 +685,25 @@ export class DisputesService {
         order.timeline = [...(order.timeline || []), { at: new Date().toISOString(), type: 'dispute_status', from: prev, to: next, by: userId }];
         order.status = OrderStatus.ACCEPTED;
         await manager.save(order);
-
-        await this.notify([order.buyerId, order.sellerId], 'dispute_status', 'Dispute status updated', `Dispute status changed to "rejected" on "${order.title}".`, dispute.id);
+        await this.notificationService.notifyWithLang({
+          userIds: [order.buyerId, order.sellerId],
+          type: 'dispute_status',
+          title: {
+            key: 'events.disputes.status_updated_title'
+          },
+          message: {
+            key: 'events.disputes.status_rejected_msg',
+            args: { title: order.title }
+          },
+          relatedEntityId: dispute.id,
+          relatedEntityType: 'dispute',
+          manager
+        });
 
         return dispute;
       }
 
-      throw new BadRequestException('Unsupported status');
+      throw new BadRequestException(this.i18n.t('events.unsupported_status'));
     });
   }
 
@@ -664,7 +725,7 @@ export class DisputesService {
         }
       },
     });
-    if (!dispute) throw new NotFoundException('Dispute not found');
+    if (!dispute) throw new BadRequestException(this.i18n.t('events.dispute_not_found'));
 
     let resolution: any;
     if (typeof body?.resolution === 'string') {
@@ -679,7 +740,7 @@ export class DisputesService {
     if (inv) {
       const subtotal = Number(inv.subtotal || 0);
       if (Number(((resolution.sellerAmount || 0) + (resolution.buyerRefund || 0)).toFixed(2)) !== Number(subtotal.toFixed(2))) {
-        throw new BadRequestException('sellerAmount + buyerRefund must equal invoice subtotal');
+        throw new BadRequestException(this.i18n.t('events.invoice_mismatch'));
       }
     }
 
@@ -687,19 +748,19 @@ export class DisputesService {
     dispute.status = DisputeStatus.IN_REVIEW;
     const savedDispute = await this.disputeRepository.save(dispute);
 
-    // Notify both parties
-    const parties = [dispute.order.buyerId, dispute.order.sellerId];
-    for (const partyId of parties) {
-      const notification = this.notificationRepository.create({
-        userId: partyId,
-        type: 'dispute_resolution',
-        title: 'Dispute resolution proposed',
-        message: `A resolution has been proposed for dispute #${disputeId}.`,
-        relatedEntityType: 'dispute',
-        relatedEntityId: disputeId,
-      } as any);
-      await this.notificationRepository.save(notification);
-    }
+    await this.notificationService.notifyWithLang({
+      userIds: [dispute.order.buyerId, dispute.order.sellerId],
+      type: 'dispute_resolution',
+      title: {
+        key: 'events.disputes.resolution_proposed_title'
+      },
+      message: {
+        key: 'events.disputes.resolution_proposed_msg',
+        args: { id: disputeId }
+      },
+      relatedEntityId: disputeId,
+      relatedEntityType: 'dispute'
+    });
 
     return savedDispute;
   }
@@ -742,7 +803,7 @@ export class DisputesService {
 
   async rejectResolution(userId: string, disputeId: string) {
     const dispute = await this.getDispute(userId, disputeId);
-    if (dispute.status !== DisputeStatus.IN_REVIEW) throw new BadRequestException('Resolution is not pending acceptance');
+    if (dispute.status !== DisputeStatus.IN_REVIEW) throw new BadRequestException(this.i18n.t('events.resolution_not_pending'));
 
     dispute.status = DisputeStatus.REJECTED;
     const saved = await this.disputeRepository.save(dispute);
@@ -751,18 +812,20 @@ export class DisputesService {
     const settings = await this.settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
     const platformUserId = settings?.[0]?.platformAccountUserId;
     if (platformUserId) {
-      await this.notificationRepository.save(
-        this.notificationRepository.create({
-          userId: platformUserId,
-          type: 'dispute_rejected',
-          title: 'Resolution rejected',
-          message: `A proposed resolution was rejected for dispute #${disputeId}.`,
-          relatedEntityType: 'dispute',
-          relatedEntityId: disputeId,
-        }) as any,
-      );
+      await this.notificationService.notifyWithLang({
+        userIds: [platformUserId],
+        type: 'dispute_rejected',
+        title: {
+          key: 'events.disputes.resolution_rejected_title'
+        },
+        message: {
+          key: 'events.disputes.resolution_rejected_msg',
+          args: { id: disputeId }
+        },
+        relatedEntityId: disputeId,
+        relatedEntityType: 'dispute'
+      });
     }
-
     return saved;
   }
 
@@ -778,9 +841,9 @@ export class DisputesService {
   async acceptResolution(userId: string, disputeId: string) {
     return await this.dataSource.transaction(async (manager) => {
       const dispute = await this.getDispute(userId, disputeId, manager);
-      if (dispute.status !== DisputeStatus.IN_REVIEW) throw new BadRequestException('Resolution is not pending acceptance');
+      if (dispute.status !== DisputeStatus.IN_REVIEW) throw new BadRequestException(this.i18n.t('events.resolution_not_pending'));
       const isInvolved = dispute.order.buyerId === userId || dispute.order.sellerId === userId;
-      if (!isInvolved) throw new ForbiddenException('You are not involved in this dispute');
+      if (!isInvolved) throw new ForbiddenException(this.i18n.t('events.user_not_involved'));
 
       let sellerAmount = 0,
         buyerRefund = 0;
@@ -789,7 +852,7 @@ export class DisputesService {
         sellerAmount = Number(parsed.sellerAmount || 0);
         buyerRefund = Number(parsed.buyerRefund || 0);
       } catch {
-        throw new BadRequestException('Resolution format invalid. Expected JSON with sellerAmount & buyerRefund.');
+        throw new BadRequestException(this.i18n.t('events.invalid_resolution_format'));
       }
 
       await this.accountingService.releaseEscrowSplit(dispute.orderId, sellerAmount, buyerRefund, manager);
@@ -809,25 +872,35 @@ export class DisputesService {
       const settings = await manager.find(Setting, { take: 1, order: { created_at: 'DESC' } });
       const platformUserId = settings?.[0]?.platformAccountUserId;
 
-      const notifs = [
-        { userId: order.buyerId, title: 'Dispute resolved', message: `Resolution accepted for "${order.title}".` },
-        { userId: order.sellerId, title: 'Dispute resolved', message: `Resolution accepted for "${order.title}".` },
-      ];
-      if (platformUserId) notifs.push({ userId: platformUserId, title: 'Dispute resolved', message: `Order "${order.title}" dispute was resolved.` });
+      // 1. Notify Buyer and Seller (Same Message)
+      await this.notificationService.notifyWithLang({
+        userIds: [order.buyerId, order.sellerId],
+        type: 'dispute_resolved',
+        title: { key: 'events.disputes.resolved_title' },
+        message: {
+          key: 'events.disputes.resolution_accepted_msg',
+          args: { title: order.title }
+        },
+        relatedEntityId: dispute.id,
+        relatedEntityType: 'dispute',
+        manager // Keep it inside the resolution transaction
+      });
 
-      await manager.save(Notification,
-        notifs.map(
-          n =>
-            manager.create(Notification, {
-              userId: n.userId,
-              type: 'dispute_resolved',
-              title: n.title,
-              message: n.message,
-              relatedEntityType: 'dispute',
-              relatedEntityId: dispute.id,
-            }) as any,
-        ),
-      );
+      // 2. Notify Platform User / Admin if exists (Different Message)
+      if (platformUserId) {
+        await this.notificationService.notifyWithLang({
+          userIds: [platformUserId],
+          type: 'dispute_resolved',
+          title: { key: 'events.disputes.resolved_title' },
+          message: {
+            key: 'events.disputes.order_resolved_msg',
+            args: { title: order.title }
+          },
+          relatedEntityId: dispute.id,
+          relatedEntityType: 'dispute',
+          manager
+        });
+      }
 
       return dispute;
     });
@@ -835,7 +908,7 @@ export class DisputesService {
 
   async getDisputeMessages(userId: string, userRole: string, disputeId: string, page: number = 1, limit: number = 50) {
     const dispute = await this.disputeRepository.findOne({ where: { id: disputeId }, relations: ['order'] });
-    if (!dispute) throw new NotFoundException('Dispute not found');
+    if (!dispute) throw new BadRequestException(this.i18n.t('events.dispute_not_found'));
 
     const user = await this.userRepository
       .createQueryBuilder('user')
@@ -846,7 +919,7 @@ export class DisputesService {
 
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.ChangeStatus);
     const involved = dispute.order.buyerId === userId || dispute.order.sellerId === userId || dispute.raisedById === userId || user?.role === 'admin' || hasPermission;
-    if (!involved) throw new ForbiddenException('Access denied');
+    if (!involved) throw new BadRequestException(this.i18n.t('events.access_denied'));
 
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 50;
@@ -897,20 +970,20 @@ export class DisputesService {
       .getOne();
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.disputes, Permissions.Disputes.Propose);
 
-    if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException('Only administrators can resolve & payout');
+    if (!(user.role === 'admin' || hasPermission)) throw new ForbiddenException(this.i18n.t('events.dispute_access_denied'));
     const dispute = await this.disputeRepository.findOne({ where: { id: disputeId }, relations: ['order'] });
-    if (!dispute) throw new NotFoundException('Dispute not found');
+    if (!dispute) throw new BadRequestException(this.i18n.t('events.dispute_not_found'));
 
     const order = await this.orderRepository.findOne({ where: { id: dispute.orderId }, relations: ['invoices'] });
     const inv = order?.invoices?.[0];
-    if (!inv) throw new BadRequestException('No invoice found for this order');
+    if (!inv) throw new BadRequestException(this.i18n.t('events.disputes.no_invoice'));
 
     const subtotal = Number(inv.subtotal || 0);
     const sAmt = Number(payload.sellerAmount || 0);
     const bRef = Number(payload.buyerRefund || 0);
-    if (sAmt < 0 || bRef < 0) throw new BadRequestException('Amounts must be ≥ 0');
+    if (sAmt < 0 || bRef < 0) throw new BadRequestException(this.i18n.t('events.invoice_mismatch'));
     if (Number((sAmt + bRef).toFixed(2)) !== Number(subtotal.toFixed(2))) {
-      throw new BadRequestException('sellerAmount + buyerRefund must equal invoice subtotal');
+      throw new BadRequestException(this.i18n.t('events.invoice_mismatch'));
     }
 
     await this.dataSource.transaction(async manager => {
@@ -949,7 +1022,7 @@ export class DisputesService {
           await manager.getRepository(User).save(seller);
         }
 
-        await this.sendRatingNotifications(order)
+        await this.sendRatingNotifications(order, manager)
 
       } else {
         order.status = OrderStatus.CANCELLED; // ensure this exists in your enum
@@ -959,51 +1032,56 @@ export class DisputesService {
       await manager.getRepository(Order).save(order);
 
       // notify parties
-      const notifs = [
-        { userId: order.buyerId, title: 'Dispute resolved', message: `Admin resolved dispute on "${order.title}".` },
-        { userId: order.sellerId, title: 'Dispute resolved', message: `Admin resolved dispute on "${order.title}".` },
-      ];
-      await manager.getRepository(Notification).save(
-        notifs.map(
-          n =>
-            manager.getRepository(Notification).create({
-              userId: n.userId,
-              type: 'dispute_resolved',
-              title: n.title,
-              message: n.message,
-              relatedEntityType: 'dispute',
-              relatedEntityId: dispute.id,
-            }) as any,
-        ),
-      );
+      await this.notificationService.notifyWithLang({
+        userIds: [order.buyerId, order.sellerId],
+        type: 'dispute_resolved',
+        title: {
+          key: 'events.disputes.resolved_title'
+        },
+        message: {
+          key: 'events.disputes.admin_resolved_msg',
+          args: { title: order.title }
+        },
+        relatedEntityId: dispute.id,
+        relatedEntityType: 'dispute',
+        manager // Crucial to maintain the transaction context
+      });
     });
 
     return { ok: true, id: disputeId, status: DisputeStatus.RESOLVED };
   }
 
   // Helper: Send notifications to both parties to rate each other
-  private async sendRatingNotifications(order: Order) {
+  private async sendRatingNotifications(order: Order, manager: EntityManager) {
+    // Since buyer and seller usually have different message keys for ratings,
+    // we call the service for each to ensure the specific 'buyer_msg' vs 'seller_msg' logic.
+
     // 1. Notify Buyer
-    const buyerNotif = this.notificationRepository.create({
-      userId: order.buyerId,
-      type: 'rating', // specific type for frontend routing
-      title: 'How was your experience?',
-      message: `Your order "${order.title}" is complete! Please take a moment to review the freelancer's work to help others in the community.`,
-      relatedEntityType: 'order',
+    await this.notificationService.notifyWithLang({
+      userIds: [order.buyerId],
+      type: 'rating',
+      title: { key: 'events.disputes.rating_buyer_title' },
+      message: {
+        key: 'events.disputes.rating_buyer_msg',
+        args: { title: order.title }
+      },
       relatedEntityId: order.id,
+      relatedEntityType: 'order',
+      manager
     });
 
     // 2. Notify Seller
-    const sellerNotif = this.notificationRepository.create({
-      userId: order.sellerId,
+    await this.notificationService.notifyWithLang({
+      userIds: [order.sellerId],
       type: 'rating',
-      title: 'Share your feedback',
-      message: `The order "${order.title}" is finished. Please rate your experience working with this client to complete the process.`,
-      relatedEntityType: 'order',
+      title: { key: 'events.disputes.rating_seller_title' },
+      message: {
+        key: 'events.disputes.rating_seller_msg',
+        args: { title: order.title }
+      },
       relatedEntityId: order.id,
+      relatedEntityType: 'order',
+      manager
     });
-
-    // Save both in one transaction
-    await this.notificationRepository.save([buyerNotif, sellerNotif]);
   }
 }

@@ -2,11 +2,12 @@ import { Injectable, BadRequestException, Logger, UnauthorizedException } from '
 import axios from 'axios';
 import * as jwt from 'jsonwebtoken';
 import { JwksClient } from 'jwks-rsa';
+import { TranslationService } from './translation.service';
 
 @Injectable()
 export class NafathService {
     private readonly logger = new Logger(NafathService.name);
-
+    constructor(private readonly i18n: TranslationService) { } // حقن خدمة الترجمة
     // Config from provided JSON
     private readonly baseUrl = 'https://mock-service.api.elm.sa/nafath';
     private readonly appId = process.env.NAFATH_APP_ID;
@@ -54,7 +55,7 @@ export class NafathService {
             // 1. Simulate an error/expired case
             if (token === 'expired_token' || token === 'invalid_token') {
                 this.logger.warn(`Nafath Token Mock Verification Failed: Mocked failure`);
-                return reject(new UnauthorizedException('Invalid or expired Nafath token'));
+                return reject(new UnauthorizedException(this.i18n.t('events.nafath.errors.invalid_token')));
             }
 
             // 2. Simulate Success
@@ -93,7 +94,7 @@ export class NafathService {
             return { transId, random }
         } catch (err) {
             this.logger.error(`Nafath Create Error: ${err.message}`);
-            throw new BadRequestException('Failed to initiate Nafath identity verification');
+            throw new BadRequestException(this.i18n.t('events.nafath.errors.initiation_failed'));
         }
     }
 
@@ -123,7 +124,7 @@ export class NafathService {
         } catch (err) {
             this.logger.error(`Nafath Status Check Error: ${err.message}`);
             // No sensitive info in the re-thrown error for the frontend
-            throw new BadRequestException('Unable to verify Nafath status at this time');
+            throw new BadRequestException(this.i18n.t('events.nafath.errors.status_check_failed'));
         }
     }
 
@@ -157,7 +158,8 @@ export class NafathService {
                 (err, decoded) => {
                     if (err) {
                         this.logger.warn(`Nafath Token Verification Failed: ${err.message}`);
-                        return reject(new UnauthorizedException('Invalid or expired Nafath token'));
+                        // ترجمة خطأ التوكن غير الصالح
+                        return reject(new UnauthorizedException(this.i18n.t('events.nafath.errors.invalid_token')));
                     }
 
                     // Successfully verified!

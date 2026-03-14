@@ -4,6 +4,9 @@ import { CRUD } from 'common/crud.service';
 import { RateBuyerDto, RateSellerDto } from 'dto/rating.dto';
 import { Notification, Order, OrderRating, OrderStatus, SellerLevel, Service, User } from 'entities/global.entity';
 import { Repository } from 'typeorm';
+import { TranslationService } from 'common/translation.service';
+import { NotificationService } from 'src/notification/notification.service';
+
 @Injectable()
 export class RatingsService {
     private readonly logger = new Logger(RatingsService.name);
@@ -13,7 +16,8 @@ export class RatingsService {
         @InjectRepository(Order) private orderRepo: Repository<Order>,
         @InjectRepository(User) private userRepo: Repository<User>,
         @InjectRepository(Service) private serviceRepo: Repository<Service>,
-        @InjectRepository(Notification) private notifRepo: Repository<Notification>,
+        public notificationService: NotificationService,
+        private readonly i18n: TranslationService,
     ) { }
 
     // Helper: Check if 14 days have passed 
@@ -25,13 +29,13 @@ export class RatingsService {
     // 1. Buyer Rates Seller
     async rateSeller(orderId: string, buyerId: string, dto: RateSellerDto) {
         const order = await this.orderRepo.findOne({ where: { id: orderId, buyerId }, relations: ['seller', 'service'] });
-        if (!order) throw new NotFoundException('Order not found or you are not the buyer');
+        if (!order) throw new NotFoundException(this.i18n.t('events.ratings.order_not_found_buyer'));
 
         // Check completion status 
-        if (order.status !== OrderStatus.COMPLETED) throw new BadRequestException('Order is not completed');
+        if (order.status !== OrderStatus.COMPLETED) throw new BadRequestException(this.i18n.t('events.ratings.order_not_completed'));
 
         // Check 14 days window 
-        if (this.isRatingWindowExpired(order.completedAt)) throw new BadRequestException('Rating period has expired (14 days)');
+        if (this.isRatingWindowExpired(order.completedAt)) throw new BadRequestException(this.i18n.t('events.ratings.period_expired'));
 
         let rating = await this.ratingRepo.findOne({ where: { orderId } });
         if (!rating) {
@@ -39,7 +43,7 @@ export class RatingsService {
         }
 
         // Check if rating is public (cannot edit after public) 
-        if (rating.isPublic) throw new BadRequestException('Cannot edit rating after it is public');
+        if (rating.isPublic) throw new BadRequestException(this.i18n.t('events.ratings.cannot_edit_public'));
 
         // Calculate score 
         const sum = dto.quality + dto.communication + dto.skills + dto.availability + dto.cooperation;
@@ -59,23 +63,23 @@ export class RatingsService {
         // Check privacy and publish if possible 
         await this.checkAndPublish(rating, order);
 
-        return { message: 'Seller rated successfully' };
+        return { message: this.i18n.t('events.ratings.seller_rated_success') };
     }
 
     // 2. Seller Rates Buyer
     async rateBuyer(orderId: string, sellerId: string, dto: RateBuyerDto) {
         const order = await this.orderRepo.findOne({ where: { id: orderId, sellerId }, relations: ['buyer'] });
-        if (!order) throw new NotFoundException('Order not found or you are not the seller');
+        if (!order) throw new NotFoundException(this.i18n.t('events.ratings.order_not_found_seller'));
 
-        if (order.status !== OrderStatus.COMPLETED) throw new BadRequestException('Order is not completed');
-        if (this.isRatingWindowExpired(order.completedAt)) throw new BadRequestException('Rating period has expired (14 days)');
+        if (order.status !== OrderStatus.COMPLETED) throw new BadRequestException(this.i18n.t('events.ratings.order_not_completed'));
+        if (this.isRatingWindowExpired(order.completedAt)) throw new BadRequestException(this.i18n.t('events.ratings.period_expired'));
 
         let rating = await this.ratingRepo.findOne({ where: { orderId } });
         if (!rating) {
             rating = this.ratingRepo.create({ orderId, buyerId: order.buyerId, sellerId, serviceId: order.serviceId });
         }
 
-        if (rating.isPublic) throw new BadRequestException('Cannot edit rating after it is public');
+        if (rating.isPublic) throw new BadRequestException(this.i18n.t('events.ratings.cannot_edit_public'));
 
         // Calculate score 
         const sum = dto.communication + dto.cooperation + dto.availability + dto.clarity + dto.payment;
@@ -94,7 +98,7 @@ export class RatingsService {
 
         await this.checkAndPublish(rating, order);
 
-        return { message: 'Buyer rated successfully' };
+        return { message: this.i18n.t('events.ratings.buyer_rated_success') };
     }
 
     // Logic to publish ratings if conditions are met
@@ -119,17 +123,19 @@ export class RatingsService {
             }
 
             // Send Notifications for publishing
-            const notif1 = this.notifRepo.create({
-                userId: rating.buyerId, type: 'rating_published', title: 'Rating Published',
-                message: `Reviews for order #${order.id} are now public.`,
-                relatedEntityType: 'order', relatedEntityId: order.id
+            await this.notificationService.notifyWithLang({
+                userIds: [rating.buyerId, rating.sellerId],
+                type: 'rating_published',
+                title: {
+                    key: 'events.ratings.rating_published_title'
+                },
+                message: {
+                    key: 'events.ratings.rating_published_msg',
+                    args: { orderId: order.id }
+                },
+                relatedEntityId: order.id,
+                relatedEntityType: 'order'
             });
-            const notif2 = this.notifRepo.create({
-                userId: rating.sellerId, type: 'rating_published', title: 'Rating Published',
-                message: `Reviews for order #${order.id} are now public.`,
-                relatedEntityType: 'order', relatedEntityId: order.id
-            });
-            await this.notifRepo.save([notif1, notif2]);
         }
     }
 
@@ -190,7 +196,7 @@ export class RatingsService {
         const isSeller = userId === rating.sellerId;
 
         if (!isBuyer && !isSeller && !rating.isPublic) {
-            throw new UnauthorizedException('You are not authorized to view this rating');
+            throw new UnauthorizedException(this.i18n.t('events.ratings.unauthorized_view'));
         }
 
         // 2. Privacy Logic: If still private, strip the other party's data
@@ -269,7 +275,7 @@ export class RatingsService {
         limit: number
     ) {
         const user = await this.userRepo.findOne({ where: { id: userId } });
-        if (!user) throw new NotFoundException('User not found');
+        if (!user) throw new NotFoundException(this.i18n.t('events.ratings.user_not_found'));
 
         const isBuyer = user.role === 'buyer';
         const isSeller = user.role === 'seller';

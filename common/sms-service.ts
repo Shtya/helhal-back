@@ -1,10 +1,11 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { TranslationService } from './translation.service';
 
 @Injectable()
 export class SmsService {
     private readonly logger = new Logger(SmsService.name);
-
+    private readonly i18n: TranslationService;
     private readonly smsApiUrl = 'https://sms.connectsaudi.com/sendurl.aspx';
     private readonly smsParamUrl = 'http://sms.connectsaudi.com/sendsms_param.aspx';
 
@@ -21,7 +22,7 @@ export class SmsService {
 
         if (!otp || !expire) {
             this.logger.error(`Validation failed: otp=${otp}, expire=${expire}`);
-            throw new BadRequestException('Failed to send OTP');
+            throw new BadRequestException(this.i18n.t('auth.errors.otp_send_failed'));
         }
 
         const postPayload = {
@@ -56,7 +57,7 @@ export class SmsService {
                 // ^\d+, matches digits at the start of the string followed by a comma
                 const cleanedMessage = rawResponse.replace(/^\d+,/, '');
 
-                const finalErrorMessage = cleanedMessage || 'Failed to send OTP via provider';
+                const finalErrorMessage = cleanedMessage || this.i18n.t('auth.errors.sms_provider_error');
 
                 this.logger.warn(`SMS Provider Error: ${rawResponse}`);
                 throw new BadRequestException(finalErrorMessage);

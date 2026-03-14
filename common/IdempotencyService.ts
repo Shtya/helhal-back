@@ -1,11 +1,12 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { RedisService } from './RedisService';
 import { console } from 'inspector';
+import { TranslationService } from './translation.service';
 
 
 @Injectable()
 export class IdempotencyService {
-    constructor(private readonly redisService: RedisService) { }
+    constructor(private readonly redisService: RedisService, private readonly i18n: TranslationService) { }
 
     async runWithIdempotency<T>(
         key: string,
@@ -41,8 +42,8 @@ export class IdempotencyService {
                     clearInterval(interval);
                     reject(
                         new BadRequestException(
-                            'Request already in-flight, try again later',
-                        ),
+                            this.i18n.t('events.request_in_flight')
+                        )
                     );
                 }, timeout); // timeout after 5s
             });

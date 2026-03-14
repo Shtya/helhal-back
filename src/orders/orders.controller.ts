@@ -8,6 +8,7 @@ import { CRUD } from 'common/crud.service';
 import { Permissions } from 'entities/permissions';
 import { BillingInfoDto, PAYMENT_TIMING, UnifiedCheckout } from 'src/payments/base/payment.constant';
 import { IdempotencyService } from 'common/IdempotencyService';
+import { TranslationService } from 'common/translation.service';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
@@ -15,6 +16,7 @@ export class OrdersController {
   constructor(
     private ordersService: OrdersService,
     private readonly idempotencyService: IdempotencyService,
+    private readonly i18n: TranslationService
   ) { }
 
 
@@ -32,7 +34,7 @@ export class OrdersController {
     }
   })
   async getOrdersAdmin(@Query('') query: any) {
-    return CRUD.findAll(this.ordersService.orderRepository, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'buyer.person', 'seller', 'seller.person', 'service', 'invoices', 'offlineContract'], ['title'], { status: query.status == 'all' ? '' : query.status });
+    return CRUD.findAll(this.ordersService.orderRepository, this.i18n, 'order', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['buyer', 'buyer.person', 'seller', 'seller.person', 'service', 'invoices', 'offlineContract'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
 
 

@@ -6,6 +6,8 @@ import { CreateJobDto, UpdateJobDto } from 'dto/job.dto';
 import { PermissionBitmaskHelper } from 'src/auth/permission-bitmask.helper';
 import { Permissions } from 'entities/permissions';
 import { formatSearchTerm } from 'utils/search.helper';
+import { TranslationService } from 'common/translation.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 @Injectable()
 export class JobsService {
@@ -24,8 +26,8 @@ export class JobsService {
     public stateRepository: Repository<State>,
     @InjectRepository(Order)
     public orderRepository: Repository<Order>,
-    @InjectRepository(Notification)
-    public notificationRepository: Repository<Notification>,
+    public notificationService: NotificationService,
+
     @InjectRepository(Setting)
     public settingRepository: Repository<Setting>,
     @InjectRepository(Invoice)
@@ -33,6 +35,7 @@ export class JobsService {
     @InjectRepository(UserRelatedAccount)
     public userAccountsRepo: Repository<UserRelatedAccount>,
     private readonly dataSource: DataSource,
+    private readonly i18n: TranslationService
   ) { }
 
   async getJobs(query: any) {
@@ -280,7 +283,7 @@ export class JobsService {
     });
 
     if (!job) {
-      throw new NotFoundException('Job not found');
+      throw new NotFoundException(this.i18n.t('events.jobs.not_found'));
     }
 
     const user = await this.userRepository
@@ -294,7 +297,7 @@ export class JobsService {
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.jobs, Permissions.Jobs.Edit)
 
     if (!(user?.role === UserRole.ADMIN || hasPermission || job.buyerId === userId) && job.status !== JobStatus.PUBLISHED) {
-      throw new ForbiddenException('The job not found or deleted');
+      throw new ForbiddenException(this.i18n.t('events.jobs.not_found_or_deleted'));
     }
 
 
@@ -303,29 +306,29 @@ export class JobsService {
 
   async createJob(userId: string, createJobDto: CreateJobDto) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) new NotFoundException(this.i18n.t("auth.errors.user_not_found", { args: { id: userId } }));
 
 
     const category = await this.categoryRepository.findOne({ where: { id: createJobDto.categoryId } } as any);
-    if (!category) throw new NotFoundException('Category not found');
+    if (!category) throw new NotFoundException(this.i18n.t('events.jobs.category_not_found'));
 
 
     if (createJobDto.subcategoryId) {
       const subcategory = await this.categoryRepository.findOne({ where: { id: createJobDto.subcategoryId } } as any);
-      if (!subcategory) throw new NotFoundException('Subcategory not found or does not belong to the selected category');
+      if (!subcategory) throw new NotFoundException(this.i18n.t('events.jobs.subcategory_not_found'));
     } else {
       delete createJobDto.subcategoryId;
     }
 
 
     const country = await this.countryRepository.findOne({ where: { id: createJobDto.countryId } } as any);
-    if (!country) throw new NotFoundException('Country not found');
+    if (!country) throw new NotFoundException(this.i18n.t('events.jobs.country_not_found'));
 
 
 
     if (createJobDto.stateId) {
       const state = await this.stateRepository.findOne({ where: { id: createJobDto.stateId, countryId: createJobDto.countryId } } as any);
-      if (!state) throw new NotFoundException('State not found or does not belong to the selected country');
+      if (!state) throw new NotFoundException(this.i18n.t('events.jobs.state_not_found'));
     } else {
       delete createJobDto.stateId;
     }
@@ -383,7 +386,7 @@ export class JobsService {
       .where('user.id = :id', { id: userId })
       .getOne();
 
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) new NotFoundException(this.i18n.t("auth.errors.user_not_found", { args: { id: userId } }));
 
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.jobs, Permissions.Jobs.Edit)
 
@@ -395,22 +398,22 @@ export class JobsService {
         },
       },
     });
-    if (!job) throw new NotFoundException('Job not found');
+    if (!job) throw new NotFoundException(this.i18n.t('events.jobs.not_found'));
 
     if (!(user?.role === UserRole.ADMIN || hasPermission)) {
-      throw new ForbiddenException('You can only update your own jobs');
+      throw new ForbiddenException(this.i18n.t('events.jobs.update_own_only'));
     }
 
 
     if (updateJobDto.categoryId) {
       const category = await this.categoryRepository.findOne({ where: { id: updateJobDto.categoryId } } as any);
-      if (!category) throw new NotFoundException('Category not found');
+      if (!category) throw new NotFoundException(this.i18n.t('events.jobs.category_not_found'));
     }
 
 
     if (updateJobDto.subcategoryId) {
       const subcategory = await this.categoryRepository.findOne({ where: { id: updateJobDto.subcategoryId } } as any);
-      if (!subcategory) throw new NotFoundException('Subcategory not found or does not belong to the selected category');
+      if (!subcategory) throw new NotFoundException(this.i18n.t('events.jobs.subcategory_not_found'));
     } else {
       delete updateJobDto.subcategoryId;
     }
@@ -418,7 +421,7 @@ export class JobsService {
 
     if (updateJobDto.countryId) {
       const country = await this.countryRepository.findOne({ where: { id: updateJobDto.countryId } });
-      if (!country) throw new NotFoundException('Country not found');
+      if (!country) throw new NotFoundException(this.i18n.t('events.jobs.country_not_found'));
     }
 
 
@@ -429,7 +432,7 @@ export class JobsService {
           countryId: updateJobDto.countryId || job.countryId
         }
       });
-      if (!state) throw new NotFoundException('State not found or does not belong to the selected country');
+      if (!state) throw new NotFoundException(this.i18n.t('events.jobs.state_not_found'));
     }
 
     const { status: _clientStatus, buyerId, attachments, ...cleanDto } = updateJobDto as any;
@@ -473,30 +476,33 @@ export class JobsService {
         },
       },
     });
-    if (!job) throw new NotFoundException('Job not found');
+    if (!job) throw new NotFoundException(this.i18n.t('events.jobs.not_found'));
     const hasPermission = PermissionBitmaskHelper.has(actor.permissions?.jobs, Permissions.Jobs.Edit)
 
     if (!(actor?.role === UserRole.ADMIN || hasPermission)) {
-      if (job.buyerId !== userId) throw new ForbiddenException('You can only update your own jobs');
+      if (job.buyerId !== userId) throw new ForbiddenException(this.i18n.t('events.jobs.update_own_only'));
     }
 
     job.status = status;
-    const notification = this.notificationRepository.create({
-      userId: job.buyerId,
+    await this.notificationService.notifyWithLang({
+      userIds: [job.buyerId],
       type: 'job_status_update',
-      title: 'Job Status Changed',
-      message: `The job "${job.title}" status has been updated to "${status}".`,
-      relatedEntityType: 'job',
+      title: {
+        key: 'auth.messages.jobs.status_changed_title'
+      },
+      message: {
+        key: 'auth.messages.jobs.status_updated_msg',
+        args: { title: job.title, status }
+      },
       relatedEntityId: job.id,
+      relatedEntityType: 'job'
     });
-
-    await this.notificationRepository.save(notification);
     return this.jobRepository.save(job);
   }
 
   async publishJob(jobId: string) {
     const job = await this.jobRepository.findOne({ where: { id: jobId } });
-    if (!job) throw new NotFoundException('Job not found');
+    if (!job) throw new NotFoundException(this.i18n.t('events.jobs.not_found'));
 
     if (job.status === JobStatus.PUBLISHED) return job;
     job.status = JobStatus.PUBLISHED;
@@ -504,16 +510,19 @@ export class JobsService {
 
     const saved = await this.jobRepository.save(job);
 
-    await this.notificationRepository.save(
-      this.notificationRepository.create({
-        userId: job.buyerId,
-        type: 'job_published',
-        title: 'Your job is now live',
-        message: `Your job "${job.title}" has been approved and published.`,
-        relatedEntityType: 'job',
-        relatedEntityId: job.id,
-      }) as any,
-    );
+    await this.notificationService.notifyWithLang({
+      userIds: [job.buyerId],
+      type: 'job_published',
+      title: {
+        key: 'auth.messages.jobs.job_live_title'
+      },
+      message: {
+        key: 'auth.messages.jobs.job_approved_msg',
+        args: { title: job.title }
+      },
+      relatedEntityId: job.id,
+      relatedEntityType: 'job'
+    });
 
     return saved;
   }
@@ -529,7 +538,7 @@ export class JobsService {
     });
 
     if (!job) {
-      throw new NotFoundException('Job not found');
+      throw new NotFoundException(this.i18n.t('events.jobs.not_found'));
     }
 
     // Fetch the user to check their role
@@ -541,13 +550,13 @@ export class JobsService {
       .getOne();
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      new NotFoundException(this.i18n.t("auth.errors.user_not_found", { args: { id: userId } }));
     }
     const hasPermission = PermissionBitmaskHelper.has(user.permissions?.jobs, Permissions.Jobs.Edit)
 
     // Allow delete if the user is the owner or an admin
     if (!(job.buyerId === userId && user.role === 'admin' || hasPermission)) {
-      throw new ForbiddenException('You can only delete your own jobs');
+      throw new ForbiddenException(this.i18n.t('events.jobs.delete_own_only'));
     }
 
     job.deleted_at = new Date();
@@ -558,17 +567,17 @@ export class JobsService {
   async submitProposal(userId: string, jobId: string, submitProposalDto: any) {
     const job = await this.jobRepository.findOne({ where: { id: jobId, status: JobStatus.PUBLISHED } });
     if (!job) {
-      throw new NotFoundException('Job not found or not published');
+      throw new NotFoundException(this.i18n.t('events.jobs.not_published'));
     }
 
     const relation = await this.userAccountsRepo.findOne({ where: { mainUserId: job.buyerId, subUserId: userId } })
     if (relation) {
-      throw new ConflictException('You cannot submit a proposal  because you’re already linked to this buyer');
+      throw new ConflictException(this.i18n.t('events.jobs.linked_to_buyer'));
     }
 
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      new NotFoundException(this.i18n.t("auth.errors.user_not_found", { args: { id: userId } }));
     }
 
     const existingProposal = await this.proposalRepository.findOne({
@@ -576,7 +585,7 @@ export class JobsService {
     });
 
     if (existingProposal) {
-      throw new BadRequestException('You have already submitted a proposal for this job');
+      throw new BadRequestException(this.i18n.t('events.jobs.proposal_already_submitted'));
     }
 
     const proposal = this.proposalRepository.create({
@@ -588,16 +597,19 @@ export class JobsService {
 
     const savedProposal: any = await this.proposalRepository.save(proposal);
 
-    const notification = this.notificationRepository.create({
-      userId: job.buyerId,
+    await this.notificationService.notifyWithLang({
+      userIds: [job.buyerId],
       type: 'new_proposal',
-      title: 'New Proposal Received',
-      message: `A new proposal has been submitted for your job: ${job.title}`,
-      relatedEntityType: 'proposal',
-      relatedEntityId: jobId,
+      title: {
+        key: 'auth.messages.jobs.new_proposal_title'
+      },
+      message: {
+        key: 'auth.messages.jobs.new_proposal_msg',
+        args: { title: job.title }
+      },
+      relatedEntityId: job.id,
+      relatedEntityType: 'proposal'
     });
-
-    await this.notificationRepository.save(notification);
 
     return savedProposal;
   }
@@ -614,14 +626,14 @@ export class JobsService {
     req: any
   ) {
     const job = await this.jobRepository.findOne({ where: { id: jobId } });
-    if (!job) throw new NotFoundException('Job not found');
+    if (!job) throw new NotFoundException(this.i18n.t('events.jobs.not_found'));
 
     const user = req?.user;
 
     const hasPermission = PermissionBitmaskHelper.has(user?.permissions?.jobs, Permissions.Jobs.Edit)
     // Only admin or job owner can see proposals
     if (!(userRole === UserRole.ADMIN || job.buyerId === userId || hasPermission)) {
-      throw new ForbiddenException('Access denied');
+      throw new ForbiddenException(this.i18n.t('events.jobs.access_denied'));
     }
 
     const limit = 20;
@@ -718,35 +730,16 @@ export class JobsService {
       const proposal = await proposalRepo.findOne({
         where: { id: proposalId },
       });
-      if (!proposal) throw new NotFoundException('Proposal not found');
+      if (!proposal) throw new NotFoundException(this.i18n.t('events.jobs.proposal_not_found'));
 
       const job = await jobRepo.findOne({
         where: { id: proposal.jobId },
       });
-      if (!job) throw new NotFoundException('Job not found');
+      if (!job) throw new NotFoundException(this.i18n.t('events.jobs.not_found'));
 
       if (userRole !== UserRole.ADMIN && job.buyerId !== userId) {
-        throw new ForbiddenException('Access denied');
+        throw new ForbiddenException(this.i18n.t('events.jobs.access_denied'));
       }
-      // notification repository within transaction
-      const notifRepo = manager.getRepository(Notification);
-
-      // Helper to create & save a notification for seller
-      const notifySeller = async (message: string, type = 'proposal_status_update') => {
-        try {
-          const n = notifRepo.create({
-            userId: proposal.sellerId,
-            type,
-            title: 'Proposal Status Updated',
-            message,
-            relatedEntityType: 'proposal',
-            relatedEntityId: proposal.jobId,
-          } as any);
-          await notifRepo.save(n as any);
-        } catch (err) {
-          // don't fail the whole transaction for notification problems
-        }
-      };
 
       const s = await settingRepo.find({ take: 1, order: { created_at: 'DESC' } });
       const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
@@ -757,7 +750,20 @@ export class JobsService {
       if (status === ProposalStatus.REJECTED) {
         proposal.status = ProposalStatus.REJECTED;
         await proposalRepo.save(proposal);
-        await notifySeller(`Your proposal for job "${job.title}" has been rejected.`);
+        await this.notificationService.notifyWithLang({
+          userIds: [proposal.sellerId],
+          type: 'proposal_status_update',
+          title: {
+            key: 'auth.messages.jobs.status_changed_title'
+          },
+          message: {
+            key: 'auth.messages.jobs.proposal_rejected_msg',
+            args: { title: job.title }
+          },
+          relatedEntityId: proposal.jobId,
+          relatedEntityType: 'proposal',
+          manager // Ensure the manager from your current transaction is passed here
+        });
         return { proposalId, status: ProposalStatus.REJECTED };
       }
 
@@ -814,8 +820,18 @@ export class JobsService {
           await proposalRepo.save(proposal);
         }
 
-        await notifySeller(`Your proposal for job "${job.title}" has been accepted. An order was created.`);
-
+        await this.notificationService.notifyWithLang({
+          userIds: [proposal.sellerId],
+          type: 'proposal_status_update',
+          title: { key: 'auth.messages.jobs.status_changed_title' },
+          message: {
+            key: 'auth.messages.jobs.proposal_accepted_msg',
+            args: { title: job.title }
+          },
+          relatedEntityId: proposal.jobId,
+          relatedEntityType: 'proposal',
+          manager
+        });
         // return checkout payload for frontend
         const checkoutPayload = {
           orderId: order.id,
@@ -833,11 +849,22 @@ export class JobsService {
       if (Object.values(ProposalStatus).includes(status)) {
         proposal.status = status as ProposalStatus;
         await proposalRepo.save(proposal);
-        await notifySeller(`Your proposal for job "${job.title}" status has been updated to: ${status}.`);
+        await this.notificationService.notifyWithLang({
+          userIds: [proposal.sellerId],
+          type: 'proposal_status_update',
+          title: { key: 'auth.messages.jobs.status_changed_title' },
+          message: {
+            key: 'auth.messages.jobs.proposal_status_updated_msg',
+            args: { title: job.title, status }
+          },
+          relatedEntityId: proposal.jobId,
+          relatedEntityType: 'proposal',
+          manager
+        });
         return { proposalId, status };
       }
 
-      throw new BadRequestException('Invalid status update');
+      throw new BadRequestException(this.i18n.t('events.jobs.invalid_status_update'));
     });
   }
 
@@ -896,26 +923,19 @@ export class JobsService {
     await this.jobRepository.save(proposal.job);
 
     // Notify both parties about order creation
-    const buyerNotification = this.notificationRepository.create({
-      userId: proposal.job.buyerId,
+    await this.notificationService.notifyWithLang({
+      userIds: [proposal.job.buyerId, proposal.sellerId],
       type: 'order_created',
-      title: 'Order Created from Proposal',
-      message: `An order has been created from your accepted proposal for job: ${proposal.job.title}`,
-      relatedEntityType: 'order',
+      title: {
+        key: 'auth.messages.jobs.order_created_title'
+      },
+      message: {
+        key: 'auth.messages.jobs.order_created_msg',
+        args: { title: proposal.job.title }
+      },
       relatedEntityId: savedOrder.id,
+      relatedEntityType: 'order'
     });
-
-    const sellerNotification = this.notificationRepository.create({
-      userId: proposal.sellerId,
-      type: 'order_created',
-      title: 'Order Created from Proposal',
-      message: `An order has been created from your accepted proposal for job: ${proposal.job.title}`,
-      relatedEntityType: 'order',
-      relatedEntityId: savedOrder.id,
-    } as any);
-
-    await this.notificationRepository.save(sellerNotification);
-    await this.notificationRepository.save(buyerNotification);
 
     return savedOrder;
   }

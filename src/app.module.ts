@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, registerAs } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { HeaderResolver, I18nModule, QueryResolver } from 'nestjs-i18n';
+import { AcceptLanguageResolver, CookieResolver, HeaderResolver, I18nModule, QueryResolver } from 'nestjs-i18n';
 import { join } from 'path';
 import { LoggingValidationPipe } from 'common/translationPipe';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -44,7 +44,8 @@ import { StatesModule } from './states/states.module';
 import { CountriesModule } from './countries/countries.module';
 import { RatingsModule } from './rating/rating.module';
 import { SharedModule } from 'common/shared.module';
-
+import * as path from 'path';
+import { TranslationModule } from 'common/translation.service';
 
 @Module({
   imports: [
@@ -77,14 +78,23 @@ import { SharedModule } from 'common/shared.module';
       signOptions: { expiresIn: process.env.JWT_EXPIRE },
     }),
 
-    I18nModule.forRoot({
-      fallbackLanguage: 'en',
-      loaderOptions: {
-        path: join(__dirname, '/../i18n/'),
-        watch: true,
-      },
-      resolvers: [{ use: QueryResolver, options: ['lang'] }, new HeaderResolver(['x-lang'])],
+    I18nModule.forRootAsync({
+      useFactory: () => ({
+        fallbackLanguage: 'ar',
+        loaderOptions: {
+          path: join(__dirname, '/../i18n/'),
+          watch: true,
+        },
+        typesOutputPath: join('src/generated/i18n.generated.ts'),
+      }),
+      resolvers: [
+        new QueryResolver(['lang', 'l']),
+        new HeaderResolver(['x-lang']),
+        new CookieResolver(),
+        AcceptLanguageResolver,
+      ]
     }),
+    TranslationModule,
     SharedModule,
     AuthModule,
     AssetModule,

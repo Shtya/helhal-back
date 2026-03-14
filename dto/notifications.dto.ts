@@ -1,4 +1,5 @@
-import { IsBoolean, IsOptional } from "class-validator";
+import { IsBoolean, IsEnum, IsOptional } from "class-validator";
+import { Language } from "entities/global.entity";
 
 export class NotificationCategoriesDto {
     @IsBoolean() @IsOptional() messages?: boolean;
@@ -9,4 +10,5 @@ export class NotificationCategoriesDto {
     @IsBoolean() @IsOptional() orders?: boolean;
     @IsBoolean() @IsOptional() jobs?: boolean;
     @IsBoolean() @IsOptional() others?: boolean;
+    @IsEnum(Language) @IsOptional() language?: Language;
 }

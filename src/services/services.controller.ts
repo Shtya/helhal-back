@@ -8,10 +8,11 @@ import { CRUD } from 'common/crud.service';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { serviceIconOptions } from 'common/upload.config';
 import { Permissions } from 'entities/permissions';
+import { TranslationService } from 'common/translation.service';
 
 @Controller('services')
 export class ServicesController {
-  constructor(private servicesService: ServicesService) { }
+  constructor(private servicesService: ServicesService, private readonly i18n: TranslationService) { }
 
   @Get('/admin')
   @UseGuards(JwtAuthGuard, AccessGuard)
@@ -23,7 +24,7 @@ export class ServicesController {
     }
   })
   async getServicesAdmin(@Query('') query: any) {
-    return CRUD.findAll(this.servicesService.serviceRepository, 'service', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['seller', 'seller.person', 'category'], ['title'], { status: query.status == 'all' ? '' : query.status });
+    return CRUD.findAll(this.servicesService.serviceRepository, this.i18n, 'service', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['seller', 'seller.person', 'category'], ['title'], { status: query.status == 'all' ? '' : query.status });
   }
 
   @Get()
@@ -164,7 +165,7 @@ export class ServicesController {
     @UploadedFile() file?: any,
   ) {
     if (!file) {
-      throw new BadRequestException('Icon file is required to mark as popular');
+      throw new BadRequestException(this.i18n.t('events.popular_icon_required'));
     }
     const iconUrl = `uploads/service-icons/${file.filename}`;
     return this.servicesService.markAsPopular(id, iconUrl);
@@ -186,7 +187,9 @@ export class ServicesController {
   ) {
 
     if (!file) {
-      throw new BadRequestException('Icon file is required to update popular icon');
+      throw new BadRequestException(
+        this.i18n.t('events.update_popular_icon_required')
+      );
     }
 
 

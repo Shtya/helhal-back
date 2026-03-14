@@ -107,12 +107,19 @@ export class State extends CoreEntity {
   countryId: string;
 }
 
+
+export enum Language {
+  AR = 'ar',
+  EN = 'en',
+}
 @Entity('persons')
 @Index('IDX_person_phone_country', ['phone', 'countryCode'], {
   unique: true,
   // Keep the exact string we fixed earlier
   where: `((phone IS NOT NULL) AND ((phone)::text <> ''::text) AND ("countryCode" IS NOT NULL) AND ("countryCode" <> '{}'::jsonb))`
 })
+
+
 export class Person extends CoreEntity {
   @Column({ unique: true })
   username: string;
@@ -158,6 +165,12 @@ export class Person extends CoreEntity {
   @Column({ nullable: true, unique: true })
   googleId: string;
 
+  @Column({
+    type: 'enum',
+    enum: Language,
+    default: Language.AR,
+  })
+  preferredLanguage: Language;
 
   @Column({ nullable: true, unique: true })
   appleId: string;
@@ -279,6 +292,11 @@ export class User extends CoreEntity {
   get pendingEmail(): string | null { return this.person?.pendingEmail }
   @Expose()
   get pendingEmailCode(): string | null { return this.person?.pendingEmailCode }
+  @Expose()
+  get preferredLanguage(): Language {
+    // Ensuring the returned value is always trimmed and lowercase
+    return (this.person.preferredLanguage || Language.AR);
+  }
   @Expose()
   get lastEmailChangeSentAt(): Date { return this.person?.lastEmailChangeSentAt }
   get password(): string { return this.person?.password }

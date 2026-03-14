@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Favorite, Service, User } from 'entities/global.entity';
+import { TranslationService } from 'common/translation.service';
 
 @Injectable()
 export class FavoritesService {
@@ -12,6 +13,7 @@ export class FavoritesService {
     private serviceRepository: Repository<Service>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    private i18n: TranslationService,
   ) { }
 
   async getUserFavorites(userId: string, page: number = 1) {
@@ -49,7 +51,7 @@ export class FavoritesService {
     } as any);
 
     if (!service) {
-      throw new NotFoundException('Service not found or not available');
+      throw new NotFoundException(this.i18n.t('events.service_not_found_or_inactive'));
     }
 
     // Check if already favorited
@@ -75,7 +77,7 @@ export class FavoritesService {
     });
 
     if (!favorite) {
-      throw new NotFoundException('Favorite not found');
+      throw new NotFoundException(this.i18n.t('events.favorite_not_found'));
     }
 
     return this.favoriteRepository.remove(favorite);

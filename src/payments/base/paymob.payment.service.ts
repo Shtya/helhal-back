@@ -9,6 +9,7 @@ import { BasePaymentGateway } from "./BasePaymentGateway";
 import * as crypto from 'crypto';
 import { RedisService } from "common/RedisService";
 import { OrdersService } from "src/orders/orders.service";
+import { TranslationService } from "common/translation.service";
 
 
 
@@ -42,8 +43,9 @@ export class PaymobPaymentService extends BasePaymentGateway {
         protected readonly ordersService: OrdersService,
         @InjectRepository(Payment)
         private paymentRepo: Repository<Payment>,
+        protected readonly i18n: TranslationService,
     ) {
-        super(dataSource, accountingService, orderRepo, transactionBillingRepo, ordersService);
+        super(dataSource, accountingService, orderRepo, transactionBillingRepo, ordersService, i18n);
     }
 
 
@@ -95,7 +97,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
                 status: TransactionStatus.PENDING,
                 currencyId: this.DEFAULT_CURRENCY,
                 type: TransactionType.ESCROW_DEPOSIT, // Added type
-                description: `Escrow deposit for order #${orderId} (Invoice #${invoice.id})`,
+                description: this.i18n.t('events.payments.escrow_deposit_description', { args: { orderId, invoiceId: invoice.id } }),
             });
             const savedTx = await manager.save(transaction);
 
@@ -185,7 +187,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
                     })
                 );
 
-                throw new InternalServerErrorException("Paymob initialization failed, please try again or contact support.");
+                throw new InternalServerErrorException(this.i18n.t('events.payments.paymob_init_failed'));
             }
         });
     }
@@ -201,7 +203,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
         const isValid = this.validateHmac(body, queryHmac);
         if (!isValid) {
             this.logger.warn(`[HMAC Failed] Unauthorized attempt for event ${eventId}`);
-            throw new UnauthorizedException('Invalid HMAC');
+            throw new UnauthorizedException(this.i18n.t('events.payments.invalid_hmac'));
         }
 
         if (type === 'TRANSACTION') {
@@ -413,7 +415,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
 
         } catch (error) {
             this.logger.error(`❌ Paymob Auth Failed: ${error.message}`, error.response?.data);
-            throw new UnauthorizedException('Could not generate Paymob Auth Token');
+            throw new UnauthorizedException(this.i18n.t('events.payments.auth_token_failed'));
         } finally {
             await this.redisService.redisClient.del(lockKey);
         }
@@ -577,7 +579,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
 
             // Throw error if Paymob explicitly returns a failed status
             if (data.disbursement_status === 'failed') {
-                throw new BadRequestException(`Paymob Disbursement Failed: ${data.status_description}`);
+                throw new BadRequestException(this.i18n.t('events.payments.disbursement_failed', { args: { reason: data.status_description } }));
             }
 
             return {
@@ -588,7 +590,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
             this.logger.error(`Paymob Payout Error: ${error.message}`, error.response?.data);
 
             const errorData = error.response?.data;
-            let finalMessage = 'Failed to initiate payout with provider';
+            let finalMessage = this.i18n.t('events.payments.payout_init_failed');
 
             if (errorData && errorData.status_description) {
                 const desc = errorData.status_description;
@@ -785,7 +787,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
     }): Promise<any> {
         if (!params.orderId) {
             throw new BadRequestException(
-                'orderId is required',
+                this.i18n.t('events.payments.order_id_required'),
             );
         }
 
@@ -815,7 +817,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
             );
 
             throw new InternalServerErrorException(
-                'Failed to check transaction status',
+                this.i18n.t('events.payments.status_check_failed'),
             );
         }
     }
@@ -848,7 +850,7 @@ export class PaymobPaymentService extends BasePaymentGateway {
                 '❌ Paymob Accept Auth Failed',
                 error.response?.data || error.message,
             );
-            throw new UnauthorizedException('Paymob authentication failed');
+            throw new UnauthorizedException(this.i18n.t('events.payments.paymob_auth_failed'));
         }
     }
 

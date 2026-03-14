@@ -1,10 +1,14 @@
 import { Injectable, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Reflector } from '@nestjs/core';
+import { TranslationService } from 'common/translation.service';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-  constructor(private reflector: Reflector) {
+  constructor(
+    private reflector: Reflector,
+    private readonly i18n: TranslationService,
+  ) {
     super();
   }
 
@@ -14,7 +18,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
   handleRequest(err, user, info) {
     if (err || !user) {
-      throw err || new UnauthorizedException('Authentication failed');
+      throw err || new UnauthorizedException(this.i18n.t('auth.errors.authentication_failed'));
     }
     return user;
   }

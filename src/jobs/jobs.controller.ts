@@ -7,11 +7,13 @@ import { JobsService } from './jobs.service';
 import { CreateJobDto, UpdateJobDto } from 'dto/job.dto';
 import { CRUD } from 'common/crud.service';
 import { Permissions } from 'entities/permissions';
+import { TranslationService } from 'common/translation.service';
 
 @Controller('jobs')
 export class JobsController {
   constructor(
     private jobsService: JobsService,
+    private readonly i18n: TranslationService,
   ) { }
 
   @Get()
@@ -37,6 +39,7 @@ export class JobsController {
   async getMyJobs(@Query() query: any, @Req() req: any) {
     return CRUD.findAll(
       this.jobsService.jobRepository,
+      this.i18n,
       'job',
       query.search,
       query.page,

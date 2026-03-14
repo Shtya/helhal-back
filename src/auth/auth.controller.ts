@@ -19,6 +19,7 @@ import { promises as fsp } from 'fs';
 import { join, normalize as pathNormalize } from 'path';
 import { Permissions } from 'entities/permissions';
 import { JwtService } from '@nestjs/jwt';
+import { TranslationService } from 'common/translation.service';
 
 
 @Controller('auth')
@@ -28,9 +29,9 @@ export class AuthController {
 
   constructor(
     private jwtService: JwtService,
-
     private authService: AuthService,
     private oauthService: OAuthService,
+    private readonly i18n: TranslationService,
     @InjectRepository(User)
     private readonly users: Repository<User>,
   ) { }
@@ -38,7 +39,10 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('protected')
   protectedRoute(@Req() req: any) {
-    return { message: `Hello user ${req.user.id}, you're authenticated.`, sessionId: req.user.sessionId };
+    return {
+      message: this.i18n.t('auth.messages.hello_authenticated', { args: { userId: req.user.id } }),
+      sessionId: req.user.sessionId,
+    };
   }
 
   // --------- auth core ----------
@@ -111,7 +115,7 @@ export class AuthController {
   @UseInterceptors(CalculateRemainingImagesInterceptor, FilesInterceptor('files', 6, imageUploadOptions))
   async uploadImages(@UploadedFiles() files: any[], @Req() req: Request & { user: { id: string } }) {
     if (!files?.length) {
-      throw new BadRequestException('No image files uploaded');
+      throw new BadRequestException(this.i18n.t('auth.errors.no_image_files_uploaded'));
     }
 
     // convert to URLs
@@ -119,7 +123,7 @@ export class AuthController {
 
     // update user portfolio
     const user = await this.users.findOne({ where: { id: req.user.id } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     const current = Array.isArray(user.portfolioItems) ? user.portfolioItems : [];
     // append new, cap at 6
@@ -128,7 +132,7 @@ export class AuthController {
     await this.users.save(user);
 
     return {
-      message: 'Images uploaded',
+      message: this.i18n.t('auth.messages.images_uploaded'),
       urls,
       total: user.portfolioItems.length,
     };
@@ -147,7 +151,7 @@ export class AuthController {
     u = u.replace(/^\/+/, ''); // remove leading slash
     const safe = pathNormalize(u).replace(/\\/g, '/');
     if (!safe.startsWith('uploads/images/')) {
-      throw new BadRequestException('Invalid image path');
+      throw new BadRequestException(this.i18n.t('auth.errors.invalid_image_path'));
     }
     return safe;
   }
@@ -156,12 +160,12 @@ export class AuthController {
   @Delete('image')
   async deleteImage(@Req() req: Request & { user: { id: string } }, @Body() body: { url: string }) {
     const rawUrl = body?.url;
-    if (!rawUrl) throw new BadRequestException('url is required');
+    if (!rawUrl) throw new BadRequestException(this.i18n.t('auth.errors.url_required'));
 
     const rel = this.toRelPathFromUrl(rawUrl, req);
 
     const user = await this.users.findOne({ where: { id: req.user.id } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     const before = Array.isArray(user.portfolioItems) ? user.portfolioItems : [];
 
@@ -170,7 +174,7 @@ export class AuthController {
     const after = before.filter(u => norm(u) !== rel);
 
     if (after.length === before.length) {
-      throw new NotFoundException('Image not found in your portfolio');
+      throw new NotFoundException(this.i18n.t('auth.errors.image_not_found_in_portfolio'));
     }
 
     user.portfolioItems = after;
@@ -184,18 +188,22 @@ export class AuthController {
       if (e?.code !== 'ENOENT') console.warn('unlink failed:', e);
     }
 
-    return { message: 'Image removed', removed: rawUrl, remaining: user.portfolioItems };
+    return {
+      message: this.i18n.t('auth.messages.image_removed'),
+      removed: rawUrl,
+      remaining: user.portfolioItems,
+    };
   }
 
   @UseGuards(JwtAuthGuard)
   @Post('video')
   @UseInterceptors(FileInterceptor('file', videoUploadOptions))
   async uploadVideo(@UploadedFile() file: any, @Req() req: any) {
-    if (!file) throw new BadRequestException('No video file uploaded');
+    if (!file) throw new BadRequestException(this.i18n.t('auth.errors.no_video_file_uploaded'));
 
     const rel = `uploads/videos/${file.filename}`;
     const user = await this.users.findOne({ where: { id: req.user.id } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     // Delete old video if it exists
     if (user.introVideoUrl) {
@@ -213,7 +221,7 @@ export class AuthController {
     user.introVideoUrl = rel; // <-- ensure this column exists on User
     await this.users.save(user);
     return {
-      message: 'Video uploaded',
+      message: this.i18n.t('auth.messages.video_uploaded'),
       url: rel,
       filename: file.filename,
       size: file.size,
@@ -228,10 +236,10 @@ export class AuthController {
     @Req() req: Request & { user: { id: string } }
   ) {
     const user = await this.users.findOne({ where: { id: req.user.id } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     if (!user.introVideoUrl) {
-      throw new NotFoundException('No video uploaded');
+      throw new NotFoundException(this.i18n.t('auth.errors.no_video_uploaded'));
     }
 
     const absPath = join(process.cwd(), user.introVideoUrl);
@@ -250,7 +258,7 @@ export class AuthController {
     await this.users.save(user);
 
     return {
-      message: 'Video removed',
+      message: this.i18n.t('auth.messages.video_removed'),
       removed: user.introVideoUrl,
     };
   }
@@ -275,7 +283,7 @@ export class AuthController {
     const safe = pathNormalize(u).replace(/\\/g, '/');
 
     if (!safe.startsWith(allowedPrefix)) {
-      throw new BadRequestException('Invalid path');
+      throw new BadRequestException(this.i18n.t('auth.errors.invalid_path'));
     }
     return safe;
   }
@@ -284,12 +292,12 @@ export class AuthController {
   @Post('portfolio-file')
   @UseInterceptors(FileInterceptor('file', fileUploadOptions))
   async uploadPortfolioFile(@UploadedFile() file: any, @Req() req: any) {
-    if (!file) throw new BadRequestException('No document uploaded');
+    if (!file) throw new BadRequestException(this.i18n.t('auth.errors.no_document_uploaded'));
 
     const rel = `uploads/files/${file.filename}`;
 
     const user = await this.users.findOne({ where: { id: req.user.id } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     // Delete old file if exists
     if (user?.portfolioFile) {
@@ -308,7 +316,7 @@ export class AuthController {
     await this.users.save(user);
 
     return {
-      message: 'Portfolio file uploaded',
+      message: this.i18n.t('auth.messages.portfolio_file_uploaded'),
       url: rel,
       filename: file.originalname,
       size: file.size,
@@ -321,10 +329,10 @@ export class AuthController {
   @Delete('portfolio-file')
   async deletePortfolioFile(@Req() req: Request & { user: { id: string } }, @Body() body: { url?: string }) {
     const user = await this.users.findOne({ where: { id: req.user.id } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.user_not_found'));
 
     if (!user.portfolioFile) {
-      throw new NotFoundException('No portfolio file to delete');
+      throw new NotFoundException(this.i18n.t('auth.errors.no_portfolio_file_to_delete'));
     }
 
     // If a URL is provided, make sure it matches the stored one
@@ -332,7 +340,7 @@ export class AuthController {
       const storedRel = this.toRelPathFromUrl2(user?.portfolioFile.url, 'uploads/files/');
       const givenRel = this.toRelPathFromUrl2(body.url, 'uploads/files/');
       if (storedRel !== givenRel) {
-        throw new BadRequestException('Provided file does not match current portfolio file');
+        throw new BadRequestException(this.i18n.t('auth.errors.file_does_not_match_portfolio_file'));
       }
     }
 
@@ -348,7 +356,7 @@ export class AuthController {
     user.portfolioFile = null as any;
     await this.users.save(user);
 
-    return { message: 'Portfolio file deleted' };
+    return { message: this.i18n.t('auth.messages.portfolio_file_deleted') };
   }
 
   @Get('profile/:id')
@@ -394,7 +402,7 @@ export class AuthController {
   })
   async updateStatus(@Req() req: any, @Body() body: { status: any; userId: string }) {
     const allowed = ['active', 'suspended', 'pending_verification', 'deleted'];
-    if (!allowed.includes(body.status)) throw new BadRequestException('Invalid status');
+    if (!allowed.includes(body.status)) throw new BadRequestException(this.i18n.t('auth.errors.invalid_status'));
     const userId = body.userId || req.user.id;
     return this.authService.updateStatus(userId, body.status);
   }
@@ -473,7 +481,9 @@ export class AuthController {
     );
 
     if (!columnExists) {
-      throw new BadRequestException(`Invalid sortBy field: '${sortField}'`);
+      throw new BadRequestException(
+        this.i18n.t('auth.errors.invalid_sort_by_field', { args: { field: sortField } }),
+      );
     }
     qb.orderBy(`user.${sortField}`, sortDirection);
 
@@ -504,7 +514,7 @@ export class AuthController {
   // --------- tokens / oauth (unchanged) ----------
   @Post('refresh') async refreshTokens(@Req() req: Request) {
     const { refreshToken } = req.body as any;
-    if (!refreshToken) throw new BadRequestException('Refresh token not provided in the request body');
+    if (!refreshToken) throw new BadRequestException(this.i18n.t('auth.errors.refresh_token_missing'));
     return this.authService.refreshTokens(refreshToken);
   }
 
@@ -673,19 +683,20 @@ export class AuthController {
       .where('user.id = :id', { id: decoded.userId })
       .getOne();
 
-    if (!user) throw new UnauthorizedException('User not found');
+    if (!user) throw new UnauthorizedException(this.i18n.t('events.user_not_found'));
     if (decoded.referralCodeUsed && !user.referredBy) {
       await this.oauthService.processReferral(user, decoded.referralCodeUsed);
     }
 
     const serializedUser = await this.oauthService['authService'].authenticateUser(user, res);
-    res.json({ message: 'Authentication successful', user: serializedUser });
+    res.json({ message: this.i18n.t('auth.messages.authentication_successful'), user: serializedUser });
   }
 
   @Get('search')
   async getSearch(@Query() query: any, @Req() req: any) {
     return CRUD.findAll(
       this.authService.userRepository,
+      this.i18n,
       'user',
       query.search,
       query.page,
@@ -740,7 +751,7 @@ export class AuthController {
     const sid = req.user.sessionId;
     if (sid) await this.authService.logoutSession(req.user.id, sid);
     this.authService.clearTokenCookies(res);
-    res.json({ message: 'Logged out successfully' });
+    res.json({ message: this.i18n.t('auth.messages.logged_out_success') });
   }
 
   @UseGuards(JwtAuthGuard, AccessGuard)

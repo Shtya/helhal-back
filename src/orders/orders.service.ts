@@ -11,6 +11,8 @@ import { instanceToPlain } from 'class-transformer';
 import { PaymentGatewayFactory } from 'src/payments/base/payment.gateway.factory';
 import { UnifiedCheckout } from 'src/payments/base/payment.constant';
 import { RedisService } from 'common/RedisService';
+import { TranslationService } from 'common/translation.service';
+import { NotificationService } from 'src/notification/notification.service';
 
 
 @Injectable()
@@ -42,13 +44,12 @@ export class OrdersService {
     private readonly dataSource: DataSource,
     private readonly accountingService: AccountingService,
     private readonly gatewayFactory: PaymentGatewayFactory,
-    @InjectRepository(Job) private jobRepo: Repository<Job>,
-    @InjectRepository(Proposal) private proposalRepo: Repository<Proposal>,
-    @InjectRepository(Notification) private notifRepo: Repository<Notification>,
-    @InjectRepository(Setting) private settingRepo: Repository<Setting>,
+    public notificationService: NotificationService,
+
     @InjectRepository(Dispute) private disputeRepo: Repository<Dispute>,
 
-    private readonly redisService: RedisService
+    private readonly redisService: RedisService,
+    private readonly i18n: TranslationService,
   ) { }
 
   Submission
@@ -58,7 +59,7 @@ export class OrdersService {
 
     // Fetch user role
     const user = await this.userRepository.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException(this.i18n.t('events.orders.user_not_found'));
 
     const qb = this.orderRepository.createQueryBuilder('order')
       // 1. Join and select specific fields for Service
@@ -160,14 +161,14 @@ export class OrdersService {
           where: { id: transactionId },
         });
 
-        if (!transaction) throw new NotFoundException('Transaction not found');
+        if (!transaction) throw new NotFoundException(this.i18n.t('events.orders.transaction_not_found'));
 
         userId = transaction.userId;
         orderId = transaction.orderId;
         // 2. Skip if already processed
         if (!(transaction.status === TransactionStatus.PENDING ||
           transaction.status === TransactionStatus.FAILED)) {
-          throw new BadRequestException('Transaction already processed');
+          throw new BadRequestException(this.i18n.t('events.orders.transaction_already_processed'));
         }
         // const payment = await manager.findOne(Payment, {
         //   where: { transactionId: transactionId }
@@ -183,17 +184,24 @@ export class OrdersService {
           externalOrderId: paymobOrderId?.toString(),
           status: isSuccess ? TransactionStatus.COMPLETED : TransactionStatus.FAILED
         });
-        const notifRepo = manager.getRepository(Notification);
 
         if (!isSuccess) {
-          await notifRepo.save(notifRepo.create({
-            userId: transaction.userId,
+          await this.notificationService.notifyWithLang({
+            userIds: [transaction.userId],
             type: 'payment',
-            title: 'Payment Failed',
-            message: `Your payment attempt for Order #${transaction.orderId} failed. (Ref: ${transactionId}). Please try again.`,
-            relatedEntityType: 'transaction',
+            title: {
+              key: 'events.orders.payment_failed_title'
+            },
+            message: {
+              key: 'events.orders.payment_failed_msg',
+              args: {
+                orderId: transaction.orderId,
+                transactionId: transactionId
+              }
+            },
             relatedEntityId: transactionId,
-          }));
+            relatedEntityType: 'transaction'
+          });
 
           return; // Exit early; do not process order updates or escrow
         }
@@ -203,11 +211,11 @@ export class OrdersService {
           relations: ['invoices', 'buyer', 'seller'],
         });
 
-        if (!order) throw new NotFoundException('Order not found');
+        if (!order) throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
         if (order.status !== OrderStatus.PENDING) return order; // Already processed
 
         const invoice = order.invoices?.[0];
-        if (!invoice) throw new NotFoundException('Invoice not found');
+        if (!invoice) throw new NotFoundException(this.i18n.t('events.orders.invoice_not_found'));
 
         // 2. Mark Invoice as Paid
         invoice.paymentStatus = PaymentStatus.PAID;
@@ -235,24 +243,33 @@ export class OrdersService {
         const currency = 'SAR';
 
 
-        await notifRepo.save([
-          notifRepo.create({
-            userId: order.buyerId,
-            type: 'payment',
-            title: 'Payment Successful',
-            message: `Your payment of ${amount} ${currency} for “${order.title}” was processed successfully.`,
-            relatedEntityType: 'order',
-            relatedEntityId: order.id,
-          }),
-          notifRepo.create({
-            userId: order.sellerId,
-            type: 'payment',
-            title: 'Order Paid',
-            message: `The order “${order.title}” has been paid.`,
-            relatedEntityType: 'order',
-            relatedEntityId: order.id,
-          })
-        ]);
+        // 1. Notify Buyer (Payment confirmation)
+        await this.notificationService.notifyWithLang({
+          userIds: [order.buyerId],
+          type: 'payment',
+          title: { key: 'events.orders.payment_success_title' },
+          message: {
+            key: 'events.orders.payment_success_msg',
+            args: { amount, currency, title: order.title }
+          },
+          relatedEntityId: order.id,
+          relatedEntityType: 'order',
+          manager // Use if this call is within a transaction
+        });
+
+        // 2. Notify Seller (Order status update)
+        await this.notificationService.notifyWithLang({
+          userIds: [order.sellerId],
+          type: 'payment',
+          title: { key: 'events.orders.order_paid_title' },
+          message: {
+            key: 'events.orders.order_paid_msg',
+            args: { title: order.title }
+          },
+          relatedEntityId: order.id,
+          relatedEntityType: 'order',
+          manager
+        });
 
         this.logger.log(`✅ order marked paid successfully for TX: ${transactionId}`);
         return order;
@@ -356,13 +373,13 @@ export class OrdersService {
       relations: ['invoices'],
     });
 
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
     if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException('Order is already processed');
+      throw new BadRequestException(this.i18n.t('events.orders.transaction_already_processed'));
     }
 
     const invoice = order.invoices?.[0];
-    if (!invoice) throw new NotFoundException('Invoice not found');
+    if (!invoice) throw new NotFoundException(this.i18n.t('events.orders.invoice_not_found'));
 
     // 2. Create the Manual Transaction Record
     // We do this first so that completeOrderPayment has a transaction to lock onto
@@ -375,7 +392,7 @@ export class OrdersService {
         status: TransactionStatus.PENDING, // completeOrderPayment will move this to COMPLETED
         currencyId: 'SAR',
         type: TransactionType.ESCROW_DEPOSIT,
-        description: `Manual Admin Finalization - Order #${order.id} - Price: ${invoice.totalAmount} SAR`,
+        description: this.i18n.t('events.orders.manual_finalize_description', { args: { orderId: order.id, amount: invoice.totalAmount } }),
       }),
     );
 
@@ -396,23 +413,23 @@ export class OrdersService {
       relations: ['invoices'],
     });
 
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
 
     // 1. Consistency Check: Validate Invoice exists and is unpaid
     const invoice = order.invoices?.[0];
-    if (!invoice) throw new NotFoundException('No invoice found for this order');
+    if (!invoice) throw new NotFoundException(this.i18n.t('events.orders.invoice_not_found'));
 
     if (invoice.paymentStatus === PaymentStatus.PAID) {
-      throw new BadRequestException('This invoice has already been paid');
+      throw new BadRequestException(this.i18n.t('events.orders.already_paid'));
     }
 
     // 2. Permission Check
     if (order.buyerId !== dto.userId) {
-      throw new ForbiddenException("Only the buyer can process payment");
+      throw new ForbiddenException(this.i18n.t('events.orders.only_buyer_pay'));
     }
 
     if (order.status !== OrderStatus.PENDING) {
-      throw new ForbiddenException('Order is not in a payable state');
+      throw new ForbiddenException(this.i18n.t('events.orders.not_payable'));
     }
 
     // 3. Pass both Order and Invoice to the gateway for accurate amount handling
@@ -505,14 +522,14 @@ export class OrdersService {
     if (req.user?.role === 'admin' || PermissionBitmaskHelper.has(permissions?.[PermissionDomains.ORDERS], Permissions.Orders.View) ||
       (userRole === UserRole.BUYER && order.buyerId === userId) || (userRole === UserRole.SELLER && order.sellerId === userId)) {
       if (!order) {
-        throw new NotFoundException('Order not found');
+        throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
       }
 
       return order;
     }
 
 
-    throw new ForbiddenException('Access denied');
+    throw new ForbiddenException(this.i18n.t('events.orders.access_denied'));
   }
 
   async getActiveOrdersWithUser(currentUserId: string, otherUserId: string) {
@@ -547,19 +564,19 @@ export class OrdersService {
       const s = await manager.find(Setting, { take: 1, order: { created_at: 'DESC' } });
 
       const service = await manager.findOne(Service, { where: { id: serviceId, status: 'Active' } } as any);
-      if (!service) throw new NotFoundException('Service not found or not available');
+      if (!service) throw new NotFoundException(this.i18n.t('events.orders.service_not_found'));
 
       const relation = await manager.findOne(UserRelatedAccount, { where: { mainUserId: userId, subUserId: service.sellerId } })
       if (relation) {
-        throw new ConflictException('You cannot place an order because you’re already linked to this seller');
+        throw new ConflictException(this.i18n.t('events.orders.linked_to_seller'));
       }
 
       const seller = await manager.findOne(User, { where: { id: service.sellerId } });
-      if (!seller) throw new NotFoundException('Seller not found');
+      if (!seller) throw new NotFoundException(this.i18n.t('events.orders.seller_not_found'));
 
 
       const packageData = service.packages.find((pkg: any) => pkg.type === packageType);
-      if (!packageData) throw new BadRequestException('Invalid package type');
+      if (!packageData) throw new BadRequestException(this.i18n.t('events.orders.invalid_package'));
 
       const platformPercent = Number(s?.[0]?.platformPercent ?? 10);
       const sellerServiceFee = Number(s?.[0]?.sellerServiceFee ?? 10);
@@ -613,17 +630,20 @@ export class OrdersService {
 
       await manager.save(invoice);
 
-      const notifRepo = manager.getRepository(Notification);
-      const sellerNotif = notifRepo.create({
-        userId: service.sellerId,
+      await this.notificationService.notifyWithLang({
+        userIds: [service.sellerId],
         type: 'order',
-        title: 'New Order Received',
-        message: `You have received a new order for your service "${service.title}".`,
-        relatedEntityType: 'order',
+        title: {
+          key: 'events.orders.new_order_title'
+        },
+        message: {
+          key: 'events.orders.new_order_msg',
+          args: { title: service.title }
+        },
         relatedEntityId: savedOrder.id,
+        relatedEntityType: 'order',
+        manager // Keeps the notification within the order creation transaction
       });
-
-      await notifRepo.save(sellerNotif);
 
       const paymentUrl = `${process.env.FRONTEND_URL}/payment?orderId=${savedOrder.id}&invoice=${invoice.invoiceNumber}&token=${checkoutToken}`;
 
@@ -645,7 +665,7 @@ export class OrdersService {
       } as any);
 
       if (!service) {
-        throw new NotFoundException('Service not found or not available');
+        throw new NotFoundException(this.i18n.t('events.orders.service_not_found'));
       }
 
       const seller = await manager.findOne(User, {
@@ -653,13 +673,13 @@ export class OrdersService {
       });
 
       if (!seller) {
-        throw new NotFoundException('Seller not found');
+        throw new NotFoundException(this.i18n.t('events.orders.seller_not_found'));
       }
 
       // Calculate total amount based on package type
       const packageData = service.packages.find((pkg: any) => pkg.type === packageType);
       if (!packageData) {
-        throw new BadRequestException('Invalid package type');
+        throw new BadRequestException(this.i18n.t('events.orders.invalid_package'));
       }
       const s = await manager.find(Setting, { take: 1, order: { created_at: 'DESC' } });
       const platformPercent = Number(s?.[0]?.platformPercent ?? 10);;
@@ -711,17 +731,20 @@ export class OrdersService {
 
       await manager.save(invoice);
       //send notification to seller
-      const notifRepo = manager.getRepository(Notification);
-      const sellerNotif = notifRepo.create({
-        userId: service.sellerId,
+      await this.notificationService.notifyWithLang({
+        userIds: [service.sellerId],
         type: 'order',
-        title: 'New Order Received',
-        message: `You have received a new order for your service "${service.title}".`,
-        relatedEntityType: 'order',
+        title: {
+          key: 'events.orders.new_order_title'
+        },
+        message: {
+          key: 'events.orders.new_order_msg',
+          args: { title: service.title }
+        },
         relatedEntityId: savedOrder.id,
+        relatedEntityType: 'order',
+        manager // Uses the existing transaction manager
       });
-
-      await notifRepo.save(sellerNotif);
       return savedOrder;
     });
   }
@@ -755,29 +778,33 @@ export class OrdersService {
 
   // Helper: Send notifications to both parties to rate each other
   private async sendRatingNotifications(order: Order, manager?: EntityManager) {
-    const notificationRepo = manager ? manager.getRepository(Notification) : this.notifRepo;
     // 1. Notify Buyer
-    const buyerNotif = notificationRepo.create({
-      userId: order.buyerId,
-      type: 'rating', // specific type for frontend routing
-      title: 'How was your experience?',
-      message: `Your order "${order.title}" is complete! Please take a moment to review the freelancer's work to help others in the community.`,
-      relatedEntityType: 'order',
+    await this.notificationService.notifyWithLang({
+      userIds: [order.buyerId],
+      type: 'rating',
+      title: { key: 'events.orders.rating_buyer_title' },
+      message: {
+        key: 'events.orders.rating_buyer_msg',
+        args: { title: order.title }
+      },
       relatedEntityId: order.id,
+      relatedEntityType: 'order',
+      manager // Pass the manager to keep it in the transaction
     });
 
     // 2. Notify Seller
-    const sellerNotif = notificationRepo.create({
-      userId: order.sellerId,
+    await this.notificationService.notifyWithLang({
+      userIds: [order.sellerId],
       type: 'rating',
-      title: 'Share your feedback',
-      message: `The order "${order.title}" is finished. Please rate your experience working with this client to complete the process.`,
-      relatedEntityType: 'order',
+      title: { key: 'events.orders.rating_seller_title' },
+      message: {
+        key: 'events.orders.rating_seller_msg',
+        args: { title: order.title }
+      },
       relatedEntityId: order.id,
+      relatedEntityType: 'order',
+      manager // Pass the manager here as well
     });
-
-    // Save both in one transaction
-    await notificationRepo.save([buyerNotif, sellerNotif]);
   }
 
 
@@ -792,16 +819,16 @@ export class OrdersService {
     };
 
     if (!validTransitions[order.status]?.includes(status as OrderStatus)) {
-      throw new BadRequestException('Invalid status transition');
+      throw new BadRequestException(this.i18n.t('events.orders.invalid_status_transition'));
     }
 
     // Check permissions
     if (userRole === UserRole.BUYER && status !== OrderStatus.CANCELLED) {
-      throw new ForbiddenException('Buyers can only cancel orders');
+      throw new ForbiddenException(this.i18n.t('events.orders.buyer_only_cancel'));
     }
 
     if (userRole === UserRole.SELLER && status === OrderStatus.CANCELLED) {
-      throw new ForbiddenException('Sellers cannot cancel orders directly');
+      throw new ForbiddenException(this.i18n.t('events.orders.seller_cannot_cancel'));
     }
 
     order.status = status as OrderStatus;
@@ -835,14 +862,14 @@ export class OrdersService {
       const order = await this.getOrder(userId, UserRole.SELLER, orderId, req, manager);
 
       if (order.status !== OrderStatus.ACCEPTED && order.status !== OrderStatus.ChangeRequested) {
-        throw new BadRequestException('Order must be accepted before delivery');
+        throw new BadRequestException(this.i18n.t('events.orders.must_be_accepted_for_delivery'));
       }
 
       // Block if dispute exists
       const hasDispute = await this.disputeRepo.exist({
         where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
       });
-      if (hasDispute) throw new BadRequestException('Order is in dispute');
+      if (hasDispute) throw new BadRequestException(this.i18n.t('events.orders.in_dispute'));
 
 
       // --- Add submission ---
@@ -871,24 +898,27 @@ export class OrdersService {
       const saved = await manager.save(order);
 
       // 🔔 notify buyer
-      await manager.save(Notification,
-        manager.create(Notification, {
-          userId: order.buyerId,
-          type: 'order_delivered',
-          title: 'Order delivered',
-          message: `The seller delivered "${order.title}". Please review and confirm receipt.`,
-          relatedEntityType: 'order',
-          relatedEntityId: order.id,
-        }) as any,
-      );
-
+      await this.notificationService.notifyWithLang({
+        userIds: [order.buyerId],
+        type: 'order_delivered',
+        title: {
+          key: 'events.orders.order_delivered_title'
+        },
+        message: {
+          key: 'events.orders.order_delivered_msg',
+          args: { title: order.title }
+        },
+        relatedEntityId: order.id,
+        relatedEntityType: 'order',
+        manager // Crucial for keeping this inside the delivery transaction
+      });
       return saved;
     });
   }
 
   async getLastSubmission(userId: string, orderId: string) {
     const order = await this.orderRepository.findOne({ where: { id: orderId } });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
 
     // Only the seller (freelancer) or buyer can see submissions
     const submissions = await this.submissionRepo.findOne({
@@ -903,7 +933,7 @@ export class OrdersService {
 
   async changeRequest(userId: string, orderId: string) {
     const order = await this.orderRepository.findOne({ where: { id: orderId } });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
 
     // Only the seller (freelancer) or buyer can see submissions
     const changeRequest = await this.changeRepo.findOne({
@@ -929,7 +959,7 @@ export class OrdersService {
       const order = await this.getOrder(userId, UserRole.BUYER, orderId, req, manager);
 
       if (![OrderStatus.DELIVERED].includes(order.status)) {
-        throw new BadRequestException('Cannot request changes for this order at its current status');
+        throw new BadRequestException(this.i18n.t('events.orders.cannot_request_changes'));
       }
 
       // Create OrderChangeRequest
@@ -961,17 +991,21 @@ export class OrdersService {
       const savedOrder = await manager.save(order);
 
       // Notify seller
-      await manager.save(Notification,
-        manager.create(Notification, {
-          userId: order.sellerId,
-          type: 'order_change_requested',
-          title: `Change requested for "${order.title}"`,
-          message: changeData.message || 'Buyer requested changes',
-          relatedEntityType: 'order',
-          relatedEntityId: order.id,
-        }) as any,
-      );
-
+      await this.notificationService.notifyWithLang({
+        userIds: [order.sellerId],
+        type: 'order_change_requested',
+        title: {
+          key: 'events.orders.change_requested_title',
+          args: { title: order.title }
+        },
+        // If user provided a custom message, use it; otherwise, use the i18n key
+        message: changeData.message
+          ? changeData.message
+          : { key: 'events.orders.change_requested_msg' },
+        relatedEntityId: order.id,
+        relatedEntityType: 'order',
+        manager // Keep it within the change-request transaction
+      });
       return {
         order: savedOrder,
         changeRequest,
@@ -987,9 +1021,9 @@ export class OrdersService {
   ) {
     // 1. Authorization check
     const order = await this.orderRepository.findOne({ where: { id: orderId } });
-    if (!order) throw new NotFoundException('Order not found');
+    if (!order) throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
     if (order.buyerId !== userId && order.sellerId !== userId) {
-      throw new ForbiddenException('Access denied');
+      throw new ForbiddenException(this.i18n.t('events.orders.access_denied'));
     }
 
     // 2. Prepare the Cursor date (Fallback to current time if no cursor)
@@ -1054,11 +1088,11 @@ export class OrdersService {
 
       // Only the buyer can cancel the order
       if (order.buyerId !== userId) {
-        throw new ForbiddenException('Only the buyer can cancel this order');
+        throw new ForbiddenException(this.i18n.t('events.orders.buyer_only_cancel_order'));
       }
 
       if (![OrderStatus.PENDING, OrderStatus.WAITING].includes(order.status)) {
-        throw new BadRequestException('Order cannot be cancelled at this stage');
+        throw new BadRequestException(this.i18n.t('events.orders.not_cancellable'));
       }
 
       order.status = OrderStatus.CANCELLED;
@@ -1083,16 +1117,19 @@ export class OrdersService {
         await this.accountingService.refundEscrowToBuyer(orderId, manager);
       }
 
-      await manager.save(
-        manager.create(Notification, {
-          userId: order.sellerId,
-          type: "order_cancelled",
-          title: "Order Cancelled",
-          message: "The buyer has cancelled the order.",
-          relatedEntityType: 'order',
-          relatedEntityId: orderId,
-        }),
-      );
+      await this.notificationService.notifyWithLang({
+        userIds: [order.sellerId],
+        type: 'order_cancelled',
+        title: {
+          key: 'events.orders.order_cancelled_title'
+        },
+        message: {
+          key: 'events.orders.order_cancelled_msg'
+        },
+        relatedEntityId: orderId,
+        relatedEntityType: 'order',
+        manager // Maintains transactional integrity
+      });
 
       return manager.save(order);
     });
@@ -1106,11 +1143,11 @@ export class OrdersService {
 
       // Only the buyer can cancel the order
       if (order.sellerId !== userId) {
-        throw new ForbiddenException('Only the seller can reject this order');
+        throw new ForbiddenException(this.i18n.t('events.orders.seller_only_reject'));
       }
 
       if (![OrderStatus.PENDING, OrderStatus.WAITING].includes(order.status)) {
-        throw new BadRequestException('Order cannot be rejected at this stage');
+        throw new BadRequestException(this.i18n.t('events.orders.not_rejectable'));
       }
 
       order.status = OrderStatus.REJECTED;
@@ -1136,17 +1173,19 @@ export class OrdersService {
         await this.accountingService.refundEscrowToBuyer(orderId, manager);
       }
 
-      await manager.save(
-        manager.create(Notification, {
-          userId: order.buyerId,
-          type: "order_rejected",
-          title: "Order Rejected",
-          message: "Your order has been rejected by the seller.",
-          relatedEntityType: 'order',
-          relatedEntityId: orderId,
-        }),
-      );
-
+      await this.notificationService.notifyWithLang({
+        userIds: [order.buyerId],
+        type: 'order_rejected',
+        title: {
+          key: 'events.orders.order_rejected_title'
+        },
+        message: {
+          key: 'events.orders.order_rejected_msg'
+        },
+        relatedEntityId: orderId,
+        relatedEntityType: 'order',
+        manager // Keeps the notification bound to the rejection transaction
+      });
       return manager.save(order);
     });
   }
@@ -1156,12 +1195,12 @@ export class OrdersService {
 
     // Only the buyer can cancel the order
     if (order.sellerId !== userId) {
-      throw new ForbiddenException('Only the seller can accept this order');
+      throw new ForbiddenException(this.i18n.t('events.orders.seller_only_accept'));
     }
 
 
     if (![OrderStatus.WAITING].includes(order.status)) {
-      throw new BadRequestException('Order cannot be accepted at this stage');
+      throw new BadRequestException(this.i18n.t('events.orders.not_acceptable'));
     }
 
     order.status = OrderStatus.ACCEPTED;
@@ -1177,16 +1216,18 @@ export class OrdersService {
     ];
 
 
-    await this.notifRepo.save(
-      this.notifRepo.create({
-        userId: order.buyerId,
-        type: "order_accepted",
-        title: "Order Accepted",
-        message: "Your order has been accepted by the seller.",
-        relatedEntityType: 'order',
-        relatedEntityId: orderId,
-      }),
-    );
+    await this.notificationService.notifyWithLang({
+      userIds: [order.buyerId],
+      type: 'order_accepted',
+      title: {
+        key: 'events.orders.order_accepted_title'
+      },
+      message: {
+        key: 'events.orders.order_accepted_msg'
+      },
+      relatedEntityId: orderId,
+      relatedEntityType: 'order'
+    });
 
     return this.orderRepository.save(order);
   }
@@ -1212,7 +1253,7 @@ export class OrdersService {
       });
 
       if (![OrderStatus.ChangeRequested].includes(order.status)) {
-        throw new BadRequestException('Order cannot be cancelled at this stage');
+        throw new BadRequestException(this.i18n.t('events.orders.not_cancellable'));
       }
 
       order.status = OrderStatus.CANCELLED;
@@ -1236,29 +1277,35 @@ export class OrdersService {
       if (invoice && invoice.paymentStatus === PaymentStatus.PAID) {
         await this.accountingService.refundEscrowToBuyer(orderId, manager);
       }
-      const notifications = [
-        // Notify Buyer
-        manager.create(Notification, {
-          userId: order.buyerId,
-          type: 'order_cancelled',
-          title: 'Order Automatically Cancelled',
-          message: `Your order for "${order.title}" was cancelled and funds have been refunded to your wallet.`,
-          relatedEntityType: 'order',
-          relatedEntityId: order.id,
-        }),
-        // Notify Seller
-        manager.create(Notification, {
-          userId: order.sellerId,
-          type: 'order_cancelled',
-          title: 'Order Cancelled (System)',
-          message: `Order "${order.title}" was cancelled because the change request period expired.`,
-          relatedEntityType: 'order',
-          relatedEntityId: order.id,
-        })
-      ];
+      // 1. Notify Buyer (Refund context)
+      await this.notificationService.notifyWithLang({
+        userIds: [order.buyerId],
+        type: 'order_cancelled',
+        title: { key: 'events.orders.auto_cancelled_buyer_title' },
+        message: {
+          key: 'events.orders.auto_cancelled_buyer_msg',
+          args: { title: order.title }
+        },
+        relatedEntityId: order.id,
+        relatedEntityType: 'order',
+        manager
+      });
 
-      // 6. Save all changes atomically
-      await manager.save([order, ...notifications]);
+      // 2. Notify Seller (Missed deadline context)
+      await this.notificationService.notifyWithLang({
+        userIds: [order.sellerId],
+        type: 'order_cancelled',
+        title: { key: 'events.orders.auto_cancelled_seller_title' },
+        message: {
+          key: 'events.orders.auto_cancelled_seller_msg',
+          args: { title: order.title }
+        },
+        relatedEntityId: order.id,
+        relatedEntityType: 'order',
+        manager
+      });
+
+      // Note: You only need to save the order now
       return manager.save(order);
     });
   }
@@ -1283,14 +1330,14 @@ export class OrdersService {
         }
       });
       if (order.status !== OrderStatus.DELIVERED) {
-        throw new BadRequestException('Order must be delivered before completion');
+        throw new BadRequestException(this.i18n.t('events.orders.must_be_delivered'));
       }
 
       // Block if dispute exists
       const hasDispute = await this.disputeRepo.exist({
         where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
       });
-      if (hasDispute) throw new BadRequestException('Order is in dispute; completion is blocked');
+      if (hasDispute) throw new BadRequestException(this.i18n.t('events.orders.in_dispute_blocked'));
 
       // timeline
       order.timeline = [
@@ -1312,29 +1359,36 @@ export class OrdersService {
       await this.updateSellerStats(order, manager);
       await this.sendRatingNotifications(order, manager)
       // 🔔 notify seller
-      const notifications = [
-        // Notify Seller: They got paid
-        manager.create(Notification, {
-          userId: order.sellerId,
-          type: 'order_completed',
-          title: 'Order Completed Automatically',
-          message: `The order "${order.title}" has been completed automatically. Your earnings are now available in your balance.`,
-          relatedEntityType: 'order',
-          relatedEntityId: order.id,
-        }),
-        // Notify Buyer: Transaction closed
-        manager.create(Notification, {
-          userId: order.buyerId,
-          type: 'order_completed',
-          title: 'Order Closed',
-          message: `Your order for "${order.title}" was automatically marked as completed after the delivery period.`,
-          relatedEntityType: 'order',
-          relatedEntityId: order.id,
-        })
-      ];
+      // 1. Notify Seller: Payment release context
+      await this.notificationService.notifyWithLang({
+        userIds: [order.sellerId],
+        type: 'order_completed',
+        title: { key: 'events.orders.auto_completed_seller_title' },
+        message: {
+          key: 'events.orders.auto_completed_seller_msg',
+          args: { title: order.title }
+        },
+        relatedEntityId: order.id,
+        relatedEntityType: 'order',
+        manager
+      });
 
-      // 4. Save Order and Notifications together
-      await manager.save([order, ...notifications]);
+      // 2. Notify Buyer: Closing context
+      await this.notificationService.notifyWithLang({
+        userIds: [order.buyerId],
+        type: 'order_completed',
+        title: { key: 'events.orders.auto_completed_buyer_title' },
+        message: {
+          key: 'events.orders.auto_completed_buyer_msg',
+          args: { title: order.title }
+        },
+        relatedEntityId: order.id,
+        relatedEntityType: 'order',
+        manager
+      });
+
+      // Now save only the order entity
+      await manager.save(order);
 
       return saved;
     });
@@ -1347,17 +1401,16 @@ export class OrdersService {
         where: { id: orderId },
         relations: ['proposal', 'job'],
       });
-      if (!order?.proposal || !order?.job) throw new NotFoundException('Order context invalid');
+      if (!order?.proposal || !order?.job) throw new NotFoundException(this.i18n.t('events.orders.context_invalid'));
 
       const proposalRepo = m.getRepository(Proposal);
       const jobRepo = m.getRepository(Job);
-      const notifRepo = m.getRepository(Notification);
 
       const job = order.job;
       const acceptedProposal = await proposalRepo.findOne({
         where: { id: order.proposalId },
       });
-      if (!acceptedProposal) throw new NotFoundException('Proposal not found');
+      if (!acceptedProposal) throw new NotFoundException(this.i18n.t('events.orders.proposal_not_found'));
 
       // accept this proposal
       acceptedProposal.status = ProposalStatus.ACCEPTED;
@@ -1374,17 +1427,19 @@ export class OrdersService {
           .where({ id: In(toReject.map(p => p.id)) })
           .execute();
 
-        const notifs: any = toReject.map(p =>
-          notifRepo.create({
-            userId: p.sellerId,
+        if (toReject.length > 0) {
+          await this.notificationService.notifyWithLang({
+            userIds: toReject.map(p => p.sellerId),
             type: 'proposal_status_update',
-            title: 'Proposal Rejected',
-            message: `Another proposal was accepted for job "${job.title}".`,
-            relatedEntityType: 'proposal',
-            relatedEntityId: p.jobId,
-          } as any),
-        );
-        if (notifs.length) await notifRepo.save(notifs);
+            title: { key: 'events.orders.proposal_rejected_title' },
+            message: {
+              key: 'events.orders.proposal_rejected_msg',
+              args: { title: job.title }
+            },
+            relatedEntityId: job.id, // Or p.jobId if consistent
+            relatedEntityType: 'proposal'
+          });
+        }
       }
 
       // job → awarded
@@ -1393,27 +1448,31 @@ export class OrdersService {
       await jobRepo.save(job);
 
       // notify buyer and winner
-      await notifRepo.save(
-        notifRepo.create({
-          userId: job.buyerId,
-          type: 'order_created',
-          title: 'Order Activated',
-          message: `Payment received. Order for "${job.title}" is now active.`,
-          relatedEntityType: 'order',
-          relatedEntityId: order.id,
-        }) as any,
-      );
+      // 1. Notify Buyer: Order Activated
+      await this.notificationService.notifyWithLang({
+        userIds: [job.buyerId],
+        type: 'order_created',
+        title: { key: 'events.orders.order_activated_title' },
+        message: {
+          key: 'events.orders.order_activated_msg',
+          args: { title: job.title }
+        },
+        relatedEntityId: order.id,
+        relatedEntityType: 'order'
+      });
 
-      await notifRepo.save(
-        notifRepo.create({
-          userId: acceptedProposal.sellerId,
-          type: 'proposal_status_update',
-          title: 'Proposal Accepted',
-          message: `Your proposal for "${job.title}" was accepted and paid.`,
-          relatedEntityType: 'proposal',
-          relatedEntityId: acceptedProposal.jobId,
-        }) as any,
-      );
+      // 2. Notify Seller: Proposal Accepted
+      await this.notificationService.notifyWithLang({
+        userIds: [acceptedProposal.sellerId],
+        type: 'proposal_status_update',
+        title: { key: 'events.orders.proposal_accepted_title' },
+        message: {
+          key: 'events.orders.proposal_accepted_msg',
+          args: { title: job.title }
+        },
+        relatedEntityId: acceptedProposal.jobId,
+        relatedEntityType: 'proposal',
+      });
     });
   }
 
@@ -1422,18 +1481,18 @@ export class OrdersService {
 
       const order = await this.getOrder(userId, UserRole.BUYER, orderId, req, manager);
       if (order.status !== OrderStatus.DELIVERED) {
-        throw new BadRequestException('Order must be delivered before completion');
+        throw new BadRequestException(this.i18n.t('events.orders.must_be_delivered'));
       }
 
       if (order.buyerId !== userId) {
-        throw new NotFoundException('Order not found');
+        throw new NotFoundException(this.i18n.t('events.orders.order_not_found'));
       }
 
       // Block if dispute exists
       const hasDispute = await this.disputeRepo.exist({
         where: { orderId, status: In([DisputeStatus.OPEN, DisputeStatus.IN_REVIEW]) as any },
       });
-      if (hasDispute) throw new BadRequestException('Order is in dispute; completion is blocked');
+      if (hasDispute) throw new BadRequestException(this.i18n.t('events.orders.in_dispute_blocked'));
 
       // timeline
       order.timeline = [
@@ -1455,17 +1514,20 @@ export class OrdersService {
       await this.updateSellerStats(order, manager);
       await this.sendRatingNotifications(order, manager)
       // 🔔 notify seller
-      await manager.save(Notification,
-        manager.create(Notification, {
-          userId: order.sellerId,
-          type: 'order_completed',
-          title: 'Order completed',
-          message: `The buyer confirmed completion for "${order.title}". Payout is now available.`,
-          relatedEntityType: 'order',
-          relatedEntityId: order.id,
-        }) as any,
-      );
-
+      await this.notificationService.notifyWithLang({
+        userIds: [order.sellerId],
+        type: 'order_completed',
+        title: {
+          key: 'events.orders.order_completed_title'
+        },
+        message: {
+          key: 'events.orders.order_completed_msg',
+          args: { title: order.title }
+        },
+        relatedEntityId: order.id,
+        relatedEntityType: 'order',
+        manager // Keeps it within the same transaction as the payment release
+      });
       return saved;
     });
   }

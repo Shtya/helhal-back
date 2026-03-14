@@ -4,6 +4,7 @@ import { Repository, Brackets, IsNull, Not, ObjectLiteral, SelectQueryBuilder } 
 import { BadRequestException } from '@nestjs/common';
 import { User } from 'entities/global.entity';
 import * as crypto from 'crypto';
+import { TranslationService } from './translation.service';
 
 export interface CustomPaginatedResponse<T> {
   total_records: number;
@@ -23,6 +24,7 @@ export interface IPaginateOptions<T extends ObjectLiteral> {
 
 export class CRUD {
   static async findAll<T>(repository: Repository<T>,
+    i18n: TranslationService,
     entityName: string,
     search?: string,
     page: any = 1,
@@ -38,11 +40,11 @@ export class CRUD {
     const limitNumber = Number(limit) || 10;
 
     if (isNaN(pageNumber) || isNaN(limitNumber) || pageNumber < 1 || limitNumber < 1) {
-      throw new BadRequestException('Pagination parameters must be valid numbers greater than 0.');
+      throw new BadRequestException(i18n.t('events.crud.errors.pagination_invalid'));
     }
 
     if (!['ASC', 'DESC'].includes(sortOrder)) {
-      throw new BadRequestException("Sort order must be either 'ASC' or 'DESC'.");
+      throw new BadRequestException(i18n.t('events.crud.errors.sort_order_invalid'));
     }
 
     const skip = (pageNumber - 1) * limitNumber;
@@ -200,7 +202,9 @@ export class CRUD {
                   value: search,
                 });
               } else {
-                throw new BadRequestException(`Invalid value '${search}' for enum field '${field}'. Allowed values: ${enumValues.join(', ')}`);
+                i18n.t('events.crud.errors.enum_invalid', {
+                  args: { search, field, allowed: enumValues.join(', ') }
+                })
               }
             } else {
               qb.orWhere(`${fullPath} = :search`, { search });
@@ -218,7 +222,7 @@ export class CRUD {
 
     const columnExists = repository.metadata.columns.some(col => col.propertyName === sortField);
     if (!columnExists) {
-      throw new BadRequestException(`Invalid sortBy field: '${sortField}'`);
+      throw new BadRequestException(i18n.t('events.invalid_sort_by', { args: { sortBy: sortField } }));
     }
 
     query.orderBy(`${entityName}.${sortField}`, sortDirection);
@@ -274,39 +278,43 @@ export class CRUD {
     return { items, nextCursor, hasMore };
   }
 
-  static async delete<T>(repository: Repository<T>, entityName: string, id: number | string): Promise<{ message: string }> {
+  static async delete<T>(repository: Repository<T>, i18n: TranslationService, entityName: string, id: number | string): Promise<{ message: string }> {
     const entity = await repository.findOne({ where: { id } as any });
 
     if (!entity) {
-      throw new BadRequestException(`${entityName} with ID ${id} not found.`);
+      i18n.t('events.crud.errors.not_found', { args: { entityName, id } })
     }
 
     await repository.delete(id);
 
     return {
-      message: `${entityName} deleted successfully.`,
+      message: i18n.t('events.crud.messages.deleted', { args: { entityName } }),
     };
   }
 
-  static async softDelete<T>(repository: Repository<T>, entityName: string, id: number | string): Promise<{ message: string }> {
+  static async softDelete<T>(repository: Repository<T>, i18n: TranslationService, entityName: string, id: number | string): Promise<{ message: string }> {
     const entity = await repository.findOne({ where: { id } as any });
 
     if (!entity) {
-      throw new BadRequestException(`${entityName} with ID ${id} not found.`);
+      i18n.t('events.crud.errors.not_found', { args: { entityName, id } })
     }
 
     await repository.softDelete(id);
 
     return {
-      message: `${entityName} soft-deleted successfully.`,
+      message: i18n.t('events.crud.messages.soft_deleted', { args: { entityName } }),
     };
   }
 
-  static async findOne<T>(repository: Repository<T>, entityName: string, id: number | string, relations?: string[]): Promise<T> {
+  static async findOne<T>(repository: Repository<T>, i18n: TranslationService, entityName: string, id: number | string, relations?: string[]): Promise<T> {
     if (relations?.length > 0) {
       const invalidRelations = relations.filter(relation => !repository.metadata.relations.some(rel => rel.propertyName === relation));
       if (invalidRelations.length > 0) {
-        throw new BadRequestException(`Invalid relations: ${invalidRelations.join(', ')}`);
+        throw new BadRequestException(
+          i18n.t('events.crud.errors.invalid_relations', {
+            args: { relations: invalidRelations.join(', ') }
+          }))
+
       }
     }
 
@@ -316,7 +324,8 @@ export class CRUD {
     });
 
     if (!entity) {
-      throw new BadRequestException(`${entityName} with ID ${id} not found.`);
+      throw new BadRequestException(i18n.t('events.crud.errors.not_found', { args: { entityName, id } })
+      );
     }
 
     return entity;

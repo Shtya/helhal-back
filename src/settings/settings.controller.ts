@@ -9,12 +9,13 @@ import { logoUploadOptions } from 'common/upload.config';
 import { join } from 'path';
 import { promises as fsp } from 'fs';
 import { Permissions } from 'entities/permissions';
+import { TranslationService } from 'common/translation.service';
 
 
 @Controller('settings')
 
 export class SettingsController {
-  constructor(private settingsService: SettingsService) { }
+  constructor(private settingsService: SettingsService, private i18n: TranslationService) { }
 
   @Get('public')
   async getPublicSettings() {
@@ -98,9 +99,8 @@ export class SettingsController {
   @UseInterceptors(FileInterceptor('file', logoUploadOptions))
   async uploadSiteLogo(@UploadedFile() file: any, @Req() req) {
     if (!file) {
-      throw new Error('No file provided or invalid file type');
+      throw new Error(this.i18n.t('events.file_required_or_invalid'));
     }
-
     // Save the logo URL in DB or settings (optional)
     const logoUrl = `/uploads/siteLogo/${file.filename}`;
 
