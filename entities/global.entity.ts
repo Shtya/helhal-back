@@ -295,7 +295,7 @@ export class User extends CoreEntity {
   @Expose()
   get preferredLanguage(): Language {
     // Ensuring the returned value is always trimmed and lowercase
-    return (this.person.preferredLanguage || Language.AR);
+    return (this.person?.preferredLanguage || Language.AR);
   }
   @Expose()
   get lastEmailChangeSentAt(): Date { return this.person?.lastEmailChangeSentAt }
